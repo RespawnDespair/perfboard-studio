@@ -144,6 +144,22 @@ def create_document_id_generator(doc: PerfDocument) -> NextId:
     # noted, which is the behaviour described above rather than an exception to it.
     for net in doc.nets:
         note(net.id)
+    # EVERY LIST WITH A GENERATED ID, and the ones below were missing. A board saved with
+    # one part in its design ("part-1") and opened again refused the next part.add as a
+    # duplicate, and every new document -- which opens with a preset's corner holes,
+    # "mh-1" to "mh-4" -- refused its first mounting-hole.add. ``test_every_generated_id``
+    # holds this list to the prefixes the commands generate, so a new one cannot be left
+    # out the same way.
+    for part in doc.parts:
+        note(part.id)
+    for hole in doc.mounting_holes:
+        note(hole.id)
+    for connector in doc.edge_connectors:
+        note(connector.id)
+    for sheet_note in doc.sheet_notes:
+        note(sheet_note.id)
+    for board_note in doc.board_notes:
+        note(board_note.id)
 
     return create_id_generator(initial=highest)
 

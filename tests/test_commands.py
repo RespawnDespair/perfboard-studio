@@ -624,6 +624,55 @@ def test_the_seeded_generator_counts_each_prefix_separately():
     assert next_id("cut") == "cut-1"  # No cuts in the document, so this prefix starts fresh.
 
 
+def test_every_generated_id_is_counted_when_a_document_is_opened_again():
+    """A board saved with one part in its design and opened again refused the next
+    part.add as a duplicate of "part-1", and every new document -- which opens with a
+    preset's corner holes, "mh-1".."mh-4" -- refused its first mounting-hole.add. Every
+    prefix a command generates is read back out of the document it was saved in.
+
+    The prefixes are read out of commands.py itself (every ``next_id("...")``), so a
+    command that starts generating a new kind of id cannot be left out the same way."""
+    import re
+    from pathlib import Path
+
+    import perfboard_studio.commands as commands_module
+    from perfboard_studio.commands import AddMountingHolePayload, create_starter_document
+    from perfboard_studio.persist import parse_document_or_throw, serialize_document
+
+    source = Path(commands_module.__file__).read_text(encoding="utf-8")
+    prefixes = set(re.findall(r'next_id\("([\w-]+)"\)', source))
+    assert {"cmp", "cond", "part", "mh", "ec", "note", "label", "net", "cut"} <= prefixes
+
+    bus = new_bus(create_starter_document(META))
+    assert add_part(bus).ok
+    reopened = parse_document_or_throw(serialize_document(bus.document))
+    seeded = CommandBus(
+        reopened,
+        create_standard_registry(),
+        CommandContext(next_id=create_document_id_generator(reopened)),
+    )
+    assert seeded.dispatch(
+        "part.add", AddPartPayload(ref="R2", footprint_id="r-axial-3")
+    ).ok, "a reopened design refused its next part"
+    assert seeded.dispatch(
+        "mounting-hole.add", AddMountingHolePayload(at=HoleCoord(5, 5))
+    ).ok, "a starter board refused its first extra mounting hole"
+
+    # ...and for every prefix, the generator's next id is not one the document holds.
+    held = {
+        item.id
+        for items in (
+            reopened.components, reopened.conductors, reopened.cuts, reopened.nets,
+            reopened.parts, reopened.mounting_holes, reopened.edge_connectors,
+            reopened.sheet_notes, reopened.board_notes,
+        )
+        for item in items
+    }
+    next_id = create_document_id_generator(reopened)
+    for prefix in prefixes:
+        assert next_id(prefix) not in held, prefix
+
+
 def test_the_seeded_generator_ignores_ids_it_could_not_have_produced():
     """Only `prefix-<digits>` ids can collide with the generator. A hand-written or
     imported id is left alone rather than guessed at."""
