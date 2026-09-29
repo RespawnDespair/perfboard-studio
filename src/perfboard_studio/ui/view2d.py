@@ -2279,10 +2279,7 @@ class ComponentItem(QGraphicsItem):
         # space the further out the view is zoomed (see scenetext.label_extent_mm). Sized for
         # the lowest zoom at which the label is still drawn.
         top = 1.5 + REF_LABEL_PX / 3.0
-        # ...and as wide as the reference on its plate, centred: "LED10" over a 3 mm LED
-        # is wider than the part.
-        side = max(1.5, (len(self.comp.ref) * REF_LABEL_PX * 0.7 + 10) / 3.0 / 2)
-        body = self._local_outline().boundingRect().adjusted(-side, -top, side, 3.0)
+        body = self._local_outline().boundingRect().adjusted(-1.5, -top, 1.5, 3.0)
         return body.united(self._names_rect) if not self._names_rect.isNull() else body
 
     def shape(self) -> QPainterPath:
@@ -2398,28 +2395,20 @@ class ComponentItem(QGraphicsItem):
             painter.setBrush(QBrush(PIN_ONE if marked else PIN_MARKER))
             painter.drawEllipse(centre, radius, radius)
 
-        # THE REFERENCE, CENTRED OVER THE BODY ON A PLATE OF ITS OWN. It sat at the top-left
-        # corner of the COURTYARD -- half a pitch out from the part, on the row of pads above
-        # it -- with a one-pixel shadow, which kept it readable over flat substrate and
-        # nowhere else: on a populated board "U1" was printed across the pads of the row it
-        # was not on, and "LED1" across a neighbour. Centred over the body it belongs to the
-        # part at a glance, and the plate keeps it readable over whatever it lands on.
-        # Light text, because the plate is dark. Skipped when zoomed out far enough that
-        # the text would be an unreadable smear.
-        scale = painter.transform().m11() or 1.0
-        if scale >= 3.0 and self.show_reference:
-            body = self._local_body_rect()
-            anchor = QPointF(body.center().x(), body.top())
-            # AlignTop is ABOVE the point in draw_label's terms (see ``label_alignment``
-            # in viewsch): over the body, never on it, where it would hide a resistor's bands.
-            align = Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
-            painter.setPen(QPen(SELECTED if self.isSelected() else REF_LABEL))
-            draw_label(
-                painter, anchor, self.comp.ref, REF_LABEL_PX, align, bold=True,
-                offset=QPointF(0, -2), background=REF_PLATE,
-            )
+    def reference_anchor(self) -> QPointF:
+        """Where this part's reference is printed, in scene coordinates: just over the
+        middle of its real body, whichever way the part is turned."""
+        body = self._local_body_rect()
+        return self.mapToScene(QPointF(body.center().x(), body.top()))
 
     def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value: Any) -> Any:
+        if change in (
+            QGraphicsItem.GraphicsItemChange.ItemPositionHasChanged,
+            QGraphicsItem.GraphicsItemChange.ItemSelectedHasChanged,
+        ):
+            layer = getattr(self.scene(), "reference_layer", None)
+            if layer is not None:
+                layer.update()
         if change == QGraphicsItem.GraphicsItemChange.ItemPositionChange and self.scene():
             # Snap to the nearest hole, but do NOT clamp to the board bounds: dragging
             # a part past the edge and releasing there must reach the bus's own
@@ -2434,6 +2423,48 @@ class ComponentItem(QGraphicsItem):
 
 
 # ------------------------------------------------------------------------- scene
+
+
+class ReferenceLayerItem(QGraphicsItem):
+    """Every part's reference, printed OVER every part.
+
+    A reference is centred just above its part's body, on a plate (``REF_PLATE``), and it
+    used to be painted by the part itself -- so it sat at the part's own place in the
+    stacking order, and on a crowded board the next part along was drawn over it: "X1" came
+    out as "X" with an LED across the rest. One item above all of them prints them all, so
+    no body can cover a name. Below the placement ghost and the tools' previews, which are
+    about what is being done now.
+
+    Skipped when zoomed out far enough that the text would be an unreadable smear, as it
+    always was, and in a board picture (``show_reference``), where a label held at a pixel
+    size is most of a thumbnail.
+    """
+
+    def __init__(self, scene: BoardScene) -> None:
+        super().__init__()
+        self._board_scene = scene
+        self.setZValue(70)
+        self.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+
+    def boundingRect(self) -> QRectF:
+        scene = self.scene()
+        return scene.sceneRect() if scene is not None else QRectF()
+
+    def paint(self, painter: QPainter, option: Any, widget: Any = None) -> None:
+        scale = painter.transform().m11() or 1.0
+        if scale < 3.0:
+            return
+        align = Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
+        for item in self._board_scene.component_items.values():
+            if not item.show_reference or not item.isVisible():
+                continue
+            # AlignTop is ABOVE the point in draw_label's terms (see ``label_alignment``
+            # in viewsch): over the body, never on it, where it would hide a resistor's bands.
+            painter.setPen(QPen(SELECTED if item.isSelected() else REF_LABEL))
+            draw_label(
+                painter, item.reference_anchor(), item.comp.ref, REF_LABEL_PX, align,
+                bold=True, offset=QPointF(0, -2), background=REF_PLATE,
+            )
 
 
 class BoardScene(QGraphicsScene):
@@ -2504,6 +2535,8 @@ class BoardScene(QGraphicsScene):
         self.document = document
         self.violations: tuple[DrcViolation, ...] = ()
         self.component_items: dict[str, ComponentItem] = {}
+        #: Every part's reference, over every part -- see ``ReferenceLayerItem``.
+        self.reference_layer: ReferenceLayerItem | None = None
         self.board_note_items: dict[str, BoardNoteItem] = {}
         #: Draw the labels written on the board (View > Show Board Labels).
         self.show_board_notes = True
@@ -2709,6 +2742,9 @@ class BoardScene(QGraphicsScene):
         # Emptying first means the handler sees an empty selection, which is the truth.
         self.component_items = {}
         self.conductor_items = {}
+        # Dropped with the dict, for the same reason: a part selected while clear() runs
+        # tells the layer to repaint, and the layer is one of the items being destroyed.
+        self.reference_layer = None
         previously_selected_notes = {
             note_id for note_id, note_item in self.board_note_items.items() if note_item.isSelected()
         }
@@ -2837,6 +2873,8 @@ class BoardScene(QGraphicsScene):
         # Laid out for the whole board at once: where one part's names go depends on what
         # stands beside it. See bodies.lay_out_pin_names.
         names = lay_out_pin_names(self.document, self.lookup, pin_name_width_mm)
+        self.reference_layer = ReferenceLayerItem(self)
+        self.addItem(self.reference_layer)
         for comp in self.document.components:
             fp = self.lookup(comp.footprint_id)
             if fp is None:

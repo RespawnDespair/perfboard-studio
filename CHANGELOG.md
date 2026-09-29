@@ -114,7 +114,8 @@ closed without a bump.
   used to be a signal wired to every part.
 
 - **References on the board sit over their part, on a plate**, instead of at the corner of
-  the courtyard across the next row's pads.
+  the courtyard across the next row's pads -- and over every part, so a crowded board no
+  longer prints "X12" as "X1" with the next part across the rest.
 
 - **The schematic keeps its lanes out of the text.** Every row has room above for its
   references and below for its values, so no trunk runs through "NE555" or "10nF"; net

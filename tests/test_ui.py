@@ -4658,6 +4658,33 @@ def test_an_empty_board_under_a_drawn_circuit_says_how_the_parts_get_to_it() -> 
         _close(window)
 
 
+def test_no_part_is_drawn_over_another_parts_reference() -> None:
+    """Each part printed its own reference, so it sat at the part's place in the stacking
+    order and the next part along was drawn over it: on the dense fixture "X12" came out
+    as "X1" and "X5" as "X". One layer above every part prints them all -- and follows a
+    part that is dragged or selected."""
+    from PySide6.QtCore import QPointF
+
+    window = _window_on(_load_dense())
+    try:
+        scene = window.scene
+        layer = scene.reference_layer
+        assert layer is not None
+        parts = list(scene.component_items.values())
+        assert parts
+        assert all(layer.zValue() > item.zValue() for item in parts)
+        item = parts[0]
+        before = item.reference_anchor()
+        item.setPos(item.pos() + QPointF(scene.document.board.pitch, 0.0))
+        assert item.reference_anchor().x() > before.x()
+        # A rebuild -- any command -- must not leave the layer a dead wrapper.
+        window.on_flip_board()
+        window.on_flip_board()
+        assert scene.reference_layer is not None and scene.reference_layer.scene() is scene
+    finally:
+        _close(window)
+
+
 def test_the_empty_board_names_the_key_that_really_opens_the_schematic() -> None:
     """It said Ctrl+5, which is the Parts panel, for as long as the panels have been
     numbered. A key written into prose is a second copy of the shortcut; this holds the two
