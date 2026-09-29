@@ -246,9 +246,10 @@ on the Board**. From there
 **File → Export Build Guide** (`Ctrl+B`). No KiCad anywhere in that.
 
 With a circuit that already exists, start at **File → Import KiCad Netlist** on
-`examples/ne555-astable.net` and accept the offered placement instead: each part arrives as
-what its value and its KiCad footprint say it is, beside the parts it connects to. That is
-the sequence the screenshots above come out of — see
+`examples/ne555-astable.net` instead: each part arrives in the design as what its value and
+its KiCad footprint say it is, and the step bar across the top of the window takes it from
+there — **Choose a Board**, **Place on the Board**, route, check, build. That is the
+sequence the screenshots above come out of — see
 [`tools/screenshots.py`](https://github.com/medinstech/perfboard-studio/blob/main/tools/screenshots.py).
 
 ### Or open one that is already built

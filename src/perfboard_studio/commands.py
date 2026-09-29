@@ -687,6 +687,21 @@ class AddPartPayload:
 
 
 @dataclass(frozen=True, slots=True)
+class AddPartsPayload:
+    """Several parts into the design as ONE command -- what a netlist import brings.
+
+    The counterpart of ``block.place`` for the design: thirty parts out of a KiCad netlist
+    added one ``part.add`` at a time are thirty presses of Ctrl+Z, each leaving a circuit
+    that is part imported. All-or-nothing, like every other batch here: a reference already
+    taken refuses the lot.
+    """
+
+    parts: tuple[AddPartPayload, ...]
+    #: Undo-stack label: "Add 8 imported part(s)" says more than the parts do.
+    label: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class UpdatePartPayload:
     id: ComponentId
     #: ``None`` leaves the field alone. A changed ``ref`` carries the part's nets with it.
@@ -1450,6 +1465,24 @@ class _AddPart:
     def describe(self, p: AddPartPayload, doc: PerfDocument) -> str:
         value = f" {p.value}" if p.value else ""
         return f"Add {p.ref.strip()}{value} to the schematic"
+
+
+class _AddParts:
+    type = "part.addMany"
+
+    def apply(self, doc: PerfDocument, p: AddPartsPayload, ctx: CommandContext) -> PerfDocument:
+        if not p.parts:
+            raise CommandError(
+                "empty-batch",
+                "part.addMany needs at least one part; an empty batch would put a no-op on "
+                "the undo stack.",
+            )
+        for one in p.parts:
+            doc = add_part.apply(doc, one, ctx)
+        return doc
+
+    def describe(self, p: AddPartsPayload, doc: PerfDocument) -> str:
+        return p.label or f"Add {len(p.parts)} part(s) to the schematic"
 
 
 class _UpdatePart:
@@ -3072,6 +3105,7 @@ update_component: CommandDefinition[UpdateComponentPayload] = _UpdateComponent()
 delete_component: CommandDefinition[DeleteComponentPayload] = _DeleteComponent()
 unplace_component: CommandDefinition[UnplaceComponentPayload] = _UnplaceComponent()
 add_part: CommandDefinition[AddPartPayload] = _AddPart()
+add_parts: CommandDefinition[AddPartsPayload] = _AddParts()
 update_part: CommandDefinition[UpdatePartPayload] = _UpdatePart()
 delete_part: CommandDefinition[DeletePartPayload] = _DeletePart()
 place_parts: CommandDefinition[PlacePartsPayload] = _PlaceParts()
@@ -3124,6 +3158,7 @@ STANDARD_COMMANDS: tuple[CommandDefinition[Any], ...] = (
     delete_component,
     unplace_component,
     add_part,
+    add_parts,
     update_part,
     delete_part,
     place_parts,

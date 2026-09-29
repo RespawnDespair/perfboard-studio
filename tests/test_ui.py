@@ -9172,10 +9172,14 @@ def test_a_truncated_netlist_is_reported_in_a_dialog_not_a_traceback(tmp_path, m
         _close(window)
 
 
-def test_an_imported_netlist_places_real_parts_with_their_values(tmp_path, monkeypatch) -> None:
-    """The window places what ``parsers.kicad_parts`` read -- the catalog's BC547 with its
-    value and pin names, the LED renumbered anode to pin 1 -- as one undo step, and says what
-    it renumbered."""
+def test_an_imported_netlist_puts_real_parts_in_the_design_with_their_values(
+    tmp_path, monkeypatch
+) -> None:
+    """The window adds what ``parsers.kicad_parts`` read -- the catalog's BC547 with its
+    value and pin names, the LED renumbered anode to pin 1 -- to the DESIGN, as one undo
+    step, and says what it renumbered. Not to the board: that is what choosing a board and
+    placing are for, and a netlist used to skip both by landing on whatever board the
+    document happened to open on."""
     from PySide6.QtWidgets import QMessageBox
 
     from perfboard_studio.commands import create_empty_document
@@ -9198,15 +9202,18 @@ def test_an_imported_netlist_places_real_parts_with_their_values(tmp_path, monke
     window = _window_on(doc)
     try:
         window.import_netlist_from(netlist)
-        parts = {c.ref: c for c in window.bus.document.components}
+        assert window.bus.document.components == ()
+        parts = {p.ref: p for p in window.bus.document.parts}
         assert parts["Q1"].value == "BC547" and parts["Q1"].footprint_id == "to92"
         assert dict(parts["Q1"].pin_names)["1"] == "C"
         assert parts["U2"].footprint_id == "to220"
         led = next(n for n in window.bus.document.nets if n.name == "+5V")
         assert ("D1", "1") in {(node.component_ref, node.pin) for node in led.nodes}
         assert any("Q1: pins renumbered" in text for text in shown)
+        assert window.schematic_is_showing()
+        assert window.workflow_bar.next_key == "board"
         window.bus.undo()
-        assert window.bus.document.components == ()
+        assert window.bus.document.parts == ()
     finally:
         _close(window)
 

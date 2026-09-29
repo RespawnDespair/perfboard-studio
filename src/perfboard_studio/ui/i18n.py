@@ -1344,25 +1344,9 @@ TURKISH: Mapping[str, str] = {
     "Some connections could not be made": "Bazı bağlantılar yapılamadı",
     "Some connections could not be routed": "Bazı bağlantılar yönlendirilemedi",
     "Imported with warnings": "Uyarılarla içe aktarıldı",
-    "Place the missing parts?": "Eksik parçalar yerleştirilsin mi?",
     "Imported {count} net(s) from {name}": "{name} dosyasından {count} net içe aktarıldı",
     "with warnings:": "uyarılar:",
     "… and {count} more": "… ve {count} tane daha",
-    "The netlist names {count} part(s) that are not on the board yet:\n  {refs}\n\n"
-    "Place them beside the parts they connect to, to move from there? {catalog} "
-    "are known parts from the catalog, {kicad} were matched by their KiCad "
-    "footprint, and {guess} are guessed from their reference and pin count — "
-    "check those.": (
-        "Netlist'te kartta henüz olmayan {count} parça var:\n  {refs}\n\n"
-        "Bağlandıkları parçaların yanına yerleştirilsinler mi? Oradan taşıyabilirsiniz. "
-        "{catalog} tanesi katalogdan bilinen parça, {kicad} tanesi KiCad footprint'inden "
-        "eşlendi, {guess} tanesi referansından ve pin sayısından tahmin edildi; onları "
-        "kontrol edin."
-    ),
-    "Placed {count} part(s)": "{count} parça yerleştirildi",
-    "; {count} could not be placed and will show in LVS as unplaced": (
-        "; {count} tanesi yerleştirilemedi, LVS'de yerleşmemiş olarak görünecek"
-    ),
     # -- the status bar and the panels' summaries ---------------------------------
     # These were the last English left on a Turkish screen: the menus were translated
     # and the numbers under them were not.
@@ -1795,6 +1779,13 @@ TURKISH: Mapping[str, str] = {
     "Add a Part…": "Parça Ekle…",
     "Choose a Board…": "Kart Seç…",
     "Connect the Pins": "Pinleri Bağla",
+    "{count} part(s) are in the design: {catalog} known from the catalog, {kicad} "
+    "matched by their KiCad footprint, {guess} guessed from their reference -- check "
+    "those. Next: choose a board and place them.": (
+        "{count} parça tasarımda: {catalog} tanesi katalogdan tanındı, {kicad} tanesi KiCad "
+        "footprint'inden eşleşti, {guess} tanesi referansından tahmin edildi -- onları "
+        "kontrol edin. Sıradaki: bir kart seçip parçaları yerleştirin."
+    ),
     # -- the welcome dialog --------------------------------------------------------
     "Start": "Başla",
     "Examples": "Örnekler",

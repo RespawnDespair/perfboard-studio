@@ -249,9 +249,10 @@ Otomatik Yerleştir** (`Ctrl+Shift+A`), yönlendirme için **`Ctrl+R`**, ardınd
 Rehberini Dışa Aktar** (`Ctrl+B`). Bu akışın hiçbir yerinde KiCad yok.
 
 Devre zaten varsa ilk üç adım yerine `examples/ne555-astable.net` üzerinde **Dosya → KiCad
-Netlist İçe Aktar** ile başlayın ve önerilen yerleşimi kabul edin: her parça, değerinin ve
-KiCad footprint'inin söylediği şey olarak, bağlandığı parçaların yanına gelir. Yukarıdaki
-ekran görüntüleri bu sıradan çıkıyor — bkz. [`tools/screenshots.py`](./tools/screenshots.py).
+Netlist İçe Aktar** ile başlayın: her parça, değerinin ve KiCad footprint'inin söylediği şey
+olarak tasarıma gelir; oradan sonrasını pencerenin üstündeki adım çubuğu götürür — **Kart
+Seç**, **Kart Üzerine Yerleştir**, yönlendirme, kontrol, montaj. Yukarıdaki ekran görüntüleri
+bu sıradan çıkıyor — bkz. [`tools/screenshots.py`](./tools/screenshots.py).
 
 ### Ya da hazır bir kart açın
 

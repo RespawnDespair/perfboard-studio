@@ -121,6 +121,7 @@ from perfboard_studio.commands import (
     AddMountingHolesPayload,
     AddNetPayload,
     AddPartPayload,
+    AddPartsPayload,
     AddSheetNotePayload,
     ApplyBoardPresetPayload,
     AutoSymbolsPayload,
@@ -141,7 +142,6 @@ from perfboard_studio.commands import (
     MoveComponentPayload,
     MoveSymbolsPayload,
     PartPlacement,
-    PlaceBlockPayload,
     PlacePartsPayload,
     RenameDocumentPayload,
     RotateComponentPayload,
@@ -238,7 +238,6 @@ from perfboard_studio.model import (
     SymbolPlacement,
     normalized_pin_names,
 )
-from perfboard_studio.netlist_import import import_placements
 from perfboard_studio.parsers.kicad import infer_net_class, parse_kicad_netlist
 from perfboard_studio.parsers.kicad_parts import (  # noqa: F401 - guess_footprint_id re-exported
     NetlistPlan,
@@ -10329,66 +10328,67 @@ class MainWindow(QMainWindow):
                 f"{note}, {t('with warnings:')}\n\n{shown}{more}",
             )
         self.statusBar().showMessage(note, 8000)
-        self._offer_to_place_missing_parts(plan)
+        self._add_imported_parts_to_the_design(plan)
 
-    def _offer_to_place_missing_parts(self, plan: NetlistPlan) -> None:
-        """Offer a first-pass placement for the parts the netlist names but the board lacks.
+    def _add_imported_parts_to_the_design(self, plan: NetlistPlan) -> None:
+        """Put the parts the netlist names, and this document lacks, into the DESIGN.
 
-        Each arrives as ``parsers.kicad_parts`` read it -- the catalog part its value names,
-        the footprint its KiCad footprint names, or, failing both, a guess from its reference
-        letter and pin count -- with its value and pin names. Never trusted: the parts land
-        beside what they connect to (``netlist_import``) for the user to drag, rotate and
-        lock, and the whole lot goes through ONE ``block.place`` so it undoes in one step.
+        IT USED TO PUT THEM ON THE BOARD, beside the parts they connect to, after asking.
+        That skipped two of the steps across the top of the window at once: the board was
+        never chosen -- they landed on whatever board the document opened on -- and the
+        placement was a first pass nobody would keep, on a board nobody picked. A netlist is
+        a circuit, and a circuit belongs on the sheet; from there Choose a Board tries every
+        stock size with the circuit laid out on it, and Place on the Board arranges it on
+        the one chosen, leaving anything already on the board where it is.
+
+        Each part arrives as ``parsers.kicad_parts`` read it -- the catalog part its value
+        names, the footprint its KiCad footprint names, or, failing both, a guess from its
+        reference letter and pin count -- with its value and pin names, and all of them in
+        ONE ``part.addMany``, so the import undoes in one step. Nothing is asked: adding
+        to the design moves nothing that was already anywhere.
         """
-        wanted = list(plan.suggestions.values())
+        # In reference order, R2 before R10, so the sheet and the undo label read in order.
+        wanted = sorted(
+            plan.suggestions.values(),
+            key=lambda s: (re.sub(r"\d+", "", s.ref), int(re.sub(r"\D", "", s.ref) or 0), s.ref),
+        )
         if not wanted:
             return
-        refs = sorted(s.ref for s in wanted)
-        counts = {
-            source: sum(s.source == source for s in wanted)
-            for source in ("catalog", "kicad", "guess")
-        }
-        answer = QMessageBox.question(
-            self,
-            t("Place the missing parts?"),
-            t(
-                "The netlist names {count} part(s) that are not on the board yet:\n  {refs}\n\n"
-                "Place them beside the parts they connect to, to move from there? {catalog} "
-                "are known parts from the catalog, {kicad} were matched by their KiCad "
-                "footprint, and {guess} are guessed from their reference and pin count — "
-                "check those."
-            ).format(
-                count=len(wanted),
-                refs=", ".join(refs[:14]) + ("…" if len(refs) > 14 else ""),
-                catalog=counts["catalog"],
-                kicad=counts["kicad"],
-                guess=counts["guess"],
-            ),
-        )
-        if answer != QMessageBox.StandardButton.Yes:
-            return
-        specs, left_out = import_placements(wanted, self.bus.document, self.lookup)
-        if not specs:
-            return
-        # ONE command, which is what the docstring above has always promised and what
-        # this could not deliver until block.place existed: dispatched one at a time, a
-        # thirty-part netlist took thirty presses of Ctrl+Z to take back, and each press
-        # left a board that was half-imported.
         result = self.bus.dispatch(
-            "block.place",
-            PlaceBlockPayload(
-                components=tuple(specs), label=f"Place {len(specs)} imported part(s)"
+            "part.addMany",
+            AddPartsPayload(
+                parts=tuple(
+                    AddPartPayload(
+                        ref=suggestion.ref,
+                        footprint_id=suggestion.footprint_id,
+                        value=suggestion.value,
+                        pin_names=suggestion.pin_names,
+                        symbol=suggestion.symbol,
+                    )
+                    for suggestion in wanted
+                ),
+                label=f"Add {len(wanted)} imported part(s)",
             ),
         )
         if not result.ok:
             self.statusBar().showMessage(f"[{result.code}] {result.message}", 10000)
             return
-        message = t("Placed {count} part(s)").format(count=len(specs))
-        if left_out:
-            message += t("; {count} could not be placed and will show in LVS as unplaced").format(
-                count=len(left_out)
-            )
-        self.statusBar().showMessage(message, 10000)
+        counts = {
+            source: sum(s.source == source for s in wanted)
+            for source in ("catalog", "kicad", "guess")
+        }
+        self.show_schematic()
+        message = t(
+            "{count} part(s) are in the design: {catalog} known from the catalog, {kicad} "
+            "matched by their KiCad footprint, {guess} guessed from their reference -- check "
+            "those. Next: choose a board and place them."
+        ).format(
+            count=len(wanted),
+            catalog=counts["catalog"],
+            kicad=counts["kicad"],
+            guess=counts["guess"],
+        )
+        self.statusBar().showMessage(message, 15000)
 
     def on_save(self) -> bool:
         """Save, returning whether it happened. The bool is what the close guard needs."""
