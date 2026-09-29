@@ -6388,14 +6388,18 @@ def test_a_view_is_put_away_from_the_panels_submenu() -> None:
     from perfboard_studio.ui import i18n
 
     window = _window_on(_golden_document("ne555"))
-    submenus = [
+    # The actions are HELD, not walked as temporaries. Under PySide6 6.10 the wrapper
+    # ``QAction.menu()`` hands back dies with the action's own wrapper, and the dead one
+    # stays cached for that menu: collecting the submenus out of a comprehension left a
+    # list of menus every one of which raised "already deleted" -- while the menus
+    # themselves were alive and well in the window.
+    tops = window.menuBar().actions()
+    entries = [entry for top in tops if top.menu() is not None for entry in top.menu().actions()]
+    panels = next(
         entry.menu()
-        for top in window.menuBar().actions()
-        if top.menu() is not None
-        for entry in top.menu().actions()
-        if entry.menu() is not None
-    ]
-    panels = next(menu for menu in submenus if menu.title() == i18n.t("Panels"))
+        for entry in entries
+        if entry.menu() is not None and entry.menu().title() == i18n.t("Panels")
+    )
     toggles = panels.actions()
     assert window.act_board_panel in toggles and window.act_schematic in toggles
     assert all(toggle.isCheckable() for toggle in toggles)
