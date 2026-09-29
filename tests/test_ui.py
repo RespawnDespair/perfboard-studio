@@ -4350,6 +4350,52 @@ def test_a_refused_new_net_leaves_the_document_alone(monkeypatch) -> None:
     _close(window)
 
 
+def test_a_net_typed_as_gnd_is_a_ground_net_unless_somebody_says_otherwise() -> None:
+    """A GND left a "signal" is drawn as wires to every part on the sheet instead of as
+    ground symbols, and nobody typing three letters into this dialog is looking at the
+    combo under them. The name picks the class until the combo is touched."""
+    from perfboard_studio.ui.main import NetDialog
+
+    dialog = NetDialog()
+    dialog.name.textEdited.emit("GND")
+    assert dialog.values()[1] == "ground"
+    dialog.name.textEdited.emit("+5V")
+    assert dialog.values()[1] == "power"
+    dialog.name.textEdited.emit("OUT")
+    assert dialog.values()[1] == "signal"
+
+    # The first touch of the combo hands the decision over for good.
+    dialog.net_class.setCurrentIndex(dialog.net_class.findData("power"))
+    dialog.net_class.activated.emit(dialog.net_class.currentIndex())
+    dialog.name.textEdited.emit("GND")
+    assert dialog.values()[1] == "power"
+
+    # A GND somebody deliberately made a signal stays one when it is renamed.
+    deliberate = NetDialog(name="GND", net_class="signal")
+    deliberate.name.textEdited.emit("AGND")
+    assert deliberate.values()[1] == "signal"
+
+
+def test_renaming_a_net_to_gnd_makes_it_a_ground_net(monkeypatch) -> None:
+    """The sheet's auto-named N3, renamed GND from its wire's menu, was a signal called GND:
+    drawn as wires, routed last. Renamed by the dialog's rule -- only while the class still
+    says what the old name implied."""
+    from PySide6.QtWidgets import QInputDialog
+
+    window = _window_on(_load_dense())
+    net = next(n for n in window.bus.document.nets if n.net_class == "signal")
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("GND2", True))
+    window._rename_net(net.id)
+    renamed = next(n for n in window.bus.document.nets if n.id == net.id)
+    assert (renamed.name, renamed.net_class) == ("GND2", "signal")  # GND2 names no class
+
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("VCC_AUX", True))
+    window._rename_net(net.id)
+    renamed = next(n for n in window.bus.document.nets if n.id == net.id)
+    assert (renamed.name, renamed.net_class) == ("VCC_AUX", "power")
+    _close(window)
+
+
 def test_the_nets_panel_lists_each_nets_pins_so_they_can_be_taken_off_it() -> None:
     """The panel was a readout; a pin has to be visible to be selected, and selectable to
     be disconnected."""

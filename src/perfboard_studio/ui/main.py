@@ -237,7 +237,7 @@ from perfboard_studio.model import (
     normalized_pin_names,
 )
 from perfboard_studio.netlist_import import import_placements
-from perfboard_studio.parsers.kicad import parse_kicad_netlist
+from perfboard_studio.parsers.kicad import infer_net_class, parse_kicad_netlist
 from perfboard_studio.parsers.kicad_parts import (  # noqa: F401 - guess_footprint_id re-exported
     NetlistPlan,
     guess_footprint_id,
@@ -1291,6 +1291,17 @@ class NetDialog(QDialog):
         if index >= 0:
             self.net_class.setCurrentIndex(index)
         form.addRow(t("Class"), self.net_class)
+        # THE NAME SAYS THE CLASS until somebody says otherwise. A net typed as GND and left
+        # a "signal" is drawn as wires to every part on the sheet instead of as ground
+        # symbols -- the one difference between a readable sheet and a hairball -- and
+        # nobody opening this dialog to type three letters is thinking about the combo
+        # under it. The rule is the KiCad import's (``infer_net_class``), so a net named
+        # here and one imported are classed alike. Only while the class still says what the
+        # previous name implied: a GND somebody deliberately made a signal stays one, and
+        # the first touch of the combo hands the decision over for good.
+        self._class_follows_name = net_class == infer_net_class(name)
+        self.net_class.activated.connect(self._on_class_chosen)
+        self.name.textEdited.connect(self._on_name_edited)
 
         # Zero is the "not stated" position rather than a value, because a net carrying
         # no current is exactly what saying nothing means.
@@ -1341,6 +1352,16 @@ class NetDialog(QDialog):
         layout.addLayout(form)
         layout.addWidget(buttons)
         self.setLayout(layout)
+
+    def _on_class_chosen(self, _index: int) -> None:
+        self._class_follows_name = False
+
+    def _on_name_edited(self, text: str) -> None:
+        if not self._class_follows_name:
+            return
+        index = self.net_class.findData(infer_net_class(text))
+        if index >= 0:
+            self.net_class.setCurrentIndex(index)
 
     def values(self) -> tuple[str, NetClass, float | None, float | None]:
         current = self.current.value()
@@ -5847,8 +5868,11 @@ class MainWindow(QMainWindow):
         node = NetNode(component_ref=ref, pin=pin)
         net = next((n for n in document.nets if n.name == name), None)
         if net is None:
+            # Classed by its name, as ``NetDialog`` does: a pin labelled GND is a ground
+            # symbol on the sheet, not the start of a wire to every other GND pin.
             result = self.bus.dispatch(
-                "net.add", AddNetPayload(name=name, net_class="signal", nodes=(node,))
+                "net.add",
+                AddNetPayload(name=name, net_class=infer_net_class(name), nodes=(node,)),
             )
         elif node in net.nodes:
             self.statusBar().showMessage(
@@ -6331,7 +6355,18 @@ class MainWindow(QMainWindow):
         chosen = chosen.strip()
         if not ok or not chosen or chosen == net.name:
             return
-        result = self.bus.dispatch("net.update", UpdateNetPayload(id=net_id, name=chosen))
+        # N3 renamed GND becomes a ground net, by NetDialog's rule: only while the class
+        # still says what the old name implied, so a deliberate choice is never undone.
+        follows = net.net_class == infer_net_class(net.name)
+        implied = infer_net_class(chosen)
+        result = self.bus.dispatch(
+            "net.update",
+            UpdateNetPayload(
+                id=net_id,
+                name=chosen,
+                net_class=implied if follows and implied != net.net_class else None,
+            ),
+        )
         if not result.ok:
             self.statusBar().showMessage(f"[{result.code}] {result.message}", 8000)
             return
