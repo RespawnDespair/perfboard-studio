@@ -300,6 +300,7 @@ from .view2d import (
     picture_beside_the_pointer,
 )
 from .viewsch import SchematicView, SheetTool
+from .workflow import StepKey, WorkflowBar, WorkflowFacts, workflow_steps
 
 #: How close a click has to land to a drawn wire to be about that wire, in millimetres of
 #: sheet. The panel's own ``PICK_MM``, which is what the click that opened the menu was
@@ -418,7 +419,7 @@ WINDOW_STATE_KEY = "session/windowState"
 #: were left over, off the side of the window in the case that found this. Refusing the old
 #: state outright costs one person one rearranged window, once; honouring it costs them a
 #: window with two views missing from it.
-WINDOW_STATE_VERSION = 2
+WINDOW_STATE_VERSION = 3
 BOARD_COLOUR_KEY = "session/boardColour"
 RATSNEST_KEY = "session/showRatsnest"
 RULERS_KEY = "session/showRulers"
@@ -3075,6 +3076,10 @@ class MainWindow(QMainWindow):
 
         #: Set once the user has ever placed a part, in any session. See _refresh_empty_hint.
         self._has_placed_a_part = _stored_bool(app_settings(), HAS_PLACED_KEY, False)
+        #: Whether somebody chose the board this document is on, in this window -- see
+        #: ``workflow.WorkflowFacts.board_chosen``. Not stored: a board with parts on it
+        #: has been chosen by definition, and one without has been chosen by nobody yet.
+        self._board_chosen = False
 
         #: The update check. Built on first use and never in this constructor: the test
         #: suite builds a great many windows and none of them should reach the network.
@@ -3160,6 +3165,7 @@ class MainWindow(QMainWindow):
 
         # Docks before menus: the View menu offers each dock's own toggleViewAction, so the
         # docks have to exist for the menu to be able to name them.
+        self._build_workflow_strip()
         self._build_update_strip()
         self._build_board_dock()
         self._build_schematic_dock()
@@ -3171,6 +3177,8 @@ class MainWindow(QMainWindow):
         self._arrange_docks()
         self._build_menu()
         self._build_toolbar()
+        self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.workflow_strip)
         self._build_status_bar()
 
         self._subscribe_bus()
@@ -3235,6 +3243,114 @@ class MainWindow(QMainWindow):
     #: zero while any view panel is open, which is how the docks get the whole window; this
     #: is what the cap is lifted back to when they are all shut.
     UNCAPPED = (1 << 24) - 1
+
+    def _build_workflow_strip(self) -> None:
+        """The six steps across the top of the window, on a row of their own.
+
+        A TOOLBAR ROW AND NOT A DOCK, and the dock was tried first. A window whose central
+        widget is capped to nothing hands its spare height to whichever dock area can take
+        it, and a top-area dock made the TOP area that one: the strip stayed 48 px tall and
+        the area around it grew to a third of the window, empty, above a board squeezed
+        into the rest. A toolbar area is exactly as tall as its toolbars.
+
+        What a toolbar costs is the update strip's lesson (``_build_update_strip``): it
+        lays its widgets out itself and hides one that does not fit. Here that is the
+        right answer rather than a trap -- a window narrower than six steps shows them
+        behind the toolbar's own overflow arrow -- and nothing reads the bar's visibility.
+        Not movable, not closable: a step bar that can be put away is the order of work
+        made optional again.
+        """
+        self.workflow_bar = WorkflowBar(self)
+        # Filled once before it is shown, so it is measured with its two lines of text in
+        # it rather than as an empty row of buttons.
+        self.workflow_bar.set_steps(workflow_steps(self.workflow_facts()))
+        self.workflow_bar.stepClicked.connect(self.on_workflow_step)
+        self.workflow_bar.nextClicked.connect(self.on_workflow_next)
+        strip = QToolBar(t("Steps"), self)
+        strip.setObjectName("workflowToolbar")
+        strip.setMovable(False)
+        strip.setFloatable(False)
+        # Not in the toolbar area's context menu, which is where a user would hide it.
+        strip.toggleViewAction().setVisible(False)
+        strip.setContentsMargins(0, 0, 0, 0)
+        strip.addWidget(self.workflow_bar)
+        self.workflow_strip = strip
+
+    def workflow_facts(self) -> WorkflowFacts:
+        """What the step bar is measured against, from what the last refresh computed."""
+        document = self.bus.document
+        board = document.board
+        preset = _matching_preset(board)
+        grid = f"{board.cols} × {board.rows}"
+        label = f"{preset.name} · {grid}" if preset is not None else grid
+        lvs = self._last_lvs
+        problems = lvs.summary.opens + lvs.summary.shorts if lvs is not None else 0
+        return WorkflowFacts(
+            parts_off_board=len(document.parts),
+            parts_on_board=len(document.components),
+            nets=sum(1 for net in document.nets if len(net.nodes) >= 2),
+            board_label=label,
+            board_chosen=self._board_chosen,
+            unrouted=summarize(self._last_ratsnest).links,
+            drc_errors=sum(1 for v in self._last_violations if v.severity == "error"),
+            drc_warnings=sum(1 for v in self._last_violations if v.severity == "warning"),
+            lvs_problems=problems,
+        )
+
+    def _refresh_workflow(self) -> None:
+        bar = getattr(self, "workflow_bar", None)
+        if bar is not None:
+            bar.set_steps(workflow_steps(self.workflow_facts()))
+
+    def on_workflow_step(self, key: str) -> None:
+        """A step pressed: go where that step is done. Nothing is changed by going there."""
+        step = cast(StepKey, key)
+        if step == "circuit":
+            self.show_schematic()
+        elif step == "board":
+            self.on_choose_board()
+        elif step in ("place", "route"):
+            self.show_board()
+        elif step == "check":
+            self.show_board()
+            self.dock_drc.show()
+            self.dock_drc.raise_()
+        else:
+            self.dock_guide.show()
+            self.dock_guide.raise_()
+
+    def on_workflow_next(self, key: str) -> None:
+        """The Next button: the step's own action, reached from where it already was."""
+        step = cast(StepKey, key)
+        if step == "circuit":
+            self.show_schematic()
+            self.on_schematic_add_part()
+        elif step == "board":
+            self.on_choose_board()
+        elif step == "place":
+            self.show_board()
+            self.on_schematic_place_all()
+        elif step == "route":
+            self.show_board()
+            self.on_autoroute_all()
+        else:
+            self.on_workflow_step(step)
+
+    def on_choose_board(self) -> None:
+        """Which board this goes on: tried against the circuit when there is one to try.
+
+        With parts in the design and none on the board yet, the answer is the same question
+        placing them asks (``_offer_a_board_size``) -- every stock size with the circuit
+        actually laid out on it. Otherwise it is the board's own setup. Either way, a board
+        somebody picked is marked chosen, so the step is done and placing does not ask again.
+        """
+        document = self.bus.document
+        if document.parts and not document.components:
+            if self._offer_a_board_size(document, always=True):
+                self._board_chosen = True
+        elif self.on_board_setup():
+            self._board_chosen = True
+        self._refresh_workflow()
 
     def _build_update_strip(self) -> None:
         """The update bar, above the panels rather than in among them.
@@ -6508,7 +6624,11 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(t("Every part in the design is already on the board."), 6000)
             return
 
-        if not document.components and not self._offer_a_board_size(document):
+        if (
+            not document.components
+            and not self._board_chosen
+            and not self._offer_a_board_size(document)
+        ):
             return
         document = self.bus.document  # The board may have changed under us.
 
@@ -6545,18 +6665,20 @@ class MainWindow(QMainWindow):
         )
         self._sync_schematic_highlight()
 
-    def _offer_a_board_size(self, document: PerfDocument) -> bool:
+    def _offer_a_board_size(self, document: PerfDocument, always: bool = False) -> bool:
         """Ask which stock board the circuit is going on. False means the user cancelled.
 
         Silent when nothing can be suggested -- a design of parts the registry does not
         know, or a board family with no stock sizes -- because a dialog with nothing in it
-        is a dialog that only wastes a decision.
+        is a dialog that only wastes a decision. Unless the user ASKED which board
+        (``always``, the Board step): then the answer is the board's own setup, since
+        silence in reply to a question reads as a button that does nothing.
         """
         suggestions = suggest_boards(
             document.board, design_entries(document), document.nets, self.lookup
         )
         if not suggestions:
-            return True
+            return self.on_board_setup() if always else True
         dialog = BoardSizeDialog(
             suggestions, document.board, recommended_board(suggestions), self
         )
@@ -7250,6 +7372,7 @@ class MainWindow(QMainWindow):
         self._refresh_drc_panel(self._last_violations, self._last_lvs)
         self._refresh_nets_panel(self._last_ratsnest)
         self._refresh_status()
+        self._refresh_workflow()
         # After the rebuild, so it reads the fresh document: a rotate has to show its new
         # angle, and a deleted part has to stop being described as selected.
         self._refresh_selection_state()
@@ -8995,8 +9118,9 @@ class MainWindow(QMainWindow):
             8000,
         )
 
-    def on_board_setup(self) -> None:
-        """Change the grid or the substrate of the board already open.
+    def on_board_setup(self) -> bool:
+        """Change the grid or the substrate of the board already open. True when the
+        dialog was accepted and the board it describes is the board now open.
 
         Through ``board.set`` like everything else, so shrinking a board that still has a
         part hanging off the new edge comes back as a refusal naming the part, rather
@@ -9004,11 +9128,11 @@ class MainWindow(QMainWindow):
         """
         dialog = BoardSetupDialog(self.bus.document.board, self, title=t("Board Setup"))
         if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
+            return False
         board = dialog.board()
         features = dialog.preset_features()
         if board == self.bus.document.board and features is None:
-            return
+            return True
         if features is None:
             result = self.bus.dispatch("board.set", SetBoardPayload(board=board))
         else:
@@ -9029,8 +9153,9 @@ class MainWindow(QMainWindow):
                 f"[{result.code}] {result.message}\n\n"
                 + t("Move or delete whatever is in the way and try again."),
             )
-            return
+            return False
         self.view.fit_board()
+        return True
 
     def on_rename_board(self) -> None:
         """Name the board -- the title its guide, its schematic and its project carry.
@@ -9537,6 +9662,9 @@ class MainWindow(QMainWindow):
         self._schematic_ref = None
         self._described_here.clear()
         self._place_seed = 0
+        # Nobody has chosen the NEW document's board -- unless it has parts on it, which
+        # ``workflow_steps`` already counts as chosen.
+        self._board_chosen = False
 
     # -- nets, entered by hand -----------------------------------------------
     #

@@ -1785,6 +1785,53 @@ TURKISH: Mapping[str, str] = {
         "6 pinli ICSP başlığı takılıysa daha yüksekte durur. Kartın üstündekilerin "
         "yüksekliği tahmindir, rengi de öyle; pinler, sıralar ve kart çevresi ölçülmüştür."
     ),
+    # -- the step bar (ui/workflow.py) -----------------------------------------
+    "Circuit": "Devre",
+    "Placement": "Yerleşim",
+    "Wiring": "Yönlendirme",
+    "Verify": "Kontrol",
+    "Build": "Montaj",
+    "Steps": "Adımlar",
+    "Add a Part…": "Parça Ekle…",
+    "Choose a Board…": "Kart Seç…",
+    "See the Findings": "Bulguları Gör",
+    "Open the Build Guide": "Montaj Rehberini Aç",
+    "no parts yet": "henüz parça yok",
+    "{parts} part(s) · {nets} net(s)": "{parts} parça · {nets} net",
+    "nothing to place": "yerleştirilecek parça yok",
+    "{placed}/{total} on the board": "{placed}/{total} kartta",
+    "nothing to wire yet": "henüz bağlanacak bir şey yok",
+    "{count} connection(s) left": "{count} bağlantı kaldı",
+    "all joined": "hepsi bağlı",
+    "nothing to check yet": "henüz denetlenecek bir şey yok",
+    "{errors} error(s) · {warnings} warning(s)": "{errors} hata · {warnings} uyarı",
+    "guide · 3D": "rehber · 3B",
+    "What the board is: its parts and what joins them. Drawn on the sheet, or by "
+    "placing parts on the board and connecting their pins.": (
+        "Kartın ne olduğu: parçaları ve onları neyin birleştirdiği. Şemada çizilir ya da "
+        "parçalar karta konup pinleri bağlanarak girilir."
+    ),
+    "Which perfboard it goes on. Chosen before the parts go down, while the size is "
+    "still free: every stock size is tried with your circuit laid out on it.": (
+        "Devrenin hangi delikli karta gideceği. Parçalar yerleşmeden, boyut hâlâ serbestken "
+        "seçilir: satılan her boy, devreniz üzerine gerçekten yerleştirilerek denenir."
+    ),
+    "Where each part goes. Arranged for you, then yours to move.": (
+        "Her parçanın nereye gideceği. Sizin için dizilir, sonra istediğiniz gibi taşırsınız."
+    ),
+    "What joins the pins on the board: solder traces, wires and jumpers. Autoroute "
+    "lays them; the Draw menu lays them by hand.": (
+        "Karttaki pinleri neyin birleştirdiği: lehim yolları, teller ve jumper'lar. Oto "
+        "Yönlendir bunları döşer; Çiz menüsüyle elle döşenir."
+    ),
+    "Whether it can be built as drawn: design rules (DRC) and whether the board is "
+    "the circuit (LVS).": (
+        "Çizildiği gibi kurulup kurulamayacağı: tasarım kuralları (DRC) ve kartın devreyle "
+        "aynı olup olmadığı (LVS)."
+    ),
+    "The soldering guide, step by step, with the board in 3D beside it.": (
+        "Adım adım lehimleme rehberi, yanında kartın 3B görünümüyle."
+    ),
 }
 
 CATALOGUES: Mapping[str, Mapping[str, str]] = {"tr": TURKISH}

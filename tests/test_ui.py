@@ -7013,6 +7013,76 @@ def _add(window, ref, footprint_id, value=""):
     window._refresh_schematic_panel()
 
 
+# ---------------------------------------------------------------------------
+# The step bar (ui/workflow.py) in the window
+# ---------------------------------------------------------------------------
+
+
+def test_the_step_bar_follows_the_document() -> None:
+    window = _blank_window()
+    try:
+        assert window.workflow_bar.next_key == "circuit"
+        _add(window, "R1", "r-axial-3")
+        _add(window, "R2", "r-axial-3")
+        from perfboard_studio.commands import AddNetPayload
+        from perfboard_studio.model import NetNode
+
+        result = window.bus.dispatch(
+            "net.add",
+            AddNetPayload(
+                name="A",
+                nodes=(NetNode(component_ref="R1", pin="2"), NetNode(component_ref="R2", pin="1")),
+            ),
+        )
+        assert result.ok
+        assert window.workflow_bar.next_key == "board"
+        board_button = window.workflow_bar.buttons["board"]
+        assert board_button.property("status") == "current"
+    finally:
+        _close(window)
+
+
+def test_placing_after_choosing_a_board_does_not_ask_again(monkeypatch) -> None:
+    """The Board step and the placement both ask which board; asked once at the step, the
+    placement uses the answer rather than putting the same question up a second time."""
+    from perfboard_studio.ui import main as main_module
+
+    window = _blank_window()
+    try:
+        _add(window, "R1", "r-axial-3")
+        asked: list[bool] = []
+
+        def offer(self, document, always=False):
+            asked.append(always)
+            return True
+
+        monkeypatch.setattr(main_module.MainWindow, "_offer_a_board_size", offer)
+        window.on_choose_board()
+        assert asked == [True]
+        assert window._board_chosen
+
+        monkeypatch.setattr(
+            main_module.MainWindow, "_run_planner", lambda self, label, work: None
+        )
+        window.on_schematic_place_all()
+        assert asked == [True], "placing asked about the board a second time"
+    finally:
+        _close(window)
+
+
+def test_each_step_goes_where_it_is_done() -> None:
+    window = _blank_window()
+    try:
+        window.on_workflow_step("circuit")
+        assert window.schematic_is_showing()
+        window.on_workflow_step("place")
+        assert window._raised_dock is window.dock_board
+        window.on_workflow_step("check")
+        assert not window.dock_drc.isHidden()
+    finally:
+        _close(window)
+
+
 def test_a_circuit_can_be_drawn_before_the_board_has_anything_on_it() -> None:
     window = _blank_window()
     _add(window, "U1", "dip-8", "NE555")
