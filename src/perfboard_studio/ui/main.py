@@ -291,7 +291,7 @@ from .i18n import language as current_language
 from .i18n import set_language, t
 from .partnames import footprint_label
 from .project import write_project
-from .theme import ERROR, OK, STYLESHEET, TEXT_DIM, WARNING
+from .theme import ACCENT, ERROR, OK, STYLESHEET, TEXT_DIM, WARNING
 from .view2d import (
     FOOTPRINT_MIME,
     BoardScene,
@@ -302,7 +302,14 @@ from .view2d import (
     picture_beside_the_pointer,
 )
 from .viewsch import SchematicView, SheetTool
-from .workflow import StepKey, WorkflowBar, WorkflowFacts, workflow_steps
+from .workflow import (
+    STEP_ORDER,
+    StepKey,
+    WorkflowBar,
+    WorkflowFacts,
+    step_title,
+    workflow_steps,
+)
 
 #: How close a click has to land to a drawn wire to be about that wire, in millimetres of
 #: sheet. The panel's own ``PICK_MM``, which is what the click that opened the menu was
@@ -2664,6 +2671,49 @@ def _plain(label: str) -> str:
     return label.replace("&", "").removesuffix("…").strip()
 
 
+#: What the welcome dialog was asked to do.
+type WelcomeChoice = Literal[
+    "new-circuit", "new-project", "open", "open-project", "import", "recent", "example"
+]
+
+
+def example_boards() -> list[tuple[Path, str]]:
+    """The shipped examples a person can open, with one line saying what each one is.
+
+    A board file directly in ``examples/`` and a PROJECT folder beside them -- the one
+    example that is a circuit drawn and not yet built, which is the one a newcomer most
+    needs to see. The line is read out of the document (its parts and its board), because
+    "ne555-astable" says nothing about whether it is eight parts or eighty.
+    """
+    folder = examples_dir()
+    if folder is None:
+        return []
+    found: list[Path] = sorted(folder.glob("*.perf"))
+    for entry in sorted(folder.iterdir()):
+        if entry.is_dir():
+            inner = sorted(entry.glob("*.perf"))
+            if len(inner) == 1:
+                found.append(inner[0])
+    listed: list[tuple[tuple[bool, int, str], Path, str]] = []
+    for path in found:
+        text, _problem = read_document_text(path)
+        result = persist.deserialize_document(text) if text is not None else None
+        if result is None or not result.ok:
+            continue
+        document = result.document
+        parts = len(document.components) + len(document.parts)
+        preset = _matching_preset(document.board)
+        size = preset.name if preset is not None else f"{document.board.cols} × {document.board.rows}"
+        if document.components:
+            line = t("{parts} part(s) on a {size} board").format(parts=parts, size=size)
+        else:
+            line = t("{parts} part(s), drawn and not yet placed").format(parts=parts)
+        # The circuit that is drawn and not yet built first -- it is the one that walks
+        # through the steps -- and then the finished boards, simplest first.
+        listed.append(((bool(document.components), parts, path.stem), path, line))
+    return [(path, line) for _key, path, line in sorted(listed)]
+
+
 class WelcomeDialog(QDialog):
     """What to do first, offered over the window once it is up.
 
@@ -2676,22 +2726,36 @@ class WelcomeDialog(QDialog):
     submenu that had to be opened to be read. Everything here was already reachable; none
     of it was reachable in the two seconds after a launch, which is when it is wanted.
 
+    AND BECAUSE A FIRST START HAD NOWHERE TO GO. It offered three ways to open something
+    and none to begin: no "draw a circuit", no example to look at, and nothing saying what
+    the steps of the work even are. Now the first button starts a circuit on the sheet, the
+    examples are listed with what each one is, and the six steps the bar across the window
+    walks through are named once, here, before they are needed.
+
     The checkbox is honest about what it does and defaults to on. A first-run dialog that
     cannot be turned off is a first-run dialog people learn to click through without
     reading, which costs more than it ever saves.
     """
 
-    def __init__(self, recent: Sequence[Path], parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        recent: Sequence[Path],
+        parent: QWidget | None = None,
+        examples: Sequence[tuple[Path, str]] = (),
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(t("Perfboard Studio"))
-        self.setMinimumWidth(460)
+        self.setMinimumWidth(720)
         #: What the caller should do, set by whichever button was pressed. None means the
         #: dialog was dismissed and the blank board it opened on is the answer.
-        self.choice: Literal["new-project", "open", "open-project", "recent"] | None = None
+        self.choice: WelcomeChoice | None = None
         self.chosen_path: Path | None = None
 
         layout = QVBoxLayout(self)
-        heading = QLabel(f"<b>{t('Perfboard Studio')}</b>")
+        heading = QLabel(
+            f"<span style='font-size:18px; font-weight:600'>{t('Perfboard Studio')}</span>"
+            f"&nbsp;&nbsp;<span style='color:{TEXT_DIM}'>{__version__}</span>"
+        )
         layout.addWidget(heading)
         blurb = QLabel(
             t(
@@ -2702,22 +2766,75 @@ class WelcomeDialog(QDialog):
         blurb.setWordWrap(True)
         blurb.setStyleSheet(f"color: {TEXT_DIM};")
         layout.addWidget(blurb)
+        steps = QLabel(
+            "  ›  ".join(
+                f"<b>{number}</b> {step_title(key)}"
+                for number, key in enumerate(STEP_ORDER, start=1)
+            )
+        )
+        steps.setToolTip(
+            t("The steps the bar across the top of the window walks through, in order.")
+        )
+        steps.setStyleSheet("padding: 6px 0;")
+        layout.addWidget(steps)
 
-        buttons = QHBoxLayout()
-        for label, tip, choice in (
+        columns = QHBoxLayout()
+        begin = QVBoxLayout()
+        begin_heading = QLabel(f"<b>{t('Start')}</b>")
+        begin.addWidget(begin_heading)
+        for label, tip, choice, primary in (
+            (
+                t("Draw a New Circuit"),
+                t("Start on the sheet: add parts and join their pins. The board comes after."),
+                "new-circuit",
+                True,
+            ),
             (
                 t("New Project…"),
                 t("A folder for the board and everything generated from it."),
                 "new-project",
+                False,
             ),
-            (t("Open Project…"), t("A folder built around one board."), "open-project"),
-            (t("Open a Board…"), t("A single .perf file."), "open"),
+            (t("Open a Board…"), t("A single .perf file."), "open", False),
+            (t("Open Project…"), t("A folder built around one board."), "open-project", False),
+            (
+                t("Import a KiCad Netlist…"),
+                t("A circuit drawn in KiCad: its parts and connections come in as the design."),
+                "import",
+                False,
+            ),
         ):
             button = QPushButton(label)
             button.setToolTip(tip)
+            button.setMinimumHeight(34)
+            if primary:
+                button.setDefault(True)
+                button.setStyleSheet(
+                    f"QPushButton {{ background: {ACCENT}; color: white; font-weight: 600; "
+                    "border: none; border-radius: 6px; padding: 6px 12px; }}"
+                )
             button.clicked.connect(lambda _checked=False, c=choice: self._pick(c))
-            buttons.addWidget(button)
-        layout.addLayout(buttons)
+            begin.addWidget(button)
+        begin.addStretch(1)
+        columns.addLayout(begin, 2)
+
+        lists = QVBoxLayout()
+        self.examples = QListWidget()
+        self.examples.setAlternatingRowColors(True)
+        for path, line in examples:
+            item = QListWidgetItem(f"{path.stem}\n{line}")
+            item.setToolTip(
+                t("Opens as a new, untitled board: Save asks where your copy goes.")
+            )
+            item.setData(Qt.ItemDataRole.UserRole, str(path))
+            self.examples.addItem(item)
+        if examples:
+            lists.addWidget(QLabel(f"<b>{t('Examples')}</b>"))
+            lists.addWidget(self.examples, 1)
+            self.examples.itemActivated.connect(self._pick_example)
+            self.examples.itemDoubleClicked.connect(self._pick_example)
+        else:
+            self.examples.hide()
 
         self.recent = QListWidget()
         self.recent.setAlternatingRowColors(True)
@@ -2727,28 +2844,36 @@ class WelcomeDialog(QDialog):
             item.setData(Qt.ItemDataRole.UserRole, str(path))
             self.recent.addItem(item)
         if recent:
-            layout.addWidget(QLabel(t("Where you left off")))
-            layout.addWidget(self.recent, 1)
+            lists.addWidget(QLabel(f"<b>{t('Where you left off')}</b>"))
+            lists.addWidget(self.recent, 1)
             self.recent.itemActivated.connect(self._pick_recent)
             self.recent.itemDoubleClicked.connect(self._pick_recent)
         else:
             self.recent.hide()
+        columns.addLayout(lists, 3)
+        layout.addLayout(columns, 1)
 
         self.remember = QCheckBox(t("Show this when Perfboard Studio starts"))
         self.remember.setChecked(True)
-        layout.addWidget(self.remember)
-
+        bottom = QHBoxLayout()
+        bottom.addWidget(self.remember)
+        bottom.addStretch(1)
         close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         close.rejected.connect(self.reject)
-        layout.addWidget(close)
+        bottom.addWidget(close)
+        layout.addLayout(bottom)
 
     def _pick(self, choice: str) -> None:
-        self.choice = cast('Literal["new-project", "open", "open-project", "recent"]', choice)
+        self.choice = cast(WelcomeChoice, choice)
         self.accept()
 
     def _pick_recent(self, item: QListWidgetItem) -> None:
         self.chosen_path = Path(str(item.data(Qt.ItemDataRole.UserRole)))
         self._pick("recent")
+
+    def _pick_example(self, item: QListWidgetItem) -> None:
+        self.chosen_path = Path(str(item.data(Qt.ItemDataRole.UserRole)))
+        self._pick("example")
 
 
 class BoardSizeDialog(QDialog):
@@ -10481,19 +10606,27 @@ class MainWindow(QMainWindow):
             return
 
         recent = [Path(entry) for entry in self._recent_paths() if Path(entry).is_file()]
-        dialog = WelcomeDialog(recent[:8], self)
+        dialog = WelcomeDialog(recent[:8], self, examples=example_boards())
         answer = dialog.exec()
         app_settings().setValue(SHOW_WELCOME_KEY, dialog.remember.isChecked())
         if answer != QDialog.DialogCode.Accepted:
             return
-        if dialog.choice == "new-project":
+        if dialog.choice == "new-circuit":
+            # The window is already on an empty design; drawing starts on the sheet.
+            self.show_schematic()
+            self.on_schematic_add_part()
+        elif dialog.choice == "new-project":
             self.on_new_project()
         elif dialog.choice == "open-project":
             self.on_open_project()
         elif dialog.choice == "open":
             self.on_open()
+        elif dialog.choice == "import":
+            self.on_import_netlist()
         elif dialog.choice == "recent" and dialog.chosen_path is not None:
             self.on_open_recent(dialog.chosen_path)
+        elif dialog.choice == "example" and dialog.chosen_path is not None:
+            self.on_open_example(dialog.chosen_path)
 
     def _autosave_to_the_file(self, text: str) -> bool:
         """Put the board back in its own file, if that is what the user asked for.

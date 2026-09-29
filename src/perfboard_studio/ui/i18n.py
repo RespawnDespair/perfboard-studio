@@ -1795,6 +1795,22 @@ TURKISH: Mapping[str, str] = {
     "Add a Part…": "Parça Ekle…",
     "Choose a Board…": "Kart Seç…",
     "Connect the Pins": "Pinleri Bağla",
+    # -- the welcome dialog --------------------------------------------------------
+    "Start": "Başla",
+    "Examples": "Örnekler",
+    "Draw a New Circuit": "Yeni Devre Çiz",
+    "Start on the sheet: add parts and join their pins. The board comes after.": (
+        "Şemadan başlayın: parçaları ekleyin ve pinlerini bağlayın. Kart ondan sonra gelir."
+    ),
+    "Import a KiCad Netlist…": "KiCad Netlist İçe Aktar…",
+    "A circuit drawn in KiCad: its parts and connections come in as the design.": (
+        "KiCad'de çizilmiş bir devre: parçaları ve bağlantıları tasarım olarak gelir."
+    ),
+    "The steps the bar across the top of the window walks through, in order.": (
+        "Pencerenin üstündeki adım çubuğunun sırayla yürüdüğü adımlar."
+    ),
+    "{parts} part(s) on a {size} board": "{size} kart üzerinde {parts} parça",
+    "{parts} part(s), drawn and not yet placed": "{parts} parça, çizilmiş ama henüz yerleşmemiş",
     # -- the board dialogs' pictures and their one line of numbers -----------------
     "The board as it will be drawn, component side up.": (
         "Kart, çizileceği hâliyle, bileşen yüzü üstte."

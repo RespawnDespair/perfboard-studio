@@ -9963,6 +9963,53 @@ def test_the_welcome_dialog_is_not_offered_over_a_board(tmp_path) -> None:
     _close(window)
 
 
+def test_the_welcome_dialog_starts_a_circuit_or_opens_an_example(monkeypatch) -> None:
+    """A first start offered three ways to open something and none to begin. The first
+    button now starts a circuit on the sheet, and the examples are there by name with what
+    each one is -- the drawn-but-not-built one first, then the finished boards, simplest
+    first."""
+    import perfboard_studio.ui.main as main_module
+
+    examples = main_module.example_boards()
+    assert examples, "the examples folder is part of the repository"
+    names = [path.stem for path, _line in examples]
+    assert names[0] == "ne555-blinker", names
+    assert all(line for _path, line in examples)
+
+    window = _blank_window()
+    try:
+        window.show_board()
+        added: list[bool] = []
+        monkeypatch.setattr(
+            main_module.MainWindow, "on_schematic_add_part", lambda self: added.append(True)
+        )
+
+        class _Chooses(main_module.WelcomeDialog):
+            choice_to_make = "new-circuit"
+            path_to_choose: object = None
+
+            def exec(self) -> int:
+                self.choice = self.choice_to_make  # type: ignore[assignment]
+                self.chosen_path = self.path_to_choose  # type: ignore[assignment]
+                return int(main_module.QDialog.DialogCode.Accepted)
+
+        monkeypatch.setattr(main_module, "WelcomeDialog", _Chooses)
+        window.offer_welcome()
+        assert window.schematic_is_showing()
+        assert added == [True]
+
+        opened: list[object] = []
+        monkeypatch.setattr(
+            main_module.MainWindow, "on_open_example", lambda self, path: opened.append(path)
+        )
+        _Chooses.choice_to_make = "example"
+        _Chooses.path_to_choose = examples[1][0]
+        window.offer_welcome()
+        assert opened == [examples[1][0]]
+    finally:
+        _close(window)
+
+
 def monkeypatch_exec(window, shown: list[int]) -> None:
     """Count the times a welcome dialog would have been shown, without showing one."""
     import perfboard_studio.ui.main as main_module
