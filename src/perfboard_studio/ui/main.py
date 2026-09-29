@@ -5638,27 +5638,27 @@ class MainWindow(QMainWindow):
         is ready or one that is broken -- which is a real problem exactly once.
         """
         document = self.bus.document
-        if (
-            document.components
-            or document.conductors
-            or self._mode_text()
-            or self._has_placed_a_part
-        ):
+        if document.components or document.conductors or self._mode_text():
             self.view.set_empty_hint("")
             return
+        # A DESIGN WAITING FOR ITS BOARD says so every time, not only on a first start:
+        # a circuit drawn on the sheet, or imported, and a board with nothing on it is the
+        # one moment the next step is not obvious from the board -- it is two panels away.
+        if document.parts:
+            self.view.set_empty_hint(
+                f"<b>{t('{count} part(s) in the design, none on the board yet.').format(count=len(document.parts))}</b>"
+                f"<br><br>{t('Choose a Board and Place on the Board, in the steps above, put them here.')}"
+            )
+            return
+        if self._has_placed_a_part:
+            self.view.set_empty_hint("")
+            return
+        # Two ways in, and nothing else: the step bar above says what comes after.
         self.view.set_empty_hint(
             f"<b>{t('Nothing on this board yet.')}</b><br><br>"
-            f"{t('Start with the circuit, in the Schematic panel beside this one (Ctrl+2).')}<br>"
-            f"{t('Add Part… describes a part, Wire joins two pins, and Place on the Board '
-                 'suggests a board to suit the circuit and arranges it.')}<br><br>"
-            f"{t('Or place parts straight onto the board from the Parts panel, and use '
-                 'Net ▸ New Net… to say what joins what.')}<br>"
-            f"{t('An existing circuit comes in through File ▸ Import KiCad Netlist.')}"
-            + (
-                f"<br><br>{t('Or open one of the boards that come with it: File ▸ Open Example.')}"
-                if examples_dir() is not None
-                else ""
-            )
+            f"{t('Draw the circuit on the sheet (Ctrl+2): the steps above take it to the board.')}"
+            f"<br>{t('Or drag parts onto the board from the Parts panel and Connect their pins.')}"
+            f"<br><br>{t('An existing circuit: File ▸ Import KiCad Netlist, or File ▸ Open Example.')}"
         )
 
     def _on_component_placed(self, result: DispatchResult) -> None:

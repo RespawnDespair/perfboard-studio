@@ -338,20 +338,6 @@ TURKISH: Mapping[str, str] = {
     "Enter or right-click finishes, Esc cancels": "Enter veya sağ tık bitirir, Esc iptal eder",
     "no pins yet": "henüz pin yok",
     "Nothing on this board yet.": "Bu kartta henüz bir şey yok.",
-    "Start with the circuit, in the Schematic panel beside this one (Ctrl+2).":
-        "Devreyle başla: yanındaki Şema panelinden (Ctrl+2).",
-    "Add Part… describes a part, Wire joins two pins, and Place on the Board "
-    "suggests a board to suit the circuit and arranges it.": (
-        "Parça Ekle… bir parçayı tanımlar, Bağla iki pini birleştirir, Kart Üzerine "
-        "Yerleştir ise devreye uygun bir kart önerip yerleşimi yapar."
-    ),
-    "Or place parts straight onto the board from the Parts panel, and use "
-    "Net ▸ New Net… to say what joins what.": (
-        "Ya da Parçalar panelinden doğrudan kart üzerine yerleştir ve neyin neye "
-        "bağlandığını Netler ▸ Yeni Net… ile söyle."
-    ),
-    "An existing circuit comes in through File ▸ Import KiCad Netlist.":
-        "Mevcut bir devre Dosya ▸ KiCad Netlist İçe Aktar ile gelir.",
     "Filter nets…  (gnd, power, U1)": "Netleri süz…  (gnd, power, U1)",
     "Filter parts…  (resistor, dip, 5mm)": "Parçaları süz…  (direnç, dip, 5mm)",
     # -- toolbar ---------------------------------------------------------------
@@ -590,9 +576,6 @@ TURKISH: Mapping[str, str] = {
     ),
     "Opened the example {name}. Save keeps a copy of your own.": (
         "{name} örneği açıldı. Kaydet, kendi kopyanı saklar."
-    ),
-    "Or open one of the boards that come with it: File ▸ Open Example.": (
-        "Ya da birlikte gelen kartlardan birini aç: Dosya ▸ Örnek Aç."
     ),
     "Drawing step {done} of {total}…": "{total} adımın {done}. adımı çiziliyor…",
     "Skip the Pictures": "Görselleri Atla",
@@ -1779,6 +1762,22 @@ TURKISH: Mapping[str, str] = {
     "Add a Part…": "Parça Ekle…",
     "Choose a Board…": "Kart Seç…",
     "Connect the Pins": "Pinleri Bağla",
+    # -- the empty board --------------------------------------------------------------
+    "{count} part(s) in the design, none on the board yet.": (
+        "Tasarımda {count} parça var, kartta henüz hiçbiri yok."
+    ),
+    "Choose a Board and Place on the Board, in the steps above, put them here.": (
+        "Üstteki adımlardan Kart Seç ve Kart Üzerine Yerleştir onları buraya getirir."
+    ),
+    "Draw the circuit on the sheet (Ctrl+2): the steps above take it to the board.": (
+        "Devreyi şemada çizin (Ctrl+2): üstteki adımlar onu karta taşır."
+    ),
+    "Or drag parts onto the board from the Parts panel and Connect their pins.": (
+        "Ya da parçaları Parçalar panelinden karta sürükleyip pinlerini Bağla ile birleştirin."
+    ),
+    "An existing circuit: File ▸ Import KiCad Netlist, or File ▸ Open Example.": (
+        "Hazır bir devre için: Dosya ▸ KiCad Netlist İçe Aktar ya da Dosya ▸ Örnek Aç."
+    ),
     "{count} part(s) are in the design: {catalog} known from the catalog, {kicad} "
     "matched by their KiCad footprint, {guess} guessed from their reference -- check "
     "those. Next: choose a board and place them.": (

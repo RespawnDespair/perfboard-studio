@@ -4603,6 +4603,22 @@ def test_an_empty_board_says_what_to_do_with_itself() -> None:
     _close(window)
 
 
+def test_an_empty_board_under_a_drawn_circuit_says_how_the_parts_get_to_it() -> None:
+    """A circuit drawn on the sheet, or imported, over a board with nothing on it: the next
+    step is two panels away, so the board says so -- every time, not only on a first start
+    (``_has_placed_a_part`` retires the first-start guidance, and must not retire this)."""
+    window = _blank_window()
+    try:
+        window._has_placed_a_part = True
+        _add(window, "R1", "r-axial-3")
+        window._refresh_empty_hint()
+        assert not window.view.empty_hint.isHidden()
+        assert "1" in window.view.empty_hint.text()
+        assert "Place on the Board" in window.view.empty_hint.text()
+    finally:
+        _close(window)
+
+
 def test_the_empty_board_names_the_key_that_really_opens_the_schematic() -> None:
     """It said Ctrl+5, which is the Parts panel, for as long as the panels have been
     numbered. A key written into prose is a second copy of the shortcut; this holds the two
