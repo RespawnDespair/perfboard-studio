@@ -4724,6 +4724,54 @@ def test_opening_a_document_puts_it_on_the_recent_list(tmp_path) -> None:
     _close(window)
 
 
+def test_the_examples_open_as_untitled_copies() -> None:
+    """Nothing in the window pointed at the boards that ship with it. They open UNTITLED:
+    the file lives inside the application, and saving over it would change the example
+    for everybody, or be lost with the folder a packaged build unpacks for one run."""
+    from PySide6.QtWidgets import QApplication
+
+    from perfboard_studio.ui.main import examples_dir
+
+    folder = examples_dir()
+    assert folder is not None and (folder / "ne555-astable.perf").is_file()
+    window = _window_on(_load_dense())
+    window._saved_document = window.bus.document  # nothing to offer to save
+    names = [action.text() for action in window.menu_examples.actions()]
+    assert "ne555-astable" in names
+
+    window.on_open_example(folder / "ne555-astable.perf")
+    QApplication.processEvents()
+
+    assert window.current_path is None
+    assert window.bus.document.components
+    assert window._raised_dock is window.dock_board
+    assert not window.isWindowModified()
+    _close(window)
+
+
+def test_a_narrow_window_keeps_every_toolbar_button_on_screen() -> None:
+    """With its words under the icons the toolbar is wider than a laptop screen, so at
+    1280 px the view switches went behind the overflow arrow. Narrow, it drops the words
+    and keeps the buttons; wide enough, the words come back."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+
+    window = _window_on(_load_dense())
+    window.show()
+    window.resize(1100, 700)
+    QApplication.processEvents()
+    assert window.toolbar.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
+
+    assert window._toolbar_text_width is not None
+    window.resize(window._toolbar_text_width + 40, 900)
+    QApplication.processEvents()
+    assert window.toolbar.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonTextUnderIcon
+    # ...and the side panels keep room for the names they list.
+    assert window.dock_nets.widget().minimumWidth() >= window.SIDE_PANEL_MIN_WIDTH
+    assert window.dock_library.widget().minimumWidth() >= window.SIDE_PANEL_MIN_WIDTH
+    _close(window)
+
+
 def test_a_board_opened_after_a_blank_launch_comes_up_on_the_board(tmp_path) -> None:
     """A blank launch puts the schematic in front, which is right for a design with nothing
     in it -- and nothing put the board back, so the first example anybody opened came up as

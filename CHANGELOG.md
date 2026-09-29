@@ -22,6 +22,11 @@ closed without a bump.
 
 ### Added
 
+- **File ▸ Open Example.** The examples ship with the application and nothing in the
+  window pointed at them. They open as new, untitled boards — the file lives inside the
+  application, so saving over it would change the example for everybody — and the empty
+  board's hint mentions them when there are any.
+
 - **Wires laid along the grid.** Every wire the router laid was one straight run between
   its two ends, so a routed board was a cat's cradle of diagonals crossing each other, and
   a straight bare wire could pass 0.2 mm from another net's pad. Route ▸ *Lay Wires Along
@@ -49,6 +54,13 @@ closed without a bump.
   both.
 
 ### Fixed
+
+- **The window did not fit a laptop screen.** The status bar's labels each insisted on
+  their full width, which made the window's minimum wider than 1280 px; the toolbar with
+  its words is wider still, so the view switches went behind the overflow arrow; and the
+  Parts and Nets panels came up about 170 px wide, with no room for a net's name. The
+  labels may now clip, the toolbar drops its words when they do not fit (every button
+  keeps its name in its tooltip), and the side panels keep 240 px.
 
 - **About thirty messages stayed English in the Turkish interface.** They were built as
   f-strings, which the catalogue scan never reads — "Cannot place there", "Nothing to

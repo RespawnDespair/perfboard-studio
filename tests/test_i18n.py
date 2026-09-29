@@ -303,7 +303,7 @@ def test_no_two_entries_in_a_menu_claim_the_same_accelerator() -> None:
         "route": ["&Autoroute All Nets", "Route Nets of &Selection", "&Preferred Connection",
                   "Lay Wires Along the &Grid", "Re-route &Everything",
                   "Re-route Nets of Se&lection", "Remove S&tale Conductors"],
-        "file": ["&New Board…", "&Open…", "Open &Recent", "&Save", "Save &As…",
+        "file": ["&New Board…", "&Open…", "Open &Recent", "Open E&xample", "&Save", "Save &As…",
                  "Re&load from Disk", "&Board Setup…", "Board &Features…", "Rena&me Board…",
                  "&Import KiCad Netlist…", "Export &Build Guide…",
                  "Export Sc&hematic…", "&Quit"],

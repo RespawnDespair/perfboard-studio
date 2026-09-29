@@ -56,6 +56,7 @@ from PySide6.QtGui import (
     QDrag,
     QIcon,
     QKeySequence,
+    QResizeEvent,
     QShowEvent,
 )
 from PySide6.QtWidgets import (
@@ -439,6 +440,24 @@ def _rotation_after(current: Rotation, delta: int) -> Rotation:
     a rejected command."""
     turned = (int(current) + delta) % 360
     return cast(Rotation, turned)
+
+
+def examples_dir() -> Path | None:
+    """Where the examples that ship with this copy of the application are, if anywhere.
+
+    A packaged build carries them beside itself (``perfboard-studio.spec`` puts them in
+    ``examples``) and a checkout has them at the repository's root. An install from a wheel
+    has neither, and then there is nothing to offer rather than an empty list.
+    """
+    candidates = []
+    bundle = getattr(sys, "_MEIPASS", None)
+    if isinstance(bundle, str):
+        candidates.append(Path(bundle) / "examples")
+    candidates.append(Path(__file__).resolve().parents[3] / "examples")
+    for folder in candidates:
+        if folder.is_dir() and any(folder.glob("*.perf")):
+            return folder
+    return None
 
 
 def read_document_text(path: Path) -> tuple[str | None, str | None]:
@@ -3080,6 +3099,40 @@ class MainWindow(QMainWindow):
             # minimum it carries for its own sake is put back either way.
             self.dock_3d.setMinimumWidth(280)
 
+    #: The narrowest the Parts and Nets panels may be. At 1280 x 720 they came up about
+    #: 170 px wide: the parts list showed only icons, and the Nets panel's name column --
+    #: the one that says which net a row is -- had no room at all beside Class and Pins.
+    SIDE_PANEL_MIN_WIDTH = 240
+
+    _toolbar_text_width: int | None
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._fit_toolbar()
+
+    def _fit_toolbar(self) -> None:
+        """Words under the icons while they fit, icons alone when they do not.
+
+        With its words the toolbar is wider than a laptop screen, so at 1280 px Ratsnest,
+        Fit and the Board, Schematic and 3D buttons went behind the overflow arrow -- the
+        view switches, of all things. Every button keeps its name in its tooltip.
+        """
+        bar = getattr(self, "toolbar", None)
+        if bar is None or bar.isFloating() or bar.orientation() != Qt.Orientation.Horizontal:
+            return
+        if self._toolbar_text_width is None:
+            if bar.toolButtonStyle() != Qt.ToolButtonStyle.ToolButtonTextUnderIcon:
+                return
+            self._toolbar_text_width = bar.sizeHint().width()
+        fits = self.width() >= self._toolbar_text_width
+        wanted = (
+            Qt.ToolButtonStyle.ToolButtonTextUnderIcon
+            if fits
+            else Qt.ToolButtonStyle.ToolButtonIconOnly
+        )
+        if bar.toolButtonStyle() != wanted:
+            bar.setToolButtonStyle(wanted)
+
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
         if self._sized_layout:
@@ -3499,6 +3552,11 @@ class MainWindow(QMainWindow):
         # Rebuilt as it opens, so a file moved or deleted while the window was up does not
         # sit in the list and fail to open when picked.
         self.menu_recent.aboutToShow.connect(self._refresh_recent_menu)
+        # The answer to "it installed, now what": the boards that ship with it. Nothing in
+        # the window pointed at them, and the Open dialog starts wherever it last was.
+        self.menu_examples = file_menu.addMenu(t("Open E&xample"))
+        self.menu_examples.setToolTipsVisible(True)
+        self._refresh_examples_menu()
         act_save = file_menu.addAction(t("&Save"))
         act_save.setShortcut(QKeySequence.StandardKey.Save)
         act_save.triggered.connect(self.on_save)
@@ -4229,6 +4287,11 @@ class MainWindow(QMainWindow):
         bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
         self.addToolBar(bar)
         self.toolbar = bar
+        #: What the toolbar needs with its words under the icons. Measured the first time
+        #: the window is laid out, in the mode it was built in -- before that it has no
+        #: buttons to measure -- and only once, because the answer depends on the language
+        #: and the font and neither changes while the window is up.
+        self._toolbar_text_width = None
 
         # Short labels for the BUTTONS only. Qt draws an action's iconText on a toolbar and
         # its text in a menu, so "Autoroute All Nets" stays exact where there is room for
@@ -4392,6 +4455,8 @@ class MainWindow(QMainWindow):
         # does not, because only half of it looks wrong.
         dock.setObjectName("dockParts")
         dock.setWidget(panel)
+        # See SIDE_PANEL_MIN_WIDTH.
+        panel.setMinimumWidth(self.SIDE_PANEL_MIN_WIDTH)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
         self.dock_library = dock
         self._refresh_library()
@@ -4760,6 +4825,11 @@ class MainWindow(QMainWindow):
             f"{t('Or place parts straight onto the board from the Parts panel, and use '
                  'Net ▸ New Net… to say what joins what.')}<br>"
             f"{t('An existing circuit comes in through File ▸ Import KiCad Netlist.')}"
+            + (
+                f"<br><br>{t('Or open one of the boards that come with it: File ▸ Open Example.')}"
+                if examples_dir() is not None
+                else ""
+            )
         )
 
     def _on_component_placed(self, result: DispatchResult) -> None:
@@ -4834,6 +4904,7 @@ class MainWindow(QMainWindow):
         dock = QDockWidget(t("Nets"), self)
         dock.setObjectName("dockNets")
         dock.setWidget(panel)
+        panel.setMinimumWidth(self.SIDE_PANEL_MIN_WIDTH)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
         self.dock_nets = dock
 
@@ -6727,6 +6798,11 @@ class MainWindow(QMainWindow):
             self.label_drc,
             self.label_side,
         ):
+            # Allowed to be narrower than their text. A label's minimum is otherwise all of
+            # it, and seven of them side by side were the window's minimum width -- wider
+            # than the board, the sheet and both side panels together. A clipped count is
+            # still readable; a window that will not fit the screen is not.
+            label.setMinimumWidth(1)
             bar.addPermanentWidget(label)
 
     # -- the one repaint path: every successful command, undo and redo funnels here --
@@ -8521,6 +8597,55 @@ class MainWindow(QMainWindow):
     # argues the whole case). Nothing here changes what a document is or how it is saved;
     # it puts the files that belong together in one place and keeps the generated half of
     # them up to date, which is the point at which a board stops being one file.
+
+    def _refresh_examples_menu(self) -> None:
+        self.menu_examples.clear()
+        folder = examples_dir()
+        boards = sorted(folder.glob("*.perf")) if folder is not None else []
+        for path in boards:
+            action = self.menu_examples.addAction(path.stem)
+            action.setToolTip(
+                t("Opens as a new, untitled board: Save asks where your copy goes.")
+            )
+            action.triggered.connect(lambda _checked=False, p=path: self.on_open_example(p))
+        self.menu_examples.setEnabled(bool(boards))
+
+    def on_open_example(self, path: Path) -> None:
+        """Open a shipped example as a new, UNTITLED board.
+
+        Untitled on purpose. The file lives inside the application -- in a packaged build, in
+        a folder unpacked for this run only -- so saving over it would change the example
+        for everybody, or be lost at exit. Save asks where the copy goes, like a new board.
+        """
+        if not self._offer_to_save():
+            return
+        text, problem = read_document_text(path)
+        if text is None:
+            QMessageBox.critical(
+                self, t("Open failed"), problem or t("Could not read the file.")
+            )
+            return
+        result = persist.deserialize_document(text)
+        if not result.ok:
+            QMessageBox.critical(self, t("Open failed"), f"[{result.code}] {result.message}")
+            return
+        self.current_path = None
+        self._disk_text = None
+        self._watch_current_path()
+        self.bus = self._new_bus(result.document)
+        self._subscribe_bus()
+        self.scene.bus = self.bus
+        self._forget_the_previous_document()
+        self.on_bus_changed(self.bus.document, None)
+        self._mark_saved()
+        self.view.fit_board()
+        self._show_what_the_document_has()
+        self.statusBar().showMessage(
+            t("Opened the example {name}. Save keeps a copy of your own.").format(
+                name=path.stem
+            ),
+            10000,
+        )
 
     def on_new_project(self) -> None:
         """Name a project, choose the board it goes on, and start in the schematic.

@@ -439,6 +439,16 @@ TURKISH: Mapping[str, str] = {
         "{ref} yalnızca bir nette adı geçiyor; tasarımda hiç yok."
     ),
     "Could not read the file.": "Dosya okunamadı.",
+    "Open E&xample": "Örn&ek Aç",
+    "Opens as a new, untitled board: Save asks where your copy goes.": (
+        "Yeni, adsız bir kart olarak açılır: Kaydet, kopyanın nereye gideceğini sorar."
+    ),
+    "Opened the example {name}. Save keeps a copy of your own.": (
+        "{name} örneği açıldı. Kaydet, kendi kopyanı saklar."
+    ),
+    "Or open one of the boards that come with it: File ▸ Open Example.": (
+        "Ya da birlikte gelen kartlardan birini aç: Dosya ▸ Örnek Aç."
+    ),
     "Drawing step {done} of {total}…": "{total} adımın {done}. adımı çiziliyor…",
     "Skip the Pictures": "Görselleri Atla",
     "without its pictures": "görselleri olmadan",
