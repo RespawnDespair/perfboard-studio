@@ -737,10 +737,15 @@ class MoveSymbolsPayload:
     the first time somebody moves, turns or wires anything, the caller sends a position for
     EVERY symbol -- taken from the drawing it is already looking at -- so nothing jumps.
     One command, one undo step, and afterwards the sheet is the user's.
+
+    ``wires`` is the other half of a freeze: the derived sheet's wires as drawn wires
+    (``schematic.wires_as_drawn``), so the drawing somebody froze keeps its connections
+    drawn rather than turning every one into a name. Empty for every move after that.
     """
 
     placements: tuple[SymbolPlacement, ...]
     label: str | None = None
+    wires: tuple[SheetWire, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -2045,7 +2050,12 @@ class _MoveSymbols:
             seen.add(placement.id)
 
         kept = [placement for placement in doc.sheet if placement.id not in seen]
-        return dataclasses.replace(doc, sheet=tuple(kept) + tuple(p.placements))
+        sheet_wires = doc.sheet_wires
+        if p.wires:
+            sheet_wires = _with_frozen_wires(doc, p.wires)
+        return dataclasses.replace(
+            doc, sheet=tuple(kept) + tuple(p.placements), sheet_wires=sheet_wires
+        )
 
     def describe(self, p: MoveSymbolsPayload, doc: PerfDocument) -> str:
         if p.label:
@@ -2053,6 +2063,34 @@ class _MoveSymbols:
         if len(p.placements) == 1:
             return f"Move {p.placements[0].id} on the sheet"
         return f"Move {len(p.placements)} symbol(s) on the sheet"
+
+
+def _with_frozen_wires(doc: PerfDocument, wires: tuple[SheetWire, ...]) -> tuple[SheetWire, ...]:
+    """The drawn wires with a freeze's added, each checked as ``sheet.wire`` would check it
+    but joining nothing: a freeze draws connections the netlist already has, so a wire whose
+    two pins are not on one net is refused rather than made into a connection."""
+    pairs = {frozenset((w.a, w.b)) for w in doc.sheet_wires}
+    pairs |= {frozenset((w.a, w.b)) for w in wires}
+    for wire in wires:
+        if wire.a == wire.b or len(wire.path) < 2:
+            raise CommandError(
+                "invalid-wire", f"A wire from {_pin_name(wire.a)} needs two pins and two points."
+            )
+        if not any(wire.a in net.nodes and wire.b in net.nodes for net in doc.nets):
+            raise CommandError(
+                "not-one-net",
+                f"{_pin_name(wire.a)} and {_pin_name(wire.b)} are not on one net, so there is "
+                "no connection between them to draw.",
+            )
+        if wire.tap is not None and frozenset((wire.b, wire.tap)) not in pairs:
+            raise CommandError(
+                "no-such-wire",
+                f"No wire is drawn from {_pin_name(wire.b)} to {_pin_name(wire.tap)} "
+                "to branch off.",
+            )
+    added = {frozenset((w.a, w.b)) for w in wires}
+    kept = tuple(w for w in doc.sheet_wires if frozenset((w.a, w.b)) not in added)
+    return kept + wires
 
 
 class _AutoSymbols:

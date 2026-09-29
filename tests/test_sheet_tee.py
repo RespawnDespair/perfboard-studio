@@ -113,8 +113,10 @@ def test_a_tee_joins_its_pin_to_the_net_of_the_wire_it_lands_on() -> None:
     assert branch.path[0] == _at(drawing, "R3", "1") and branch.path[-1] == at
     # A dot at the T, where one line meets another in the middle.
     assert any(j.at == at and j.net_id == net.id for j in drawing.junctions)
-    # And R3.1 is drawn, so it is not also named by a label.
-    assert not any(label.kind == "net" for label in drawing.labels)
+    # And R3.1 is drawn, so it gets no stub and no name of its own at the pin: every run
+    # on the sheet is a drawn wire, and the net is named once, over its wire.
+    assert all(wire.ends is not None for wire in drawing.wires)
+    assert [label.text for label in drawing.labels if label.kind == "net"] == [net.name]
 
 
 def test_a_tee_round_trips_and_a_sheet_without_one_is_written_as_it_was() -> None:

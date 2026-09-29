@@ -5826,6 +5826,38 @@ def _open_schematic(doc):
     return window
 
 
+def test_moving_a_symbol_keeps_the_wires_on_the_sheet_and_one_undo_takes_them_back() -> None:
+    """The report was "moving a part on the schematic cuts every connection". It did not
+    touch the netlist, but it took every wire off the page: the first move froze the sheet,
+    and a frozen sheet draws only the wires somebody drew. The freeze now keeps them, in
+    the same command -- so one undo puts the sheet back to the layout, wires and all."""
+    from pathlib import Path
+
+    from perfboard_studio.persist import deserialize_document
+
+    doc = deserialize_document(
+        (Path(__file__).resolve().parents[1] / "examples" / "lm317-supply.perf").read_text(
+            encoding="utf-8"
+        )
+    ).document
+    window = _open_schematic(doc)
+    window._refresh_schematic_panel()
+    before = window.schematic_view.item.drawing
+    derived_wires = len([w for w in before.wires if len(w.path) > 1])
+    symbol = before.symbols[0]
+
+    _move_symbol(window, symbol.ref, symbol.at.x + 5.08, symbol.at.y)
+
+    after = window.schematic_view.item.drawing
+    assert window.bus.document.sheet_wires, "the freeze kept the drawing's wires"
+    assert window.bus.document.nets == doc.nets
+    assert all(wire.ends is not None for wire in after.wires), "no pin turned into a label"
+    assert derived_wires > 0
+    window.bus.undo()
+    assert not window.bus.document.sheet and not window.bus.document.sheet_wires
+    _close(window)
+
+
 def test_a_symbol_dragged_onto_the_board_places_that_one_part() -> None:
     """The other half of "Place on the Board": that button moves the WHOLE design, and
     until now there was no way to put down one part from the sheet at all -- double-clicking

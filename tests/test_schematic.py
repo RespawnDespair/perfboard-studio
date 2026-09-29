@@ -60,6 +60,7 @@ from perfboard_studio.model import (
 from perfboard_studio.schematic import (
     _KIND_BY_ARCHETYPE,
     _SYMBOL_BUILDERS,
+    GRID_MM,
     LEAD_MM,
     NET_LABEL_ADVANCE,
     NET_LABEL_CLEARANCE_MM,
@@ -84,6 +85,7 @@ from perfboard_studio.schematic import (
     snap_to_grid,
     symbol_at,
     symbol_kind_for,
+    wires_as_drawn,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1466,3 +1468,113 @@ def test_everything_a_user_puts_on_the_sheet_lands_on_the_grid() -> None:
     assert snap_to_grid(Point2(x=2.0, y=-2.0)) == Point2(x=2.54, y=-2.54)
 
 
+
+
+# ---------------------------------------------------------------------------
+# Freezing a sheet keeps its drawing
+# ---------------------------------------------------------------------------
+
+REAL_BOARDS = [*sorted(EXAMPLES_DIR.glob("*.perf")), GOLDEN_DIR / "ne555.perf"]
+
+
+def _frozen(doc: PerfDocument, drawing: SchematicDrawing) -> PerfDocument:
+    """``doc`` as the window freezes it on the first edit: every symbol where the drawing
+    has it, and the drawing's wires as drawn wires."""
+    ids = {part.ref: part.id for part in doc.parts} | {c.ref: c.id for c in doc.components}
+    return dataclasses.replace(
+        doc,
+        sheet=tuple(
+            SymbolPlacement(id=ids[s.ref], at=s.at, rotation=s.rotation, mirrored=s.mirrored)
+            for s in drawing.symbols
+            if s.ref in ids
+        ),
+        sheet_wires=wires_as_drawn(drawing, doc),
+    )
+
+
+def _runs(drawing: SchematicDrawing) -> set[tuple[str, tuple[float, float], tuple[float, float]]]:
+    runs = set()
+    for wire in drawing.wires:
+        for start, end in zip(wire.path, wire.path[1:], strict=False):
+            a, b = (round(start.x, 6), round(start.y, 6)), (round(end.x, 6), round(end.y, 6))
+            if a != b:
+                runs.add((wire.net_name, min(a, b), max(a, b)))
+    return runs
+
+
+@pytest.mark.parametrize("path", REAL_BOARDS, ids=lambda path: path.stem)
+def test_freezing_a_sheet_keeps_every_wire_and_every_name(path: Path) -> None:
+    """Moving one symbol freezes the sheet, and a frozen sheet draws only the wires
+    somebody drew -- so the first nudge used to turn every connection on the page into a
+    label, and read as all of them having been cut. The freeze now keeps the drawing: the
+    same runs, line for line, the same dots and one name per net as before."""
+    doc = dataclasses.replace(load(path), sheet=(), sheet_wires=())
+    derived = build_schematic(doc, REGISTRY)
+    drawn = build_schematic(_frozen(doc, derived), REGISTRY)
+
+    assert _runs(drawn) == _runs(derived)
+    assert len(drawn.junctions) == len(derived.junctions)
+    assert sorted(label.text for label in drawn.labels if label.kind == "net") == sorted(
+        label.text for label in derived.labels if label.kind == "net"
+    )
+    assert all(wire.ends is not None for wire in drawn.wires), "nothing turned into a label"
+
+
+def test_a_frozen_symbol_that_moves_takes_its_wires_with_it() -> None:
+    """The point of keeping them as DRAWN wires: after the freeze a symbol moved away
+    drags the ends of its wires along instead of leaving its pins to be joined by name."""
+    doc = dataclasses.replace(load(EXAMPLES_DIR / "lm317-supply.perf"), sheet=(), sheet_wires=())
+    frozen = _frozen(doc, build_schematic(doc, REGISTRY))
+    moved_id = frozen.sheet[0].id
+    shifted = tuple(
+        dataclasses.replace(p, at=Point2(x=p.at.x + 4 * GRID_MM, y=p.at.y + 2 * GRID_MM))
+        if p.id == moved_id
+        else p
+        for p in frozen.sheet
+    )
+    drawing = build_schematic(dataclasses.replace(frozen, sheet=shifted), REGISTRY)
+
+    symbol = next(s for s in drawing.symbols if s.at == shifted[0].at)
+    pins = {Point2(x=symbol.at.x + pin.at.x, y=symbol.at.y + pin.at.y) for pin in symbol.pins}
+    ends = {point for wire in drawing.wires for point in (wire.path[0], wire.path[-1])}
+    wired = {pin for pin in pins if pin in ends}
+    assert wired, "the moved symbol's pins still have their wires"
+    assert all(wire.ends is not None for wire in drawing.wires)
+    for wire in drawing.wires:
+        for start, end in zip(wire.path, wire.path[1:], strict=False):
+            assert start.x == end.x or start.y == end.y, "and every run is still square"
+
+
+def test_a_freeze_draws_only_connections_the_netlist_already_has() -> None:
+    """``symbol.move`` carries the wires of a freeze, and drawing is all it may do with them:
+    a wire between two pins no net joins is refused rather than made into a connection."""
+    from perfboard_studio.command import CommandBus, CommandContext
+    from perfboard_studio.commands import (
+        MoveSymbolsPayload,
+        create_document_id_generator,
+        create_standard_registry,
+    )
+
+    doc = dataclasses.replace(load(EXAMPLES_DIR / "lm317-supply.perf"), sheet=(), sheet_wires=())
+    drawing = build_schematic(doc, REGISTRY)
+    frozen = _frozen(doc, drawing)
+    bus = CommandBus(
+        doc, create_standard_registry(), CommandContext(next_id=create_document_id_generator(doc))
+    )
+    kept = bus.dispatch(
+        "symbol.move", MoveSymbolsPayload(placements=frozen.sheet, wires=frozen.sheet_wires)
+    )
+    assert kept.ok, kept.message
+    assert bus.document.nets == doc.nets
+    assert bus.document.sheet_wires == frozen.sheet_wires
+
+    stray = SheetWire(
+        a=NetNode(component_ref="R1", pin="1"),
+        b=NetNode(component_ref="LED1", pin="1"),
+        path=(Point2(x=0.0, y=0.0), Point2(x=10.0, y=0.0)),
+    )
+    if not any(stray.a in n.nodes and stray.b in n.nodes for n in doc.nets):
+        refused = bus.dispatch(
+            "symbol.move", MoveSymbolsPayload(placements=frozen.sheet[:1], wires=(stray,))
+        )
+        assert not refused.ok and refused.code == "not-one-net"

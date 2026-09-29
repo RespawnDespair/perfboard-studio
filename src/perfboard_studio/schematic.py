@@ -2230,6 +2230,68 @@ def build_schematic(
     return _derived_sheet(symbols, resolved, options, notes, annotations)
 
 
+def wires_as_drawn(drawing: SchematicDrawing, doc: PerfDocument) -> tuple[SheetWire, ...]:
+    """The wires of a DERIVED sheet as wires somebody drew: what freezing a sheet keeps.
+
+    THE FIRST EDIT USED TO TAKE EVERY WIRE OFF THE SHEET. Moving one symbol freezes the
+    sheet -- every symbol gets the position it is drawn at, so nothing jumps -- and a frozen
+    sheet draws only the wires somebody drew, joining the rest by name. Nobody had drawn
+    any, so the whole circuit turned into labels the moment a part was nudged, and read as
+    every connection having been cut. The netlist was untouched; the drawing was not.
+
+    So the freeze keeps the drawing too. A derived net is one trunk and a branch from each
+    pin down to it, and that is exactly one wire and some T's: a wire between the two pins
+    whose branches land at the trunk's ends, along both branches and the trunk between,
+    and every other pin a T down its own branch onto that wire. The picture is the same
+    line for line, and from then on a symbol that moves drags the ends of its wires with it
+    (``_reanchored``), as it does on any sheet somebody drew.
+
+    Rails are not wires on either kind of sheet, a one-pin net has nothing to join, and a
+    pin standing on its own trunk has no branch to draw -- all three keep what the frozen
+    sheet already gives them, a glyph, a stub and a name. Wires somebody already drew are
+    theirs and are not returned.
+    """
+    anchors: dict[tuple[float, float], NetNode] = {}
+    for symbol in drawing.symbols:
+        for pin in symbol.pins:
+            at = (symbol.at.x + pin.at.x, symbol.at.y + pin.at.y)
+            anchors.setdefault(at, NetNode(component_ref=symbol.ref, pin=pin.number))
+    runs_of: dict[NetId, list[tuple[Point2, ...]]] = {}
+    for wire in drawing.wires:
+        if wire.ends is None:
+            runs_of.setdefault(wire.net_id, []).append(wire.path)
+
+    frozen: list[SheetWire] = []
+    for net in doc.nets:
+        runs = runs_of.get(net.id)
+        if not runs:
+            continue
+        nodes = set(net.nodes)
+        branches: list[tuple[NetNode, tuple[Point2, ...]]] = []
+        trunks: list[tuple[Point2, ...]] = []
+        for path in runs:
+            node = anchors.get((path[0].x, path[0].y))
+            if node is not None and node in nodes:
+                branches.append((node, path))
+            else:
+                trunks.append(path)
+        if len(branches) < 2 or len(trunks) != 1:
+            continue  # A stub, or not the trunk-and-branches shape this reads.
+        # The two branches landing at the trunk's ends; the first of either among equals,
+        # and two different pins even when every branch lands at the same place.
+        first = min(range(len(branches)), key=lambda i: (branches[i][1][-1].x, i))
+        last = max(
+            (i for i in range(len(branches)) if i != first),
+            key=lambda i: (branches[i][1][-1].x, -i),
+        )
+        (a, to_a), (b, to_b) = branches[first], branches[last]
+        frozen.append(SheetWire(a=a, b=b, path=_tidy((*to_a, *reversed(to_b)))))
+        for index, (node, path) in enumerate(branches):
+            if index not in (first, last):
+                frozen.append(SheetWire(a=node, b=b, path=path, tap=a))
+    return tuple(frozen)
+
+
 def _resolve_nets(
     doc: PerfDocument,
     symbols: dict[str, _Placed],
@@ -2394,6 +2456,8 @@ def _hand_drawn_sheet(
     # drawn (its net no longer holds both its ends); it goes to its pin instead, which is
     # still true: it joins that pin's net.
     drawn_paths: dict[frozenset[NetNode], tuple[Point2, ...]] = {}
+    #: Per net: its longest horizontal run, which is where its name goes -- see below.
+    longest_run: dict[NetId, tuple[Mm, str, Point2, Point2]] = {}
     waiting = list(doc.sheet_wires)
     stalled = False
     while waiting:
@@ -2430,6 +2494,12 @@ def _hand_drawn_sheet(
                     ends=(wire.a, wire.b),
                 )
             )
+            for run_start, run_end in _segments_of(path):
+                length = abs(run_end.x - run_start.x)
+                if abs(run_end.y - run_start.y) < 1e-9 and length > 0:
+                    held = longest_run.get(net.id)
+                    if held is None or length > held[0]:
+                        longest_run[net.id] = (length, net.name, run_start, run_end)
             drawn_paths[frozenset((wire.a, wire.b))] = path
             drawn_pins.add((wire.a.component_ref, wire.a.pin))
         if len(still) == len(waiting):
@@ -2481,6 +2551,24 @@ def _hand_drawn_sheet(
                     anchor="left" if dx > 0 else "right" if dx < 0 else "centre",
                 )
             )
+
+    # -- the name of every net somebody drew, once, over its longest run ------
+    #
+    # A wire says two pins are joined and not what the join is called, and the derived
+    # sheet always said both: freezing it used to keep the lines and lose every name. The
+    # name goes where the derived sheet puts one -- above a horizontal run, slid along it
+    # clear of the other wires by the same ``_net_label_at`` -- on the longest run the net
+    # has, which is the one a reader's eye follows.
+    obstacles: list[tuple[Point2, Point2]] = []
+    for drawn_wire in wires:
+        obstacles.extend(_segments_of(drawn_wire.path))
+    for rail in rails:
+        obstacles.extend(_segments_of(rail.path))
+        obstacles.extend(rail_glyph_bars(rail))
+    for _length, name, run_start, run_end in longest_run.values():
+        span = (min(run_start.x, run_end.x), max(run_start.x, run_end.x))
+        at = _net_label_at(name, span, run_start.y, obstacles)
+        net_labels.append(Label(text=name, at=at, kind="net", anchor="left"))
 
     # -- dots where three or more ends of one net meet, and at every T ------
     junctions = tuple(sorted(
@@ -2550,10 +2638,18 @@ def _laid_onto(point: Point2, path: Sequence[Point2]) -> tuple[Point2, bool]:
     best: tuple[float, Point2] | None = None
     for start, end in itertools.pairwise(path):
         dx, dy = end.x - start.x, end.y - start.y
-        length = dx * dx + dy * dy
-        t = 0.0 if length == 0 else ((point.x - start.x) * dx + (point.y - start.y) * dy) / length
-        t = min(max(t, 0.0), 1.0)
-        on = _p(start.x + t * dx, start.y + t * dy)
+        if dy == 0:
+            # A run along an axis is answered exactly: the projection below lands a T
+            # a last bit off the run it is on, which then bends the T's last corner by as
+            # much -- invisible, and a wire that no longer meets its own junction dot.
+            on = _p(min(max(point.x, min(start.x, end.x)), max(start.x, end.x)), start.y)
+        elif dx == 0:
+            on = _p(start.x, min(max(point.y, min(start.y, end.y)), max(start.y, end.y)))
+        else:
+            length = dx * dx + dy * dy
+            t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / length
+            t = min(max(t, 0.0), 1.0)
+            on = _p(start.x + t * dx, start.y + t * dy)
         distance = (on.x - point.x) ** 2 + (on.y - point.y) ** 2
         if best is None or distance < best[0]:
             best = (distance, on)

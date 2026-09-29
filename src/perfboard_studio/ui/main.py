@@ -260,7 +260,7 @@ from perfboard_studio.project import DOCUMENT_SUFFIX, document_in, project_name
 from perfboard_studio.ratsnest import NetRatsnest, ratsnest, summarize
 from perfboard_studio.recovery import RecoveryRecord, is_worth_offering
 from perfboard_studio.router import CrossingPolicy, RouterOptions, RoutingStyle, options_for_style
-from perfboard_studio.schematic import build_schematic, snap_to_grid
+from perfboard_studio.schematic import build_schematic, snap_to_grid, wires_as_drawn
 from perfboard_studio.schematic_export import drawing_to_svg
 from perfboard_studio.stripboard import is_stripboard
 from perfboard_studio.striproute import StripboardPlan, plan_stripboard
@@ -5488,12 +5488,24 @@ class MainWindow(QMainWindow):
         )
         self._dispatch_sheet_layout(places, label)
 
+    def _wires_kept_by_freezing(self) -> tuple[SheetWire, ...]:
+        """The derived sheet's wires as drawn wires, when this edit is the one freezing the
+        sheet -- see ``schematic.wires_as_drawn``. Nothing on a sheet that already has
+        positions: its wires are the ones somebody drew, and they are already stored."""
+        item = self.schematic_view.item
+        if self.bus.document.sheet or item is None:
+            return ()
+        return wires_as_drawn(item.drawing, self.bus.document)
+
     def _dispatch_sheet_layout(self, moved: dict[str, Point2], label: str) -> None:
         placements = self._sheet_placements(moved)
         if not placements:
             return
         result = self.bus.dispatch(
-            "symbol.move", MoveSymbolsPayload(placements=placements, label=label)
+            "symbol.move",
+            MoveSymbolsPayload(
+                placements=placements, label=label, wires=self._wires_kept_by_freezing()
+            ),
         )
         if not result.ok:
             self.statusBar().showMessage(f"[{result.code}] {result.message}", 8000)
@@ -5527,6 +5539,7 @@ class MainWindow(QMainWindow):
             MoveSymbolsPayload(
                 placements=tuple(turned),
                 label=f"Turn {len(refs)} symbol(s) on the sheet",
+                wires=self._wires_kept_by_freezing(),
             ),
         )
         if not result.ok:
@@ -5547,7 +5560,9 @@ class MainWindow(QMainWindow):
         result = self.bus.dispatch(
             "symbol.move",
             MoveSymbolsPayload(
-                placements=flipped, label=f"Flip {len(refs)} symbol(s) on the sheet"
+                placements=flipped,
+                label=f"Flip {len(refs)} symbol(s) on the sheet",
+                wires=self._wires_kept_by_freezing(),
             ),
         )
         if not result.ok:

@@ -107,6 +107,14 @@ closed without a bump.
 
 ### Fixed
 
+- **Moving a part on the schematic took every wire off the sheet.** The first move fixes
+  the sheet's layout so nothing else jumps, and a fixed sheet draws only the wires
+  somebody drew — none — so every connection turned into a net label and read as cut,
+  though the circuit was untouched. The layout's wires now come along as drawn wires in the
+  same undo step, line for line with their dots, and a moved symbol drags the ends of its
+  wires with it. A drawn net is named once over its longest run, as the laid-out sheet
+  names it.
+
 - **The schematic panel drew every label in the opposite corner.** The drawing says
   which end of a label's text is at its point, and the SVG export reads it that way;
   the panel handed the same words to a text helper that aligns inside a box centred on
