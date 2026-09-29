@@ -1413,6 +1413,14 @@ already read a wire as the runs between its points. It uses a heap, not the trac
 linear scan, because no golden route was ever laid on the grid. The random-netlist property
 test runs every style both ways.
 
+**A bend in a solder trace is priced only where no golden route was made**
+(`RouterCosts.trace_bend`, 0 in balanced and wire, 1 in solder and lead-bend). At 0 the two
+trace searches are the original ones, byte for byte; above it `_find_turning_trace_path`
+runs over (hole, heading) and the candidates' prices include the same bends, or a straight
+trace would be compared with a hop on a different bill from the one that chose it. Pricing
+bends alone bought straightness with jumpers, so those styles also price a hop at 16
+(`HOP_FOR_SOLDER_STYLES`) -- the middle of a measured trade the user chose.
+
 ### i18n
 
 `ui/i18n.py` is a plain dict whose **keys are the English strings**, wrapped at each call

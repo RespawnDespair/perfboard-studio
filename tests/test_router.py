@@ -1130,3 +1130,77 @@ def test_a_trace_is_not_run_through_a_finger() -> None:
                 assert f"{at.col},{at.row}" not in dead, (
                     f"{candidate.strategy} was routed through a finger at {at}"
                 )
+
+
+# ---------------------------------------------------------------------------
+# A bend in a solder trace has a price
+# ---------------------------------------------------------------------------
+
+
+def _one_hole_steps(path: tuple[HoleCoord, ...]) -> int:
+    """Runs of a single hole between two bends: the treads of a staircase."""
+    runs: list[list[Any]] = []
+    for a, b in itertools.pairwise(path):
+        heading = (b.col - a.col, b.row - a.row)
+        if runs and runs[-1][0] == heading:
+            runs[-1][1] += 1
+        else:
+            runs.append([heading, 1])
+    return sum(1 for run in runs[1:-1] if run[1] == 1)
+
+
+def test_a_priced_bend_takes_the_staircases_out_of_a_solder_first_board() -> None:
+    """Around obstacles and risky pads many paths cost the same length, and a search that
+    charges only length took whichever its tie-breaking found first -- on the NE555 routed
+    solder-first, twenty one-hole steps of staircase. Charged a bend, two are left."""
+    from perfboard_studio.autoroute import AutorouteOptions, plan_autoroute
+    from perfboard_studio.persist import deserialize_document
+    from perfboard_studio.router import options_for_style
+
+    board = dataclasses.replace(
+        deserialize_document((GOLDEN_DIR / "ne555.perf").read_text(encoding="utf-8")).document,
+        conductors=(),
+    )
+    lookup = footprint_lookup()
+    solder = options_for_style("solder")
+    free = dataclasses.replace(
+        solder, costs=dataclasses.replace(solder.costs, trace_bend=0, insulated_hop_fixed=10)
+    )
+
+    def staircase(options: RouterOptions) -> int:
+        plan = plan_autoroute(board, lookup, AutorouteOptions(router=options))
+        assert plan.summary.links_unrouted == 0
+        return sum(
+            _one_hole_steps(c.path) for c in plan.conductors if c.kind.startswith("solder")
+        )
+
+    assert staircase(free) >= 10, "the fixture no longer shows the staircases"
+    assert staircase(solder) <= 2
+
+
+def test_bends_cost_nothing_where_the_golden_routes_were_made() -> None:
+    """The balanced table is what every golden route records, and the original search is
+    what reproduces them: the price lives in the two styles that lay long traces."""
+    from perfboard_studio.router import options_for_style
+
+    assert DEFAULT_ROUTER_COSTS.trace_bend == 0
+    assert options_for_style("balanced").costs.trace_bend == 0
+    assert options_for_style("wire").costs.trace_bend == 0
+    assert options_for_style("solder").costs.trace_bend > 0
+    assert options_for_style("lead-bend").costs.trace_bend > 0
+
+
+def test_a_builder_bending_legs_is_given_solder_before_wire() -> None:
+    """The style always said "then solder, then wire" and ranked the two alike, leaving it
+    to the cost table -- which a winding trace with a hop in it could lose to a bare wire."""
+    from perfboard_studio.router import _preference_rank
+
+    ranks = {
+        strategy: _preference_rank(strategy, "lead-bend")
+        for strategy in ("lead-bend", "solder-trace", "solder-trace-hopped", "bare-wire",
+                         "insulated-wire", "top-jumper")
+    }
+    assert ranks["lead-bend"] < ranks["solder-trace"] == ranks["solder-trace-hopped"]
+    assert ranks["solder-trace"] < ranks["bare-wire"] == ranks["insulated-wire"] == ranks["top-jumper"]
+    # And the other two commitments are what they were: theirs first, everything else after.
+    assert _preference_rank("bare-wire", "solder") == _preference_rank("lead-bend", "solder") == 1

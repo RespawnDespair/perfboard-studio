@@ -63,14 +63,25 @@ closed without a bump.
   corners standing on its feet. Both carry their value in print, as the real ones do —
   across the relay's top, stamped into the potentiometer's cover.
 
+- **Solder traces go straight instead of in staircases.** Nothing in the search priced a
+  bend, so a trace that stepped one hole across and one hole down, over and over, cost
+  exactly what an L of the same length did — 77 one-hole steps in the solder-first routing
+  of the examples. In the Solder and Lead-bend styles a bend now costs a hole's worth, and
+  a hop over an obstacle 16 rather than 10, so straightening does not simply buy jumpers.
+  Over the examples and the NE555, solder style: bends 273 → 186, trace length 1306 → 1335
+  holes, jumpers 46 → 49, nothing left unrouted; lead-bend: bends 238 → 142, length 1127 →
+  1024 holes, jumpers 46 → 41. Lead-bend also puts solder before wire as it always said it
+  did, where it had left the two to the cost table. Balanced routing, and every golden
+  route, are unchanged.
+
 - **Solder-first routing lays far fewer jumpers.** The planner routed ground and power
   first, and for a builder committed to solder that rail is a wall: a trace cannot cross a
   trace, so every signal beyond it hopped over with a piece of wire. A builder who chose
   the Solder or Lead-bend style — or allows no wire at all — is now also given the plans
   two other net orders produce, and the one cheapest to build wins. Over the examples and
-  fixtures, 79 jumpers become 56 (NE555 6 → 1, lpb1-booster 6 → 1, atmega328-relay 29 →
-  23), and with no wire allowed 41 connections left for the builder become 34. No board
-  comes out worse; Balanced and Wire routing, and auto-place, are exactly as they were.
+  fixtures, 60 jumpers become 51 (NE555 4 → 1, lpb1-booster 5 → 2), and with no wire
+  allowed 34 connections left for the builder become 27. No board comes out worse;
+  Balanced and Wire routing, and auto-place, are exactly as they were.
 
 - **Every export asks where it goes.** The build guide, the schematic, the 1:1 PDF and
   the 3D snapshot wrote fixed names beside the board — or into whatever folder the

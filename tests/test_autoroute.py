@@ -1279,7 +1279,7 @@ def _wanted(doc: PerfDocument) -> tuple[NetId, ...]:
 
 def test_a_builder_committed_to_solder_is_not_walled_in_by_the_ground_rail() -> None:
     """The case the other starting orders are for. Ground routed first is a solder rail
-    across the NE555, and a trace cannot cross a trace: six signals hopped it with a jumper
+    across the NE555, and a trace cannot cross a trace: four signals hopped it with a jumper
     somebody who asked for solder did not want. Routed signals first, one does."""
     doc = dataclasses.replace(_load_golden_document("ne555"), conductors=())
     options = AutorouteOptions(router=options_for_style("solder"))
@@ -1287,7 +1287,7 @@ def test_a_builder_committed_to_solder_is_not_walled_in_by_the_ground_rail() -> 
     criticality_alone = plan_autoroute(doc, LOOKUP_STD, dataclasses.replace(options, max_passes=1))
     plan = plan_autoroute(doc, LOOKUP_STD, options)
 
-    assert _jumpers(criticality_alone) == 6, "the fixture no longer shows the problem"
+    assert _jumpers(criticality_alone) == 4, "the fixture no longer shows the problem"
     assert _jumpers(plan) == 1
     assert plan.summary.links_unrouted == 0
     report = run_lvs(plan.document, LOOKUP_STD).summary

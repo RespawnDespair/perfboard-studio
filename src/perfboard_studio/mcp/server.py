@@ -606,7 +606,7 @@ def autoroute(
                    best. Costs roughly two ordinary routes. Prefer this when the user has
                    not stated a preference -- it answers by measuring instead of guessing.
     On the NE555 fixture "balanced" gives 4 traces and 10 wires; "solder" gives 15 traces
-    and 1 wire but 34 holes at bridging risk.
+    and 1 wire but 38 holes at bridging risk.
 
     `wires` is how each wire is laid: "grid" (the default) runs it square along the rows
     and columns of holes with as few bends as it can, the way wire is dressed on perfboard;

@@ -163,6 +163,14 @@ class RouterCosts:
     #: measured on atmega328-relay, where two insulated wires shared three holes of row 18
     #: at the crossing price alone. Unused when straight.
     wire_along_copper: float = 3
+    #: One bend in a SOLDER TRACE. Zero -- which is every golden route, and "balanced" -- is
+    #: the original search, to which a run that goes one hole across and one hole down in a
+    #: staircase costs exactly what an L of the same length does, so it drew staircases:
+    #: 77 one-hole steps in the solder-first routing of the six examples. A trace somebody
+    #: drags along a board goes straight and turns where it has to, and a staircase is a
+    #: row of extra bridges to make and inspect. Above zero the searches run over (hole,
+    #: heading) so a bend can be priced -- see ``_find_turning_trace_path``.
+    trace_bend: float = 0
 
 
 DEFAULT_ROUTER_COSTS = RouterCosts()
@@ -246,14 +254,25 @@ _STRATEGY_FAMILY: dict[RouteStrategy, StrategyPreference] = {
 
 
 def _preference_rank(strategy: RouteStrategy, prefer: StrategyPreference | None) -> int:
-    """0 for a strategy the builder committed to, 1 for anything else.
+    """0 for a strategy the builder committed to, 1 for anything else -- and for a builder
+    committed to bending legs, solder before wire, 1 and 2.
 
     With no preference every strategy ranks 0, so the sort collapses to cost alone and the
     router behaves exactly as it always has -- which is what keeps the golden routes valid.
+
+    "Lead-bend" always SAID "then solder, then wire", and ranked the two alike, leaving the
+    order to the cost table: a winding trace with a hop in it once bends were priced came to
+    more than a bare wire's 30, and a connection on the NE555 became a wire for a builder who
+    had asked for solder second.
     """
     if prefer is None:
         return 0
-    return 0 if _STRATEGY_FAMILY.get(strategy) == prefer else 1
+    family = _STRATEGY_FAMILY.get(strategy)
+    if family == prefer:
+        return 0
+    if prefer == "lead-bend":
+        return 1 if family == "solder" else 2
+    return 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -316,7 +335,7 @@ DEFAULT_ROUTER_OPTIONS = RouterOptions()
 #:                 trace; wire is dear, and a long run gets a spine rather than becoming
 #:                 a wire. NE555: all 14 connections are traces (11 plain, 2 spined, 1
 #:                 hopped over a crossing) and not one is a wire -- the planner tries
-#:                 other net orders for this style, which is what took the hops from 6.
+#:                 other net orders for this style, which is what took the hops from 4.
 #:   "wire"        For someone who would rather cut and dress wire than drag solder
 #:                 along a row of pads. Wire is cheap and traces are not. NE555: 14 wires.
 #:   "lead-bend"   Fold the component's own leg wherever it reaches, then solder, then
@@ -336,6 +355,22 @@ DEFAULT_ROUTER_OPTIONS = RouterOptions()
 RoutingStyle: TypeAlias = Literal["balanced", "solder", "wire", "lead-bend"]  # noqa: UP040
 
 
+#: What a bend in a trace costs in the two styles that lay long traces -- see
+#: ``RouterCosts.trace_bend``. One hole's worth: a bend is taken over a detour of two holes
+#: and a staircase never beats an L of the same length.
+TRACE_BEND_FOR_SOLDER_STYLES: float = 1
+
+#: What a short insulated hop costs in those two styles, against the 10 of every other.
+#:
+#: Pricing bends made a long winding trace dearer than a short one with a hop in it, so on
+#: its own it bought straightness with jumpers -- 46 of them became 54 across the examples,
+#: for a builder who chose solder to have fewer. A hop at 16 gives most of them back.
+#: MEASURED over the six examples and the NE555, solder style, against no bend price and
+#: hops at 10: bends 273 -> 186, trace length 1306 -> 1335 holes, jumpers 46 -> 49, nothing
+#: unrouted. At 20 the jumpers were 45 but the traces 6% longer; the user chose this middle.
+HOP_FOR_SOLDER_STYLES: float = 16
+
+
 def costs_for_style(style: RoutingStyle) -> RouterCosts:
     """The cost table for a routing style. ``balanced`` is the defaults, untouched."""
     if style == "solder":
@@ -347,6 +382,8 @@ def costs_for_style(style: RoutingStyle) -> RouterCosts:
             bare_wire_fixed=30,
             insulated_wire_fixed=40,
             solder_trace_spine_fixed=4,
+            trace_bend=TRACE_BEND_FOR_SOLDER_STYLES,
+            insulated_hop_fixed=HOP_FOR_SOLDER_STYLES,
         )
     if style == "wire":
         return RouterCosts(
@@ -356,7 +393,13 @@ def costs_for_style(style: RoutingStyle) -> RouterCosts:
             solder_trace_spine_fixed=12,
         )
     if style == "lead-bend":
-        return RouterCosts(proximity_risk=2, bare_wire_fixed=30, insulated_wire_fixed=40)
+        return RouterCosts(
+            proximity_risk=2,
+            bare_wire_fixed=30,
+            insulated_wire_fixed=40,
+            trace_bend=TRACE_BEND_FOR_SOLDER_STYLES,
+            insulated_hop_fixed=HOP_FOR_SOLDER_STYLES,
+        )
     return DEFAULT_ROUTER_COSTS
 
 
@@ -786,7 +829,11 @@ def _solder_trace_candidate(
     max_pure_solder_trace_pads = ctx.opts.max_pure_solder_trace_pads
     risk_holes = tuple(hole for hole in path if _has_foreign_neighbour(ctx, hole, from_, to))
     step_cost = (len(path) - 1) * costs.solder_trace_step
-    risk_cost = len(risk_holes) * costs.proximity_risk
+    # The bends the search priced, priced again here, or the candidates below are compared
+    # on a different bill from the one that chose their paths: a trace that went round the
+    # long way to stay straight would lose to a hop that the search itself would not take.
+    # Nothing at all when bends are free, which keeps every golden cost to the last bit.
+    risk_cost = len(risk_holes) * costs.proximity_risk + _bends_of(path) * costs.trace_bend
 
     needs_spine = len(path) > max_pure_solder_trace_pads
     kind: Literal["solder-trace", "solder-trace-wired"] = (
@@ -894,6 +941,8 @@ def _hopping_trace_candidate(
         hops += 1
         run = [step.hole]
     cost += _emit_trace_run(ctx, run, buildup, conductors, risk_holes, from_, to)
+    # As for the plain trace: the bends the search priced -- see _solder_trace_candidate.
+    cost += _bends_of([step.hole for step in steps]) * costs.trace_bend
 
     if not conductors:
         return None
@@ -969,6 +1018,10 @@ def _find_hopping_path(
     the differential proof at risk for no gain.
     """
     costs = ctx.opts.costs
+    if costs.trace_bend > 0:
+        turning = _find_turning_trace_path(ctx, from_, to, hops=True)
+        if turning is not None:
+            return turning
     start_key = _key(from_)
     goal_key = _key(to)
 
@@ -1002,6 +1055,89 @@ def _find_hopping_path(
             g_score[next_key] = tentative
             came_from[next_key] = (current, hopped)
             open_list.push(move_to, tentative + manhattan(move_to, to) * costs.solder_trace_step)
+    return None
+
+
+def _bends_of(holes: list[HoleCoord]) -> int:
+    """How many times a run of holes changes direction -- a hop counting as one straight
+    move along its own line."""
+    bends = 0
+    previous: tuple[int, int] | None = None
+    for a, b in itertools.pairwise(holes):
+        heading = ((b.col > a.col) - (b.col < a.col), (b.row > a.row) - (b.row < a.row))
+        if previous is not None and heading != previous:
+            bends += 1
+        previous = heading
+    return bends
+
+
+#: A trace's state in the turning search: (col, row, d_col, d_row), the direction it
+#: arrived in -- (0, 0) at the start, where no bend has been made yet.
+_Heading = tuple[int, int, int, int]
+
+
+def _find_turning_trace_path(
+    ctx: _RouteContext, from_: HoleCoord, to: HoleCoord, *, hops: bool
+) -> list[_Step] | None:
+    """The trace searches with bends priced (``RouterCosts.trace_bend``): A* over (hole,
+    heading), with exactly the moves and costs of ``_find_solder_trace_path`` -- or, with
+    ``hops``, of ``_find_hopping_path`` -- plus the bend cost wherever the heading changes.
+
+    Only reached when bends cost something, which no golden route does, so those searches
+    keep reproducing the original byte for byte; this one only has to be deterministic,
+    which a heap on (f, push order) is. Given four times the node ceiling, because a state
+    per heading is up to four per hole; a caller whose search this cannot finish falls back
+    to its own, so pricing bends never costs a connection.
+    """
+    costs = ctx.opts.costs
+    bend = costs.trace_bend
+    step_cost = costs.solder_trace_step
+    goal = _key(to)
+    start: _Heading = (from_.col, from_.row, 0, 0)
+    g_score: dict[_Heading, float] = {start: 0.0}
+    came_from: dict[_Heading, tuple[_Heading, bool]] = {}
+    heap: list[tuple[float, int, _Heading]] = [(manhattan(from_, to) * step_cost, 0, start)]
+    pushed = 1
+    closed: set[_Heading] = set()
+    expanded = 0
+    ceiling = ctx.opts.max_expanded_nodes * 4
+
+    while heap:
+        _f, _order, state = heapq.heappop(heap)
+        col, row, heading_col, heading_row = state
+        if (col, row) == goal:
+            steps: list[_Step] = []
+            cursor = state
+            while cursor != start:
+                previous, hopped = came_from[cursor]
+                steps.append(_Step(hole=HoleCoord(col=cursor[0], row=cursor[1]), hopped=hopped))
+                cursor = previous
+            steps.append(_Step(hole=from_, hopped=False))
+            steps.reverse()
+            return steps
+        if state in closed:
+            continue
+        closed.add(state)
+        expanded += 1
+        if expanded > ceiling:
+            return None
+        g = g_score[state]
+        for landing, hopped, cost in _moves_from(ctx, HoleCoord(col=col, row=row), from_, to):
+            if hopped and not hops:
+                continue
+            d_col = (landing.col > col) - (landing.col < col)
+            d_row = (landing.row > row) - (landing.row < row)
+            turned = (heading_col, heading_row) not in ((0, 0), (d_col, d_row))
+            nxt: _Heading = (landing.col, landing.row, d_col, d_row)
+            if nxt in closed:
+                continue
+            tentative = g + cost + (bend if turned else 0.0)
+            if tentative >= g_score.get(nxt, math.inf):
+                continue
+            g_score[nxt] = tentative
+            came_from[nxt] = (state, hopped)
+            heapq.heappush(heap, (tentative + manhattan(landing, to) * step_cost, pushed, nxt))
+            pushed += 1
     return None
 
 
@@ -1109,6 +1245,10 @@ def _find_solder_trace_path(
     keep clear of foreign pads rather than merely legal ones.
     """
     costs = ctx.opts.costs
+    if costs.trace_bend > 0:
+        turning = _find_turning_trace_path(ctx, from_, to, hops=False)
+        if turning is not None:
+            return [step.hole for step in turning]
     max_expanded_nodes = ctx.opts.max_expanded_nodes
     start_key = _key(from_)
     goal_key = _key(to)

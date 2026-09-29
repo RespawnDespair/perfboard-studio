@@ -1022,12 +1022,12 @@ def _starting_orders(
     it with a jumper they did not want, or, when no wire is allowed at all, is not routed.
 
     No single order wins, so the plan is the best of them. Measured over the six examples
-    and fifteen fixtures in solder style: 79 jumpers where criticality alone was tried, 56
-    now -- ne555 goes from 6 to 1, lpb1-booster from 6 to 1, atmega328-relay from 29 to 23
-    -- and `dense` stays as it was, because criticality is the best order for it. With no
-    wire allowed at all, 41 connections left unrouted become 34. No board is worse on any
-    of the three counts, and it cannot be: the other orders are tried AFTER the usual
-    rip-up from criticality and replace its plan only when they beat it.
+    and fifteen fixtures in solder style, with bends priced (``RouterCosts.trace_bend``):
+    60 jumpers where criticality alone was tried, 51 now -- ne555 goes from 4 to 1,
+    lpb1-booster from 5 to 2 -- and `dense` stays as it was, because criticality is the
+    best order for it. With no wire allowed at all, 34 connections left unrouted become 27.
+    No board is worse on any of the three counts, and it cannot be: the other orders are
+    tried AFTER the usual rip-up from criticality and replace its plan only when they beat it.
 
     For "balanced" and "wire" the other two orders found nothing, and the placer prices
     every candidate placement through a balanced plan, so they keep the one order they had
