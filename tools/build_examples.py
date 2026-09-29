@@ -29,7 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from perfboard_studio import persist  # noqa: E402
-from perfboard_studio.autoroute import plan_autoroute  # noqa: E402
+from perfboard_studio.autoroute import AutorouteOptions, plan_autoroute  # noqa: E402
 from perfboard_studio.command import CommandBus, CommandContext  # noqa: E402
 from perfboard_studio.commands import (  # noqa: E402
     AddBoardNotePayload,
@@ -69,6 +69,7 @@ from perfboard_studio.placer import (  # noqa: E402
     recommended_board,
     suggest_boards,
 )
+from perfboard_studio.router import RouterOptions  # noqa: E402
 from perfboard_studio.schematic import build_schematic  # noqa: E402
 
 EXAMPLES = REPO_ROOT / "examples"
@@ -77,6 +78,15 @@ EXAMPLES = REPO_ROOT / "examples"
 #: date here would rewrite every example on every run and put the diff in the way of
 #: whatever the commit was actually about.
 STAMP = "2026-01-01T00:00:00Z"
+
+#: What Ctrl+R does in the window, which is what an example should show. The engine's
+#: default lays each wire as one straight run, because that is what every golden route
+#: records; the window lays them along the grid, because that is what somebody building
+#: the board wants. The examples were routed with the ENGINE's default, so the first boards
+#: a stranger opens were cats' cradles of diagonal wire that the application itself no
+#: longer produces -- and one straight bare wire passes a fraction of a millimetre from a
+#: foreign pad.
+ROUTING = AutorouteOptions(router=RouterOptions(wire_path="grid"))
 
 
 class Example:
@@ -400,7 +410,7 @@ def _finish(example: Example, bus: CommandBus, lookup, preset: BoardPreset, *, w
             print(f"  {example.stem}: placement refused [{result.code}] {result.message}")
             return False
 
-    plan = plan_autoroute(bus.document, lookup)
+    plan = plan_autoroute(bus.document, lookup, ROUTING)
     if not plan.is_empty:
         result = bus.dispatch("conductor.addMany", plan.payload())
         if not result.ok:

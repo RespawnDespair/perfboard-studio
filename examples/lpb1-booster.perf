@@ -222,6 +222,31 @@
       "path": [
         {
           "col": 6,
+          "row": 20
+        },
+        {
+          "col": 6,
+          "row": 18
+        },
+        {
+          "col": 4,
+          "row": 18
+        },
+        {
+          "col": 4,
+          "row": 17
+        }
+      ],
+      "side": "bottom",
+      "netId": "net-4",
+      "layerZ": 0
+    },
+    {
+      "id": "cond-11",
+      "kind": "bare-wire",
+      "path": [
+        {
+          "col": 6,
           "row": 24
         },
         {
@@ -234,7 +259,7 @@
       "layerZ": 0
     },
     {
-      "id": "cond-11",
+      "id": "cond-12",
       "kind": "solder-trace",
       "path": [
         {
@@ -260,7 +285,7 @@
       "buildup": "normal"
     },
     {
-      "id": "cond-12",
+      "id": "cond-13",
       "kind": "insulated-wire",
       "path": [
         {
@@ -269,7 +294,7 @@
         },
         {
           "col": 6,
-          "row": 24
+          "row": 25
         }
       ],
       "side": "bottom",
@@ -277,7 +302,25 @@
       "layerZ": 1
     },
     {
-      "id": "cond-13",
+      "id": "cond-14",
+      "kind": "solder-trace",
+      "path": [
+        {
+          "col": 6,
+          "row": 25
+        },
+        {
+          "col": 6,
+          "row": 24
+        }
+      ],
+      "side": "bottom",
+      "netId": "net-4",
+      "layerZ": 0,
+      "buildup": "normal"
+    },
+    {
+      "id": "cond-15",
       "kind": "insulated-wire",
       "path": [
         {
@@ -294,7 +337,7 @@
       "layerZ": 1
     },
     {
-      "id": "cond-14",
+      "id": "cond-16",
       "kind": "bare-wire",
       "path": [
         {
@@ -311,12 +354,28 @@
       "layerZ": 0
     },
     {
-      "id": "cond-15",
-      "kind": "insulated-wire",
+      "id": "cond-17",
+      "kind": "bare-wire",
       "path": [
         {
           "col": 5,
           "row": 17
+        },
+        {
+          "col": 5,
+          "row": 12
+        },
+        {
+          "col": 2,
+          "row": 12
+        },
+        {
+          "col": 2,
+          "row": 19
+        },
+        {
+          "col": 5,
+          "row": 19
         },
         {
           "col": 5,
@@ -325,10 +384,10 @@
       ],
       "side": "bottom",
       "netId": "net-6",
-      "layerZ": 1
+      "layerZ": 0
     },
     {
-      "id": "cond-16",
+      "id": "cond-18",
       "kind": "bare-wire",
       "path": [
         {
@@ -345,12 +404,24 @@
       "layerZ": 0
     },
     {
-      "id": "cond-17",
-      "kind": "insulated-wire",
+      "id": "cond-19",
+      "kind": "bare-wire",
       "path": [
         {
           "col": 0,
           "row": 9
+        },
+        {
+          "col": 0,
+          "row": 3
+        },
+        {
+          "col": 4,
+          "row": 3
+        },
+        {
+          "col": 4,
+          "row": 5
         },
         {
           "col": 3,
@@ -359,10 +430,31 @@
       ],
       "side": "bottom",
       "netId": "net-8",
-      "layerZ": 1
+      "layerZ": 0
     },
     {
-      "id": "cond-18",
+      "id": "cond-2",
+      "kind": "bare-wire",
+      "path": [
+        {
+          "col": 7,
+          "row": 26
+        },
+        {
+          "col": 3,
+          "row": 26
+        },
+        {
+          "col": 3,
+          "row": 24
+        }
+      ],
+      "side": "bottom",
+      "netId": "net-1",
+      "layerZ": 0
+    },
+    {
+      "id": "cond-20",
       "kind": "bare-wire",
       "path": [
         {
@@ -379,29 +471,20 @@
       "layerZ": 0
     },
     {
-      "id": "cond-2",
-      "kind": "bare-wire",
-      "path": [
-        {
-          "col": 7,
-          "row": 26
-        },
-        {
-          "col": 3,
-          "row": 24
-        }
-      ],
-      "side": "bottom",
-      "netId": "net-1",
-      "layerZ": 0
-    },
-    {
       "id": "cond-3",
-      "kind": "insulated-wire",
+      "kind": "bare-wire",
       "path": [
         {
           "col": 0,
           "row": 10
+        },
+        {
+          "col": 2,
+          "row": 10
+        },
+        {
+          "col": 2,
+          "row": 4
         },
         {
           "col": 3,
@@ -410,15 +493,23 @@
       ],
       "side": "bottom",
       "netId": "net-1",
-      "layerZ": 1
+      "layerZ": 0
     },
     {
       "id": "cond-4",
-      "kind": "insulated-wire",
+      "kind": "bare-wire",
       "path": [
         {
           "col": 3,
           "row": 24
+        },
+        {
+          "col": 1,
+          "row": 24
+        },
+        {
+          "col": 1,
+          "row": 30
         },
         {
           "col": 0,
@@ -427,15 +518,23 @@
       ],
       "side": "bottom",
       "netId": "net-1",
-      "layerZ": 1
+      "layerZ": 0
     },
     {
       "id": "cond-5",
-      "kind": "insulated-wire",
+      "kind": "bare-wire",
       "path": [
         {
           "col": 7,
           "row": 26
+        },
+        {
+          "col": 8,
+          "row": 26
+        },
+        {
+          "col": 8,
+          "row": 33
         },
         {
           "col": 7,
@@ -444,7 +543,7 @@
       ],
       "side": "bottom",
       "netId": "net-1",
-      "layerZ": 1
+      "layerZ": 0
     },
     {
       "id": "cond-6",
@@ -452,6 +551,10 @@
       "path": [
         {
           "col": 2,
+          "row": 20
+        },
+        {
+          "col": 0,
           "row": 20
         },
         {
@@ -519,11 +622,53 @@
     },
     {
       "id": "cond-8",
-      "kind": "bare-wire",
+      "kind": "solder-trace-wired",
       "path": [
         {
           "col": 9,
           "row": 26
+        },
+        {
+          "col": 9,
+          "row": 27
+        },
+        {
+          "col": 9,
+          "row": 28
+        },
+        {
+          "col": 9,
+          "row": 29
+        },
+        {
+          "col": 9,
+          "row": 30
+        },
+        {
+          "col": 9,
+          "row": 31
+        },
+        {
+          "col": 9,
+          "row": 32
+        }
+      ],
+      "side": "bottom",
+      "netId": "net-2",
+      "layerZ": 0,
+      "buildup": "normal",
+      "spine": {
+        "material": "tinned-copper",
+        "gauge": 0.6
+      }
+    },
+    {
+      "id": "cond-9",
+      "kind": "insulated-wire",
+      "path": [
+        {
+          "col": 9,
+          "row": 32
         },
         {
           "col": 7,
@@ -532,24 +677,7 @@
       ],
       "side": "bottom",
       "netId": "net-2",
-      "layerZ": 0
-    },
-    {
-      "id": "cond-9",
-      "kind": "bare-wire",
-      "path": [
-        {
-          "col": 6,
-          "row": 20
-        },
-        {
-          "col": 4,
-          "row": 17
-        }
-      ],
-      "side": "bottom",
-      "netId": "net-4",
-      "layerZ": 0
+      "layerZ": 1
     }
   ],
   "cuts": [],

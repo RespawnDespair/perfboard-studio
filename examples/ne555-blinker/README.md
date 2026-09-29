@@ -36,7 +36,7 @@ thing said the other way: a project is a directory built around exactly one `.pe
    them, RV1's body reaches the edge where a finger can turn it, and the rest line up in
    lanes by what they connect to. One Ctrl+Z takes the whole thing back.
 3. **Ctrl+R** — route. Seven nets, all closed, no DRC error and no LVS mismatch.
-4. **Ctrl+4** — the build guide: 31 steps across 8 phases, 47 checkpoints.
+4. **Ctrl+4** — the build guide: 31 steps across 8 phases, 46 checkpoints.
 5. **Ctrl+Alt+S** — Save Project. The board, plus everything generated from it, into
    `outputs/` beside it: the 1:1 sheets, the schematic as SVG/PDF/PNG, the guide, the
    bill of materials and the cut list.

@@ -27,7 +27,7 @@ one arrives with are somebody else's problem.
 | **lm317-supply** | 11 | **6 × 8 cm**, 22 × 30, FR-4 | A hot part. The regulator is a TO-220, so the heat-proximity rule has something to measure. |
 | **lpb1-booster** | 12 | **7 × 9 cm**, 27 × 35, **FR-2** | The material mattering. Phenolic is what a pedal actually gets built on and it is the board whose pads lift, so the guide drops the iron 30 °C (350 → 320) and cuts the dwell from 3 s to 2 s. |
 | **arduino-io-shield** | 11 | **5 × 7 cm**, 18 × 24, FR-4 | Headers. Two of them, 8-pin and 6-pin, which is what a shield mostly is — and the case where lead bends and short traces do nearly all the work. |
-| **atmega328-relay** | 24 | **9 × 15 cm**, 34 × 58, FR-4 | Scale, and what it costs. An ATmega328 with a 7805, a crystal, a relay and four connectors: 24 nets, 59 conductors, an 83-step guide with 100 checkpoints and 52 wires to cut. It is also every rule at once — a TO-220 and a relay both run hot, two electrolytics mind, and the board's own finger strips are 64 holes nothing can be soldered into. |
+| **atmega328-relay** | 24 | **9 × 15 cm**, 34 × 58, FR-4 | Scale, and what it costs. An ATmega328 with a 7805, a crystal, a relay and four connectors: 24 nets, 58 conductors, an 82-step guide with 102 checkpoints and 50 wires to cut. It is also every rule at once — a TO-220 and a relay both run hot, two electrolytics mind, and the board's own finger strips are 64 holes nothing can be soldered into. |
 | **nano-relay** | 14 | **9 × 15 cm**, 34 × 58, FR-4 | Real parts, out of a KiCad netlist as it stands. An Arduino Nano switching a 12 V relay through a BC547, fed by a 7805, with a push button and an LED. Nothing is named for it here: the Nano, the BC547, the 1N4007 and the 7805 come out of the catalog by their values, with their pin names; everything else by its KiCad footprint; and the Nano's pins, which KiCad numbers down one side and up the other, and the LED's, which it numbers cathode first, are renumbered by name. The terminals carry their pin names and the board two labels. |
 | **ne555-blinker/** | 10 | *none yet* | The workflow, rather than its result. Ten parts in the design and nothing on the board, so **Place on the Board** has a board size to suggest and an arrangement to make. Its own [README](./ne555-blinker/README.md) walks through it. |
 
@@ -49,6 +49,12 @@ a hole count, and the whole product is applied — the finger strips down two ed
 screw hole in each corner. A finger is solid copper with no bore, which is why
 `geometry.unusable_holes` exists and why the placer and the router had to be taught about
 it before these examples could carry a real board.
+
+They are routed the way **Ctrl+R** routes in the window — wires laid along the grid — and
+not with the engine's own default, which lays each wire as one straight run because that is
+what every golden route records. They were once routed with the engine's default, and the
+first boards a stranger opened were a cat's cradle of diagonal wire the application itself
+no longer produced.
 
 The footprints are named in that script for five of them rather than read from the netlist
 -- they were built before the importer could read one, and they are what they are. A netlist

@@ -37,8 +37,9 @@
 ![NE555 astable devresi yerleştirilmiş ve yönlendirilmiş hâliyle 2D editör](./docs/images/editor-component-side.png)
 
 <p align="center">
-  İddianın tamamı durum çubuğunda: yedi net üzerinde on dört bağlantı, dördü tel<br>
-  gerektirmiş, DRC temiz ve LVS şemayla aynı fikirde.
+  İddianın tamamı durum çubuğunda: yedi net üzerinde on dört bağlantı, DRC hatası yok ve<br>
+  LVS şemayla aynı fikirde — bir de yalıtımı ölçülecek bir ped: aşağıdaki uyarı, montaj<br>
+  rehberinin multimetreyle yapılacak bir kontrole çevirdiği.
 </p>
 
 ---
@@ -190,7 +191,7 @@ sıkışıp kalacak bir jumper **ilk** faza alınır, çünkü o parça yerine l
 çok geçtir.
 
 Animasyon kartı ortada ters çeviriyor, çünkü siz de öyle yaparsınız: perfboard saydam
-değildir ve bu montajın yirmi iki adımının on dördü yukarıdan göremediğiniz yüzde
+değildir ve bu montajın yirmi beş adımının on yedisi yukarıdan göremediğiniz yüzde
 gerçekleşir. Animasyon, 3D panelindeki montaj kaydırıcısının çağırdığı fonksiyonun aynısı
 oynatılarak üretiliyor — yani rehberin gerçekten vermediği bir sırayı gösteremez.
 

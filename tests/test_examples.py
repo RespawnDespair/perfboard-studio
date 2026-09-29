@@ -54,9 +54,10 @@ def test_example_round_trips_byte_identical(path: pathlib.Path) -> None:
 
 @pytest.mark.parametrize("path", PERF_FILES, ids=lambda p: p.stem)
 def test_example_has_no_drc_errors(path: pathlib.Path) -> None:
-    """Warnings are allowed and expected -- the LM317 board carries an R5' proximity
-    warning, which is the rule doing its job and becomes a checkpoint in the guide.
-    An *error* is a board that cannot be built as drawn."""
+    """Warnings are allowed and expected -- three of the boards carry an R5' proximity
+    warning, a trace laid beside another net's pin, which is the rule doing its job and
+    becomes a checkpoint in the guide. An *error* is a board that cannot be built as
+    drawn."""
     result = persist.deserialize_document(path.read_text(encoding="utf-8"))
     assert result.ok
     errors = [v for v in run_drc(result.document, footprint_lookup()) if v.severity == "error"]
