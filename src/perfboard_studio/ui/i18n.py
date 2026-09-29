@@ -1028,32 +1028,6 @@ TURKISH: Mapping[str, str] = {
         "Lehimleme sırası, pencerenin içinde: önce en alçak parça, üzerinde bir şey duran "
         "jumperlar ondan önce, entegreler en sonda. Bir adımı seçmek onu kart üzerinde gösterir."
     ),
-    # The phases, in the order they are soldered. The engine keeps them in English for the
-    # guide golden; the panel is interface.
-    "Preparation": "Hazırlık",
-    "Lowest profile": "En alçak parçalar",
-    "IC sockets": "Entegre soketleri",
-    "Small bodies": "Küçük gövdeler",
-    "Medium bodies": "Orta gövdeler",
-    "Tall and mechanical": "Uzun ve mekanik parçalar",
-    "Solder side: traces and bare wire": "Lehim yüzü: lehim yolları ve çıplak tel",
-    "Long insulated wires": "Uzun izoleli teller",
-    "Closing up": "Kapanış",
-    "{steps} step(s) across {phases} phase(s)": "{phases} aşamada {steps} adım",
-    "{count} check(s)": "{count} kontrol",
-    "{count} wire(s) to cut": "kesilecek {count} tel",
-    "{count} warning(s)": "{count} uyarı",
-    "bent lead": "bükülmüş bacak",
-    "solder trace": "lehim yolu",
-    "solder trace with a spine": "omurgalı lehim yolu",
-    "bare wire": "çıplak tel",
-    "insulated wire": "izoleli tel",
-    "top jumper": "üst yüz jumper",
-    "copper strip": "bakır şerit",
-    "1 hole apart": "1 delik ara",
-    "{count} holes apart": "{count} delik ara",
-    "pin 1 at {hole}": "1. pin {hole}",
-    "{count} pads": "{count} ped",
     "Export the Guide…": "Rehberi Dışa Aktar…",
     "Build guide written": "Montaj rehberi yazıldı",
     "Written to {folder}, with {count} other files.": (
@@ -1131,39 +1105,6 @@ TURKISH: Mapping[str, str] = {
     "Relays": "Röleler",
     "Module boards": "Modül kartları",
     "Boxes of any size": "Her boyutta kutular",
-    # -- footprint names, as the engine phrases them (ui/partnames.py) -------------------
-    "Resistor (axial, {0}-hole span)": "Direnç (eksenel, {0} delik açıklık)",
-    "Axial ({0}-hole span, {1} mm body)": "Eksenel ({0} delik açıklık, {1} mm gövde)",
-    "Diode, {0}": "Diyot, {0}",
-    "Electrolytic capacitor, {0} mm dia, {1}-hole pitch": (
-        "Elektrolitik kondansatör, {0} mm çap, {1} delik aralık"
-    ),
-    "Disc ceramic capacitor, {0} mm dia, {1}-hole pitch": (
-        "Disk seramik kondansatör, {0} mm çap, {1} delik aralık"
-    ),
-    "Disc ceramic capacitor, {0}-hole pitch": "Disk seramik kondansatör, {0} delik aralık",
-    "Film capacitor, {0} mm, {1}-hole pitch": "Film kondansatör, {0} mm, {1} delik aralık",
-    "Film capacitor, {0}-hole pitch": "Film kondansatör, {0} delik aralık",
-    'DIP-{0} (0.6" wide)': 'DIP-{0} (0.6" geniş)',
-    "TO-92 (inline, on-grid)": "TO-92 (sıralı, ızgaraya oturan)",
-    "LED, {0} mm round": "LED, {0} mm yuvarlak",
-    "Pin header, {0}": "Pin başlığı, {0}",
-    "IDC box header, {0}": "IDC kutu başlık, {0}",
-    "Screw terminal, {0}-way, 5.08 mm pitch, vertical (wires from above)": (
-        "Vidalı klemens, {0} yollu, 5.08 mm aralık, dik (kablo yukarıdan)"
-    ),
-    "Screw terminal, {0}-way, 5.08 mm pitch": "Vidalı klemens, {0} yollu, 5.08 mm aralık",
-    "Screw terminal, {0}-way": "Vidalı klemens, {0} yollu",
-    "Potentiometer, 3-pin inline": "Potansiyometre, 3 pin sıralı",
-    "Tactile switch, 4-pin": "Tact buton, 4 pin",
-    "Tactile switch, {0} mm": "Tact buton, {0} mm",
-    "Crystal, HC-49/U": "Kristal, HC-49/U",
-    "Small SPDT relay": "Küçük SPDT röle",
-    "Custom part, {0} pins, {1} mm, body offset {2} mm": (
-        "Özel parça, {0} pin, {1} mm, gövde kaydırması {2} mm"
-    ),
-    "Custom part, {0} pins, {1} mm": "Özel parça, {0} pin, {1} mm",
-    "Module, {0} pins, {1} mm, seated {2} mm up": "Modül, {0} pin, {1} mm, {2} mm yukarıda",
     "Any rectangular part": "Herhangi bir dikdörtgen parça",
     "DIP (dual in-line)": "DIP (çift sıra)",
     "Pin header": "Pin başlığı",

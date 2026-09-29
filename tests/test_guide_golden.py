@@ -56,7 +56,7 @@ from perfboard_studio.command import CommandBus, CommandContext
 from perfboard_studio.commands import create_document_id_generator, create_standard_registry
 from perfboard_studio.connectivity import FootprintLookup
 from perfboard_studio.footprints import footprint_lookup
-from perfboard_studio.guide import build_guide
+from perfboard_studio.guide import GuideOptions, build_guide
 from perfboard_studio.guide_export import bom_to_csv, cut_list_to_csv, guide_to_html, guide_to_json
 from perfboard_studio.model import PerfDocument
 from perfboard_studio.version import __version__
@@ -97,18 +97,31 @@ def routed_ne555() -> PerfDocument:
 
 #: Named here rather than derived, so that adding a fifth export format and forgetting to
 #: bless it fails ``test_every_export_is_covered`` instead of silently testing three.
-EXPORTS = ("ne555_bom.csv", "ne555_cut_list.csv", "ne555_guide.html", "ne555_guide.json")
+#:
+#: TWICE: in English and in Turkish, the same board. The English four were blessed before
+#: the guide could be written in anything else and did not move when it could -- which is
+#: the proof that translating it changed no English word. The Turkish four are what a
+#: Turkish reader gets, read once by a person and frozen, so that a reworded template is a
+#: readable diff here and not a surprise at the bench.
+EXPORTS = (
+    "ne555_bom.csv", "ne555_cut_list.csv", "ne555_guide.html", "ne555_guide.json",
+    "ne555_bom.tr.csv", "ne555_cut_list.tr.csv", "ne555_guide.tr.html", "ne555_guide.tr.json",
+)
 
 
 def build_exports() -> dict[str, str]:
-    """Every format the guide is published in, from one build of one board."""
-    guide = build_guide(routed_ne555(), REGISTRY)
-    return {
-        "ne555_guide.json": guide_to_json(guide),
-        "ne555_guide.html": guide_to_html(guide),
-        "ne555_cut_list.csv": cut_list_to_csv(guide),
-        "ne555_bom.csv": bom_to_csv(guide),
-    }
+    """Every format the guide is published in, from one build of one board per language."""
+    board = routed_ne555()
+    exported: dict[str, str] = {}
+    for suffix, language in (("", "en"), (".tr", "tr")):
+        guide = build_guide(board, REGISTRY, GuideOptions(language=language))
+        exported |= {
+            f"ne555_guide{suffix}.json": guide_to_json(guide),
+            f"ne555_guide{suffix}.html": guide_to_html(guide),
+            f"ne555_cut_list{suffix}.csv": cut_list_to_csv(guide),
+            f"ne555_bom{suffix}.csv": bom_to_csv(guide),
+        }
+    return exported
 
 
 @functools.cache
@@ -200,7 +213,8 @@ def test_every_export_carries_the_version_that_wrote_it() -> None:
     provenance line at the top of one is a row somebody has to delete.
     """
     produced = exports()
-    assert f"Perfboard Studio {__version__}" in produced["ne555_guide.json"]
-    assert __version__ in produced["ne555_guide.html"]
-    assert __version__ not in produced["ne555_bom.csv"]
-    assert __version__ not in produced["ne555_cut_list.csv"]
+    for suffix in ("", ".tr"):
+        assert f"Perfboard Studio {__version__}" in produced[f"ne555_guide{suffix}.json"]
+        assert __version__ in produced[f"ne555_guide{suffix}.html"]
+        assert __version__ not in produced[f"ne555_bom{suffix}.csv"]
+        assert __version__ not in produced[f"ne555_cut_list{suffix}.csv"]

@@ -1247,6 +1247,9 @@ model → geometry → stripboard → connectivity / occupancy
 by `drc`, `router`, `striproute` and `guide`, which is how three siblings and their
 downstream share one fact without importing one another.
 
+`phrasebook.py` hangs off nothing at all -- a table and a lookup -- and is read by `guide`,
+`guide_export` and `ui/partnames`. See "i18n" below for why the guide is translated there.
+
 `schematic.py` sits beside `ratsnest.py` on purpose: both take a document and a footprint
 lookup and answer a question about the netlist, and neither is downstream of the other.
 `ui/viewsch.py` is its only consumer.
@@ -1454,8 +1457,37 @@ lot), because a tooltip lives in the source as three quoted fragments on three l
 f-string of engine output goes through.
 
 Engine-generated text (DRC/LVS messages, rule ids, hole addresses, net and component
-names) is never translated: it is compared byte-for-byte by golden fixtures, and the
-addresses are the tool's vocabulary in every language.
+names) is not translated by the interface: it is compared byte-for-byte by golden
+fixtures, and the addresses are the tool's vocabulary in every language.
+
+**The build guide is the one exception, and it is translated in the ENGINE**
+(`phrasebook.py`), not by `t()`. Its sentences are built from facts ("C7 → C11, 4 holes
+apart"), so there is no finished English for the interface to translate after the fact,
+and the MCP server and `--headless` write it with no interface loaded.
+`GuideOptions.language` picks the language, `Guide.language` carries it so every exporter
+says its own words (headings, columns, a step's tag) in the same one, and the window builds
+every guide it shows or writes in its own language (`MainWindow._guide_language`). Four
+rules hold it together:
+
+- **The key is the English template, with NAMED fields** (`say("{hole} sits about one pad
+  gap from {neighbour}...", hole=..., neighbour=...)`), so a translation orders them as its
+  grammar needs. English is the key itself, which is why every English guide golden stayed
+  byte for byte what it was while this was built -- and must stay so.
+- **Ids stay ids.** An archetype, a conductor or checkpoint kind, a warning code and a wire
+  colour are data in the guide's model and its JSON; they are said in words where they are
+  SHOWN, by looking the id up like any other key. The JSON gains a `language` key only when
+  it is not English (the `stripAxis` rule, for an export).
+- **An address never takes a Turkish suffix** -- "C7'ye" needs the reader's pronunciation of
+  a letter -- so the suffix goes on the word beside it: "C7 deliğine".
+- **Footprint names are re-said, not renamed.** `phrasebook.NAME_TEMPLATES` recognises the
+  engine's own phrasings and the footprint golden never moves; the Parts panel reads the
+  same table (`ui/partnames.py`), so a part is called one thing in the list and the guide.
+
+`tests/test_phrasebook.py` reads what the guide says out of the SOURCE (every literal handed
+to `say`) and out of the tables it says from, and holds the Turkish to it in both directions,
+field for field -- then builds every board in the repository in both languages and looks for
+English words the two share, which is what a sentence nobody wrapped looks like from the
+outside. `tests/test_guide_golden.py` freezes the NE555 guide in Turkish beside the English.
 
 The language is chosen `--lang` → `PERFBOARD_STUDIO_LANG` → the View menu's stored choice → the
 system locale (`main._preferred_language`), and applies at the **next start**: every label

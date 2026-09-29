@@ -1994,33 +1994,28 @@ def test_the_guide_panel_says_where_once() -> None:
         _close(window)
 
 
-def test_the_guide_panel_counts_what_the_engine_counts() -> None:
-    """The panel's summary line is its own, so that it can be in the window's language --
-    and in English it is word for word the engine's, which is what the MCP server and the
-    headless run print."""
-    from perfboard_studio.guide import build_guide, describe
-    from perfboard_studio.ui.main import _guide_summary
+def test_the_guide_panel_says_what_the_guide_says() -> None:
+    """The panel translates nothing of its own: its summary is ``guide.describe`` and its
+    headings the guide's own phase titles, from the one guide the window builds in its own
+    language. It used to keep a copy of both in the interface catalogue, from when the
+    guide could only be English -- two tables for one set of words."""
+    from perfboard_studio.guide import describe
 
-    for document in (_load_dense(), _example_document("atmega328-relay")):
-        guide = build_guide(document, footprint_lookup())
-        assert _guide_summary(guide) == describe(guide)
-
-
-def test_every_phase_is_titled_in_the_panel_as_the_engine_titles_it() -> None:
-    from perfboard_studio.guide import PHASE_TITLES
-    from perfboard_studio.ui.main import _phase_title
-
-    assert {number: _phase_title(number) for number in PHASE_TITLES} == PHASE_TITLES
-
-
-def test_every_conductor_kind_has_a_word_in_the_guide_panel() -> None:
-    from typing import get_args
-
-    from perfboard_studio.model import ConductorKind
-    from perfboard_studio.ui.main import _conductor_word
-
-    for kind in get_args(ConductorKind):
-        assert _conductor_word(kind)
+    window = _window_on(_example_document("atmega328-relay"))
+    try:
+        window.dock_guide.show()
+        window._refresh_guide_panel()
+        guide = window.current_guide()
+        assert window.guide_summary.text() == describe(guide)
+        headings = [
+            window.guide_tree.topLevelItem(i).text(0)
+            for i in range(window.guide_tree.topLevelItemCount())
+        ]
+        assert [heading.split(" (")[0] for heading in headings] == [
+            f"{phase.number}. {phase.title}" for phase in guide.phases if not phase.is_empty
+        ]
+    finally:
+        _close(window)
 
 
 def _menu_tooltips(window) -> list[tuple[str, str]]:
@@ -2101,10 +2096,51 @@ def test_in_turkish_the_guide_panel_is_in_turkish() -> None:
             assert any("Lehim yüzü" in heading for heading in headings), headings
             assert "adım" in window.guide_summary.text()
             assert "step(s)" not in window.guide_summary.text()
+            # ...and so is the guide under them: a step's copper and a check's verdict.
+            lines = [
+                window.guide_tree.topLevelItem(i).child(j).text(0)
+                for i in range(window.guide_tree.topLevelItemCount())
+                for j in range(window.guide_tree.topLevelItem(i).childCount())
+            ]
+            assert any("lehim yolu" in line for line in lines), lines
+            assert any("olmalı" in line for line in lines), lines
+            assert window.current_guide().language == "tr"
         finally:
             _close(window)
     finally:
         set_language(before)
+
+
+@requires_offscreen_gl  # nothing is rendered, but the scanner reads on_export_guide
+def test_a_turkish_window_exports_a_turkish_guide(tmp_path, monkeypatch) -> None:
+    """The file a Turkish builder prints is the guide in their language -- the same one
+    the panel beside the board lists, not the English it used to be."""
+    from perfboard_studio.ui import main as main_module
+    from perfboard_studio.ui import view3d
+    from perfboard_studio.ui.i18n import language, set_language
+
+    monkeypatch.setattr(view3d, "offscreen_gl_available", lambda: False)
+    monkeypatch.setattr("perfboard_studio.ui.main.QMessageBox.warning", lambda *a, **k: None)
+    monkeypatch.setattr(main_module.MainWindow, "_offer_to_open", lambda self, written: None)
+    monkeypatch.setattr(
+        main_module.MainWindow,
+        "_ask_where_to_export",
+        lambda self, title, suggested, file_filter: tmp_path / suggested,
+    )
+    before = language()
+    set_language("tr")
+    try:
+        window = _window_on(_example_document("ne555-astable"))
+        window.current_path = tmp_path / "board.perf"
+        try:
+            window.on_export_guide()
+        finally:
+            _close(window)
+    finally:
+        set_language(before)
+    page = (tmp_path / "board_guide.html").read_text(encoding="utf-8")
+    assert '<html lang="tr">' in page and "Aşama 1" in page
+    assert (tmp_path / "board_cut_list.csv").read_text(encoding="utf-8").startswith("tür,")
 
 
 def _example_document(stem: str) -> PerfDocument:

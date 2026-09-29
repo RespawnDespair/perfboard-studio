@@ -37,10 +37,11 @@ from perfboard_studio.autoroute import describe_best, plan_autoroute, plan_best_
 from perfboard_studio.drc import run_drc
 from perfboard_studio.footprints import footprint_lookup
 from perfboard_studio.geometry import board_outline_mm, hole_span_mm
-from perfboard_studio.guide import build_guide
+from perfboard_studio.guide import GuideOptions, build_guide
 from perfboard_studio.guide import describe as describe_guide
 from perfboard_studio.guide_export import bom_to_csv, cut_list_to_csv, guide_to_html, guide_to_json
 from perfboard_studio.lvs import run_lvs
+from perfboard_studio.phrasebook import guide_language
 from perfboard_studio.placer import describe as describe_placement
 from perfboard_studio.placer import plan_placement
 from perfboard_studio.ratsnest import ratsnest, summarize
@@ -51,6 +52,7 @@ from perfboard_studio.version import describe as describe_version
 from . import view3d
 from .export_pdf import export_pdf, verify_scale
 from .export_schematic import svg_to_pdf, svg_to_png
+from .i18n import language
 from .main import read_document_text
 from .view2d import RULER_MARGIN_MM, BoardScene
 
@@ -272,8 +274,9 @@ def headless(argv: list[str]) -> int:
 
     # --- The build guide, written out. This is the project's actual output, so a
     # headless run that renders the board and does not produce it is only testing half
-    # the pipeline.
-    guide = build_guide(doc, lookup)
+    # the pipeline. In the language the run was started in (--lang, or the environment),
+    # the one choice the window would have made.
+    guide = build_guide(doc, lookup, GuideOptions(language=guide_language(language())))
     # Asked once, here, and reused by the 3D stage below. On a machine with no offscreen
     # GL this run reports what it could not draw and still produces every other output,
     # rather than dying halfway through with a crash dump: a headless run is what CI and

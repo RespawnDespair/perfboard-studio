@@ -95,12 +95,7 @@ def loop_built_labels() -> set[str]:
         )
         for raw in row
     }
-    from perfboard_studio.ui.partnames import NAME_TEMPLATES
-
-    return (
-        {scheme.label for scheme in SCHEMES} | tools | pairs | catalog_texts()
-        | set(NAME_TEMPLATES)
-    )
+    return {scheme.label for scheme in SCHEMES} | tools | pairs | catalog_texts()
 
 
 def catalog_texts() -> set[str]:
@@ -128,26 +123,6 @@ def test_every_word_the_catalog_says_about_a_part_is_in_turkish() -> None:
     assert missing == [], f"catalog text with no Turkish: {missing}"
     unused = sorted(SAME_IN_TURKISH - catalog_texts())
     assert unused == [], f"same-in-Turkish summaries the catalog no longer has: {unused}"
-
-
-def test_every_footprint_name_the_engine_writes_has_turkish() -> None:
-    """The Parts panel read "Resistor (axial, 3-hole span)" under a Turkish heading. The
-    engine keeps its English names (they are in the footprint golden), so the panel
-    recognises the engine's phrasings instead -- and a footprint added later in new words
-    must fail here rather than turn up in English."""
-    from perfboard_studio.footprints import standard_footprints
-    from perfboard_studio.ui.partnames import NAME_TEMPLATES, matching_template
-
-    untemplated = sorted(
-        footprint.name
-        for footprint in standard_footprints().values()
-        # A name with no word in it -- DIP-8, TO-220 -- is the same in every language.
-        if matching_template(footprint.name) is None
-        and re.search(r"[a-z]{3,}", footprint.name)
-    )
-    assert untemplated == [], f"footprint names no template recognises: {untemplated}"
-    missing = sorted(set(NAME_TEMPLATES) - set(TURKISH))
-    assert missing == [], f"footprint name templates with no Turkish: {missing}"
 
 
 def test_a_footprint_name_is_unchanged_in_english() -> None:

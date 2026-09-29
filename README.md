@@ -211,7 +211,8 @@ of them is code-signed**, so each warns on first run and the release notes say h
 past it — a Windows EV certificate is ~$300/year and Apple notarization $99/year, and
 neither is bought yet. See [docs/RELEASING.md](https://github.com/medinstech/perfboard-studio/blob/main/docs/RELEASING.md).
 
-The interface speaks **English and Turkish** (`--lang tr`, or follow the system locale).
+The interface speaks **English and Turkish** (`--lang tr`, or follow the system locale),
+and so does the build guide it writes — the steps, the checks, the cut list.
 
 ### From PyPI
 

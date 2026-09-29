@@ -192,13 +192,16 @@ from perfboard_studio.geometry import (
 )
 from perfboard_studio.guide import (
     Guide,
+    GuideOptions,
     GuideStep,
     PartStep,
     all_steps,
     build_guide,
+    conductor_word,
     document_at_step,
     step_focus,
 )
+from perfboard_studio.guide import describe as describe_guide
 from perfboard_studio.guide_export import bom_to_csv, cut_list_to_csv, guide_to_html, guide_to_json
 from perfboard_studio.lvs import LvsIssue, LvsResult, run_lvs, stale_conductor_ids
 from perfboard_studio.model import (
@@ -212,7 +215,6 @@ from perfboard_studio.model import (
     BoardType,
     BodyArchetype,
     ComponentInstance,
-    ConductorKind,
     DocumentMeta,
     EdgeConnector,
     Footprint,
@@ -241,6 +243,7 @@ from perfboard_studio.parsers.kicad_parts import (  # noqa: F401 - guess_footpri
     guess_footprint_id,
     plan_import,
 )
+from perfboard_studio.phrasebook import GuideLanguage, guide_language
 from perfboard_studio.placer import (
     BoardSuggestion,
     PlacementOptions,
@@ -2685,120 +2688,19 @@ def _severity_word(severity: str) -> str:
     return t("error") if severity == "error" else t("warning")
 
 
-def _phase_title(number: int) -> str:
-    """A build phase's heading in the guide panel.
+def _step_line(step: GuideStep, language: GuideLanguage) -> str:
+    """A step as the guide panel and the 3D caption say it: what goes in, then where.
 
-    The engine's ``PHASE_TITLES``, through ``t()``. The engine keeps its English because
-    the guide golden compares it byte for byte; the panel is interface and speaks the
-    interface's language. A test holds the English column of this table equal to the
-    engine's, so the two cannot name a phase differently.
-    """
-    titles = {
-        0: t("Preparation"),
-        1: t("Lowest profile"),
-        2: t("IC sockets"),
-        3: t("Small bodies"),
-        4: t("Medium bodies"),
-        5: t("Tall and mechanical"),
-        6: t("Solder side: traces and bare wire"),
-        7: t("Long insulated wires"),
-        8: t("Closing up"),
-    }
-    return titles.get(number, str(number))
-
-
-def _guide_summary(guide: Guide) -> str:
-    """The guide panel's one line: ``guide.describe`` in the window's language.
-
-    Identical to it in English, and a test says so -- the MCP server and the headless run
-    print the engine's own, and the three should not disagree about what they counted.
-    """
-    phases = sum(1 for phase in guide.phases if not phase.is_empty)
-    parts = [
-        t("{steps} step(s) across {phases} phase(s)").format(
-            steps=guide.total_steps, phases=phases
-        ),
-        t("{count} check(s)").format(count=guide.checkpoint_count),
-    ]
-    if guide.cut_list:
-        parts.append(t("{count} wire(s) to cut").format(count=len(guide.cut_list)))
-    if guide.warnings:
-        parts.append(t("{count} warning(s)").format(count=len(guide.warnings)))
-    return ", ".join(parts)
-
-
-def _conductor_word(kind: ConductorKind) -> str:
-    """What a conductor is called in a guide step, in lower case, as it reads after a net
-    name. Every kind has one; a test reads them off ``ConductorKind``."""
-    words = {
-        "lead-bend": t("bent lead"),
-        "solder-trace": t("solder trace"),
-        "solder-trace-wired": t("solder trace with a spine"),
-        "bare-wire": t("bare wire"),
-        "insulated-wire": t("insulated wire"),
-        "top-jumper": t("top jumper"),
-        "strip": t("copper strip"),
-    }
-    return words[kind]
-
-
-def _step_what(step: GuideStep) -> str:
-    """WHAT goes in -- a part by reference and value, a connection by its net and what it
-    is made of."""
-    if isinstance(step, PartStep):
-        return f"{step.ref} {step.value}".strip()
-    return f"{step.net_name} · {_conductor_word(step.conductor_kind)}"
-
-
-def _step_line(step: GuideStep) -> str:
-    """A step as the guide panel and the 3D caption say it: what, then where.
-
-    ``step.title`` says the same in the engine's English, which the guide golden holds it
-    to; this is the interface's. The panel used to show the title AND the span beside it
-    in a column of its own -- the holes twice, in a dock too narrow for them once.
-    """
-    where = _step_where(step)
-    return f"{_step_what(step)} — {where}" if where else _step_what(step)
-
-
-def _step_where(step: GuideStep) -> str:
-    """WHERE, built from holes rather than from the engine's span.
-
-    The span is English prose ("4 holes apart", "3 pins with pin 1 at J16") and the
-    panel is interface. The holes are the tool's vocabulary in every language, so they are
-    written as they are and only the words around them are translated. The shape of the
-    answer is the span's: two leads get their distance, anything wider gets the rectangle
-    it stands in and where pin 1 is, and a trace gets its pad count.
+    A part is its own title -- "R1 240 — J21 → J18, 3 holes apart" -- and a connection adds
+    what it is made of, which its title leaves to the tag beside it in the exported guide:
+    "GND · bare wire — C14 → B10". Both come from a guide built in the window's language
+    (``current_guide``), so the panel translates nothing of its own. It used to, from a copy
+    of the engine's wording kept in the interface catalogue, when the guide could only be
+    English.
     """
     if isinstance(step, PartStep):
-        holes = [hole for _number, hole in step.pin_holes]
-        if not holes:
-            return ""
-        if len(holes) == 1:
-            return format_hole(holes[0])
-        cols = [hole.col for hole in holes]
-        rows = [hole.row for hole in holes]
-        if len(holes) == 2:
-            apart = max(max(cols) - min(cols), max(rows) - min(rows))
-            distance = (
-                t("1 hole apart") if apart == 1
-                else t("{count} holes apart").format(count=apart)
-            )
-            return f"{format_hole(holes[0])} → {format_hole(holes[1])} · {distance}"
-        corners = (
-            f"{format_hole(HoleCoord(min(cols), min(rows)))} → "
-            f"{format_hole(HoleCoord(max(cols), max(rows)))}"
-        )
-        pin_one = dict(step.pin_holes).get("1")
-        if pin_one is None:
-            return corners
-        return f"{corners} · " + t("pin 1 at {hole}").format(hole=format_hole(pin_one))
-    if not step.path:
-        return ""
-    ends = f"{format_hole(step.path[0])} → {format_hole(step.path[-1])}"
-    if step.conductor_kind in ("solder-trace", "solder-trace-wired", "strip"):
-        return f"{ends} · " + t("{count} pads").format(count=step.pads)
-    return ends
+        return step.title
+    return f"{step.net_name} · {conductor_word(step.conductor_kind, language)} — {step.span}"
 
 
 class _OpensPanel(QObject):
@@ -3613,9 +3515,22 @@ class MainWindow(QMainWindow):
         """
         if self._assembly_doc is not self.bus.document or self._assembly_guide is None:
             self._assembly_doc = self.bus.document
-            self._assembly_guide = build_guide(self.bus.document, self.lookup)
+            self._assembly_guide = build_guide(
+                self.bus.document, self.lookup, GuideOptions(language=self._guide_language())
+            )
             self._assembly_cached = all_steps(self._assembly_guide)
         return self._assembly_guide
+
+    @staticmethod
+    def _guide_language() -> GuideLanguage:
+        """The language every guide this window writes is written in: its own.
+
+        The window's language is chosen once, at start (``main._preferred_language``), and
+        every label is translated as the window is built -- so the guide follows the same
+        choice rather than having one of its own. A guide exported from a Turkish window is
+        a Turkish guide, and the panel, the 3D caption and the exported file agree.
+        """
+        return guide_language(current_language())
 
     def _assembly_steps(self) -> tuple[GuideStep, ...]:
         self.current_guide()
@@ -3662,7 +3577,9 @@ class MainWindow(QMainWindow):
         elif index < 0:
             self.assembly_label.setText(t("Bare board"))
         else:
-            self.assembly_label.setText(f"{index + 1}/{len(steps)} · {_step_line(steps[index])}")
+            self.assembly_label.setText(
+                f"{index + 1}/{len(steps)} · {_step_line(steps[index], self._guide_language())}"
+            )
 
     def _on_assembly_moved(self, _value: int) -> None:
         self._update_assembly_label()
@@ -6676,7 +6593,7 @@ class MainWindow(QMainWindow):
         self._guide_stale = False
         guide = self.current_guide()
         steps = self._assembly_cached
-        self.guide_summary.setText(_guide_summary(guide))
+        self.guide_summary.setText(describe_guide(guide))
 
         tree = self.guide_tree
         blocked = tree.blockSignals(True)
@@ -6687,14 +6604,14 @@ class MainWindow(QMainWindow):
                 # The order is physical, not editorial (guide.py), and a board simply may
                 # not need a phase. An empty heading reads as a step somebody forgot.
                 continue
-            heading = f"{phase.number}. {_phase_title(phase.number)}"
+            heading = f"{phase.number}. {phase.title}"
             if phase.steps:
                 heading += f" ({len(phase.steps)})"
             head = QTreeWidgetItem([heading])
             head.setFlags(head.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             tree.addTopLevelItem(head)
             for step in phase.steps:
-                line = _step_line(step)
+                line = _step_line(step, guide.language)
                 leaf = QTreeWidgetItem([line])
                 leaf.setToolTip(0, line)
                 # The index into the FLAT list, which is what the assembly slider and
@@ -9247,6 +9164,7 @@ class MainWindow(QMainWindow):
                     self.lookup,
                     self.scene,
                     images,
+                    self._guide_language(),
                 )
             except OSError as err:
                 QMessageBox.critical(
@@ -10650,7 +10568,9 @@ class MainWindow(QMainWindow):
         if chosen is None:
             return
         stem = chosen.stem.removesuffix("_guide")
-        guide = build_guide(self.bus.document, self.lookup)
+        guide = build_guide(
+            self.bus.document, self.lookup, GuideOptions(language=self._guide_language())
+        )
 
         # One 3D render per step, before anything is written -- see _render_step_images.
         rendered = self._render_step_images(self.bus.document, guide)
@@ -10674,7 +10594,7 @@ class MainWindow(QMainWindow):
 
         without = f" ({t('without its pictures')})" if rendered is None else ""
         self.statusBar().showMessage(
-            f"{_guide_summary(guide)} — "
+            f"{describe_guide(guide)} — "
             + t("{name} and {count} more").format(name=written[0].name, count=len(written) - 1)
             + without,
             0,

@@ -101,7 +101,7 @@ from perfboard_studio.geometry import (
     hole_ref_to_coord,
     pad_edge_gap_mm,
 )
-from perfboard_studio.guide import build_guide
+from perfboard_studio.guide import GuideOptions, build_guide
 from perfboard_studio.guide import describe as describe_guide
 from perfboard_studio.guide_export import bom_to_csv, cut_list_to_csv, guide_to_html, guide_to_json
 from perfboard_studio.lvs import run_lvs, stale_conductor_ids
@@ -127,6 +127,7 @@ from perfboard_studio.model import (
     SpineSpec,
     pin_name_of,
 )
+from perfboard_studio.phrasebook import GUIDE_LANGUAGES
 from perfboard_studio.placer import PlacementOptions, plan_placement
 from perfboard_studio.placer import describe as describe_placement
 from perfboard_studio.ratsnest import ratsnest, summarize
@@ -1559,15 +1560,30 @@ class BoardSession:
 
     # -- output ------------------------------------------------------------
 
-    def generate_guide(self, directory: str | None = None) -> dict[str, Any]:
+    def generate_guide(
+        self, directory: str | None = None, language: str = "en"
+    ) -> dict[str, Any]:
         """Build the soldering guide, and optionally write it out.
 
         Without a directory it returns the summary and the warnings only. That is
         usually what an agent wants -- "is this board buildable, and what is missing" --
         and it avoids writing four files into somebody's project as a side effect of
         asking a question.
+
+        ``language`` is what the guide is written in, for the person who will build from
+        it -- which is not necessarily the agent's language. Refused rather than guessed
+        when it is not one the guide can be written in: an agent that asked for German and
+        got English without a word would hand it on as German.
         """
-        guide = build_guide(self.document, self.lookup)
+        if language not in GUIDE_LANGUAGES:
+            return _refused(
+                "unknown-language",
+                f"A guide can be written in {', '.join(GUIDE_LANGUAGES)}; "
+                f"{language!r} is not one of them.",
+            )
+        guide = build_guide(
+            self.document, self.lookup, GuideOptions(language=language)
+        )
         report: dict[str, Any] = {
             "summary": describe_guide(guide),
             "part_steps": guide.part_steps,

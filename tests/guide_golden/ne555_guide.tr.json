@@ -1,0 +1,2187 @@
+{
+  "generator": "Perfboard Studio {VERSION}",
+  "document": "diffcheck",
+  "language": "tr",
+  "board": {
+    "cols": 32,
+    "rows": 22,
+    "pitch_mm": 2.54,
+    "material": "FR4",
+    "thickness_mm": 1.6
+  },
+  "iron": {
+    "temperature_c": 350,
+    "max_dwell_s": 3.0,
+    "note": "FR-4 ısıya iyi dayanır; buradaki sınır kart değil, parçadır."
+  },
+  "tools": [
+    "İnce uçlu havya, 350 °C'ye ayarlı",
+    "60/40 ya da kurşunsuz lehim teli, 0.7–1.0 mm",
+    "Flux — kalem ya da küçük bir kutu. Lehim yolları onsuz güvenilir biçimde yapılamaz",
+    "Yan keski ve küçük bir pense",
+    "Süreklilik buzzer'ı olan bir multimetre (aşağıdaki her kontrol noktası onu kullanır)",
+    "Bağlantı teli, AWG 24, renkler: beyaz, kırmızı, mavi, sarı, siyah, turuncu — toplam yaklaşık 0.35 m",
+    "Tel sıyırıcı",
+    "Lehim yolu omurgaları için kalaylı bakır tel, 0.6 mm — yaklaşık 51 mm (parça bacağı artıkları da aynı işi görür)"
+  ],
+  "warnings": [],
+  "bom": [
+    {
+      "ref_designators": [
+        "U1"
+      ],
+      "value": "NE555",
+      "footprint_name": "DIP-8",
+      "quantity": 1
+    },
+    {
+      "ref_designators": [
+        "R2"
+      ],
+      "value": "100k",
+      "footprint_name": "Direnç (eksenel, 4 delik açıklık)",
+      "quantity": 1
+    },
+    {
+      "ref_designators": [
+        "R1"
+      ],
+      "value": "10k",
+      "footprint_name": "Direnç (eksenel, 4 delik açıklık)",
+      "quantity": 1
+    },
+    {
+      "ref_designators": [
+        "R3"
+      ],
+      "value": "330",
+      "footprint_name": "Direnç (eksenel, 4 delik açıklık)",
+      "quantity": 1
+    },
+    {
+      "ref_designators": [
+        "LED1"
+      ],
+      "value": "LED",
+      "footprint_name": "Direnç (eksenel, 4 delik açıklık)",
+      "quantity": 1
+    },
+    {
+      "ref_designators": [
+        "C2"
+      ],
+      "value": "0.01uF",
+      "footprint_name": "Elektrolitik kondansatör, 5 mm çap, 2 delik aralık",
+      "quantity": 1
+    },
+    {
+      "ref_designators": [
+        "C1"
+      ],
+      "value": "10uF",
+      "footprint_name": "Elektrolitik kondansatör, 5 mm çap, 2 delik aralık",
+      "quantity": 1
+    },
+    {
+      "ref_designators": [
+        "J1"
+      ],
+      "value": "Conn_01x02",
+      "footprint_name": "Pin başlığı, 1x4",
+      "quantity": 1
+    }
+  ],
+  "cut_list": [
+    {
+      "conductor_id": "cond-1",
+      "net_name": "GND",
+      "from_hole": {
+        "col": 23,
+        "row": 10,
+        "ref": "X11"
+      },
+      "to_hole": {
+        "col": 19,
+        "row": 10,
+        "ref": "T11"
+      },
+      "path_mm": 10.160000000000004,
+      "cut_mm": 29.360000000000003,
+      "strip_mm": 5.0,
+      "awg": 24,
+      "colour": "black",
+      "insulated": true
+    },
+    {
+      "conductor_id": "cond-2",
+      "net_name": "GND",
+      "from_hole": {
+        "col": 24,
+        "row": 2,
+        "ref": "Y3"
+      },
+      "to_hole": {
+        "col": 23,
+        "row": 10,
+        "ref": "X11"
+      },
+      "path_mm": 20.478134680678316,
+      "cut_mm": 29.678134680678316,
+      "strip_mm": 0.0,
+      "awg": 24,
+      "colour": "black",
+      "insulated": false
+    },
+    {
+      "conductor_id": "cond-3",
+      "net_name": "GND",
+      "from_hole": {
+        "col": 3,
+        "row": 10,
+        "ref": "D11"
+      },
+      "to_hole": {
+        "col": 1,
+        "row": 2,
+        "ref": "B3"
+      },
+      "path_mm": 20.945376578137715,
+      "cut_mm": 40.145376578137714,
+      "strip_mm": 5.0,
+      "awg": 24,
+      "colour": "black",
+      "insulated": true
+    },
+    {
+      "conductor_id": "cond-5",
+      "net_name": "VCC",
+      "from_hole": {
+        "col": 8,
+        "row": 2,
+        "ref": "I3"
+      },
+      "to_hole": {
+        "col": 4,
+        "row": 2,
+        "ref": "E3"
+      },
+      "path_mm": 10.16,
+      "cut_mm": 19.36,
+      "strip_mm": 0.0,
+      "awg": 24,
+      "colour": "red",
+      "insulated": false
+    },
+    {
+      "conductor_id": "cond-6",
+      "net_name": "VCC",
+      "from_hole": {
+        "col": 22,
+        "row": 10,
+        "ref": "W11"
+      },
+      "to_hole": {
+        "col": 8,
+        "row": 2,
+        "ref": "I3"
+      },
+      "path_mm": 40.95626936135663,
+      "cut_mm": 50.156269361356635,
+      "strip_mm": 0.0,
+      "awg": 24,
+      "colour": "red",
+      "insulated": false
+    },
+    {
+      "conductor_id": "cond-8",
+      "net_name": "THRESH",
+      "from_hole": {
+        "col": 4,
+        "row": 4,
+        "ref": "E5"
+      },
+      "to_hole": {
+        "col": 1,
+        "row": 3,
+        "ref": "B4"
+      },
+      "path_mm": 8.032185256827683,
+      "cut_mm": 17.232185256827684,
+      "strip_mm": 0.0,
+      "awg": 24,
+      "colour": "blue",
+      "insulated": false
+    },
+    {
+      "conductor_id": "cond-9",
+      "net_name": "THRESH",
+      "from_hole": {
+        "col": 19,
+        "row": 2,
+        "ref": "T3"
+      },
+      "to_hole": {
+        "col": 4,
+        "row": 4,
+        "ref": "E5"
+      },
+      "path_mm": 38.43717471407075,
+      "cut_mm": 57.63717471407075,
+      "strip_mm": 5.0,
+      "awg": 24,
+      "colour": "blue",
+      "insulated": true
+    },
+    {
+      "conductor_id": "cond-11",
+      "net_name": "DISCH",
+      "from_hole": {
+        "col": 12,
+        "row": 2,
+        "ref": "M3"
+      },
+      "to_hole": {
+        "col": 4,
+        "row": 3,
+        "ref": "E4"
+      },
+      "path_mm": 20.478134680678316,
+      "cut_mm": 39.67813468067831,
+      "strip_mm": 5.0,
+      "awg": 24,
+      "colour": "white",
+      "insulated": true
+    },
+    {
+      "conductor_id": "cond-12",
+      "net_name": "CTRL",
+      "from_hole": {
+        "col": 1,
+        "row": 10,
+        "ref": "B11"
+      },
+      "to_hole": {
+        "col": 4,
+        "row": 5,
+        "ref": "E6"
+      },
+      "path_mm": 14.810617812907063,
+      "cut_mm": 24.010617812907064,
+      "strip_mm": 0.0,
+      "awg": 24,
+      "colour": "orange",
+      "insulated": false
+    },
+    {
+      "conductor_id": "cond-14",
+      "net_name": "OUT",
+      "from_hole": {
+        "col": 8,
+        "row": 10,
+        "ref": "I11"
+      },
+      "to_hole": {
+        "col": 1,
+        "row": 4,
+        "ref": "B5"
+      },
+      "path_mm": 23.417642921523935,
+      "cut_mm": 42.61764292152394,
+      "strip_mm": 5.0,
+      "awg": 24,
+      "colour": "yellow",
+      "insulated": true
+    }
+  ],
+  "spine_list": [
+    {
+      "conductor_id": "cond-4",
+      "net_name": "GND",
+      "pads": 21,
+      "length_mm": 50.79999999999999,
+      "gauge_mm": 0.6,
+      "material": "tinned copper"
+    }
+  ],
+  "track_cuts": [],
+  "phases": [
+    {
+      "number": 0,
+      "title": "Hazırlık",
+      "summary": "Kartı kes, A1 deliğini işaretle ve havyayı ısıtıp parçaları hazırla.",
+      "steps": [],
+      "checkpoints": []
+    },
+    {
+      "number": 1,
+      "title": "En alçak parçalar",
+      "summary": "Düz yatan her şey: eksenel dirençler ve diyotlar. Önce bunlar takılır, çünkü üzerinde uzun bir parça olan kart tezgâhta düz durmaz ve bastırılamayan bir parça eğri lehimlenir.",
+      "steps": [
+        {
+          "kind": "part",
+          "component_id": "cmp-7",
+          "ref": "LED1",
+          "value": "LED",
+          "footprint_name": "Direnç (eksenel, 4 delik açıklık)",
+          "archetype": "axial-cylinder",
+          "anchor": {
+            "col": 15,
+            "row": 10,
+            "ref": "P11"
+          },
+          "pin_holes": [
+            [
+              "1",
+              {
+                "col": 15,
+                "row": 10,
+                "ref": "P11"
+              }
+            ],
+            [
+              "2",
+              {
+                "col": 19,
+                "row": 10,
+                "ref": "T11"
+              }
+            ]
+          ],
+          "span": "P11 → T11, 4 delik ara",
+          "bend_template_mm": 10.16,
+          "rotation": 0,
+          "mirrored": false,
+          "height_mm": 2.3,
+          "polarity": null,
+          "notes": []
+        },
+        {
+          "kind": "part",
+          "component_id": "cmp-2",
+          "ref": "R1",
+          "value": "10k",
+          "footprint_name": "Direnç (eksenel, 4 delik açıklık)",
+          "archetype": "axial-cylinder",
+          "anchor": {
+            "col": 8,
+            "row": 2,
+            "ref": "I3"
+          },
+          "pin_holes": [
+            [
+              "1",
+              {
+                "col": 8,
+                "row": 2,
+                "ref": "I3"
+              }
+            ],
+            [
+              "2",
+              {
+                "col": 12,
+                "row": 2,
+                "ref": "M3"
+              }
+            ]
+          ],
+          "span": "I3 → M3, 4 delik ara",
+          "bend_template_mm": 10.16,
+          "rotation": 0,
+          "mirrored": false,
+          "height_mm": 2.3,
+          "polarity": null,
+          "notes": []
+        },
+        {
+          "kind": "part",
+          "component_id": "cmp-3",
+          "ref": "R2",
+          "value": "100k",
+          "footprint_name": "Direnç (eksenel, 4 delik açıklık)",
+          "archetype": "axial-cylinder",
+          "anchor": {
+            "col": 15,
+            "row": 2,
+            "ref": "P3"
+          },
+          "pin_holes": [
+            [
+              "1",
+              {
+                "col": 15,
+                "row": 2,
+                "ref": "P3"
+              }
+            ],
+            [
+              "2",
+              {
+                "col": 19,
+                "row": 2,
+                "ref": "T3"
+              }
+            ]
+          ],
+          "span": "P3 → T3, 4 delik ara",
+          "bend_template_mm": 10.16,
+          "rotation": 0,
+          "mirrored": false,
+          "height_mm": 2.3,
+          "polarity": null,
+          "notes": []
+        },
+        {
+          "kind": "part",
+          "component_id": "cmp-6",
+          "ref": "R3",
+          "value": "330",
+          "footprint_name": "Direnç (eksenel, 4 delik açıklık)",
+          "archetype": "axial-cylinder",
+          "anchor": {
+            "col": 8,
+            "row": 10,
+            "ref": "I11"
+          },
+          "pin_holes": [
+            [
+              "1",
+              {
+                "col": 8,
+                "row": 10,
+                "ref": "I11"
+              }
+            ],
+            [
+              "2",
+              {
+                "col": 12,
+                "row": 10,
+                "ref": "M11"
+              }
+            ]
+          ],
+          "span": "I11 → M11, 4 delik ara",
+          "bend_template_mm": 10.16,
+          "rotation": 0,
+          "mirrored": false,
+          "height_mm": 2.3,
+          "polarity": null,
+          "notes": []
+        }
+      ],
+      "checkpoints": []
+    },
+    {
+      "number": 2,
+      "title": "Entegre soketleri",
+      "summary": "Entegre soketleri. Entegrelerin kendisi en sonda takılır — onları öldüren iki şey ısı ve statik elektriktir ve en son takılarak ikisinden de kaçınılır.",
+      "steps": [
+        {
+          "kind": "part",
+          "component_id": "cmp-1",
+          "ref": "U1",
+          "value": "NE555",
+          "footprint_name": "DIP-8",
+          "archetype": "dip",
+          "anchor": {
+            "col": 1,
+            "row": 2,
+            "ref": "B3"
+          },
+          "pin_holes": [
+            [
+              "1",
+              {
+                "col": 1,
+                "row": 2,
+                "ref": "B3"
+              }
+            ],
+            [
+              "2",
+              {
+                "col": 1,
+                "row": 3,
+                "ref": "B4"
+              }
+            ],
+            [
+              "3",
+              {
+                "col": 1,
+                "row": 4,
+                "ref": "B5"
+              }
+            ],
+            [
+              "4",
+              {
+                "col": 1,
+                "row": 5,
+                "ref": "B6"
+              }
+            ],
+            [
+              "5",
+              {
+                "col": 4,
+                "row": 5,
+                "ref": "E6"
+              }
+            ],
+            [
+              "6",
+              {
+                "col": 4,
+                "row": 4,
+                "ref": "E5"
+              }
+            ],
+            [
+              "7",
+              {
+                "col": 4,
+                "row": 3,
+                "ref": "E4"
+              }
+            ],
+            [
+              "8",
+              {
+                "col": 4,
+                "row": 2,
+                "ref": "E3"
+              }
+            ]
+          ],
+          "span": "B3 → E6, 8 pin, 1. pin B3 deliğinde",
+          "bend_template_mm": null,
+          "rotation": 0,
+          "mirrored": false,
+          "height_mm": 5,
+          "polarity": "1. pin (çentikli, noktayla işaretli uç): B3 deliğine",
+          "notes": [
+            "Varsa buraya bir soket tak — bu aşama soketlerin aşaması. Entegrenin kendisi, soket olsun olmasın, 8. aşamadaki kapanış kontrollerine kadar takılmaz: kartta havyayla karşılaşması gereken son şey odur."
+          ]
+        }
+      ],
+      "checkpoints": []
+    },
+    {
+      "number": 3,
+      "title": "Küçük gövdeler",
+      "summary": "Küçük gövdeler: seramik ve film kondansatörler, TO-92 transistörler, LED'ler.",
+      "steps": [],
+      "checkpoints": []
+    },
+    {
+      "number": 4,
+      "title": "Orta gövdeler",
+      "summary": "Orta gövdeler: elektrolitikler, TO-220 kılıflar, kristaller.",
+      "steps": [
+        {
+          "kind": "part",
+          "component_id": "cmp-4",
+          "ref": "C1",
+          "value": "10uF",
+          "footprint_name": "Elektrolitik kondansatör, 5 mm çap, 2 delik aralık",
+          "archetype": "radial-electrolytic",
+          "anchor": {
+            "col": 22,
+            "row": 2,
+            "ref": "W3"
+          },
+          "pin_holes": [
+            [
+              "1",
+              {
+                "col": 22,
+                "row": 2,
+                "ref": "W3"
+              }
+            ],
+            [
+              "2",
+              {
+                "col": 24,
+                "row": 2,
+                "ref": "Y3"
+              }
+            ]
+          ],
+          "span": "W3 → Y3, 2 delik ara",
+          "bend_template_mm": 5.08,
+          "rotation": 0,
+          "mirrored": false,
+          "height_mm": 7,
+          "polarity": "Pozitif (uzun) bacak: W3 deliğine; Negatif bacak (baskılı şeritli taraf): Y3 deliğine",
+          "notes": []
+        },
+        {
+          "kind": "part",
+          "component_id": "cmp-5",
+          "ref": "C2",
+          "value": "0.01uF",
+          "footprint_name": "Elektrolitik kondansatör, 5 mm çap, 2 delik aralık",
+          "archetype": "radial-electrolytic",
+          "anchor": {
+            "col": 1,
+            "row": 10,
+            "ref": "B11"
+          },
+          "pin_holes": [
+            [
+              "1",
+              {
+                "col": 1,
+                "row": 10,
+                "ref": "B11"
+              }
+            ],
+            [
+              "2",
+              {
+                "col": 3,
+                "row": 10,
+                "ref": "D11"
+              }
+            ]
+          ],
+          "span": "B11 → D11, 2 delik ara",
+          "bend_template_mm": 5.08,
+          "rotation": 0,
+          "mirrored": false,
+          "height_mm": 7,
+          "polarity": "Pozitif (uzun) bacak: B11 deliğine; Negatif bacak (baskılı şeritli taraf): D11 deliğine",
+          "notes": []
+        }
+      ],
+      "checkpoints": []
+    },
+    {
+      "number": 5,
+      "title": "Uzun ve mekanik parçalar",
+      "summary": "Uzun ve mekanik parçalar: konnektörler, klemensler, potansiyometreler, anahtarlar, röleler.",
+      "steps": [
+        {
+          "kind": "part",
+          "component_id": "cmp-8",
+          "ref": "J1",
+          "value": "Conn_01x02",
+          "footprint_name": "Pin başlığı, 1x4",
+          "archetype": "pin-header",
+          "anchor": {
+            "col": 22,
+            "row": 10,
+            "ref": "W11"
+          },
+          "pin_holes": [
+            [
+              "1",
+              {
+                "col": 22,
+                "row": 10,
+                "ref": "W11"
+              }
+            ],
+            [
+              "2",
+              {
+                "col": 23,
+                "row": 10,
+                "ref": "X11"
+              }
+            ],
+            [
+              "3",
+              {
+                "col": 24,
+                "row": 10,
+                "ref": "Y11"
+              }
+            ],
+            [
+              "4",
+              {
+                "col": 25,
+                "row": 10,
+                "ref": "Z11"
+              }
+            ]
+          ],
+          "span": "W11 → Z11, 4 pin, 1. pin W11 deliğinde",
+          "bend_template_mm": null,
+          "rotation": 0,
+          "mirrored": false,
+          "height_mm": 8.5,
+          "polarity": null,
+          "notes": []
+        }
+      ],
+      "checkpoints": []
+    },
+    {
+      "number": 6,
+      "title": "Lehim yüzü: lehim yolları ve çıplak tel",
+      "summary": "Kartı ters çevir. Lehim yolları ve çıplak tel, her net bir sonraki onun üzerinden geçmeden önce bitsin ve kontrol edilsin diye birer birer.",
+      "steps": [
+        {
+          "kind": "conductor",
+          "conductor_id": "cond-2",
+          "conductor_kind": "bare-wire",
+          "net_name": "GND",
+          "net_class": "ground",
+          "span": "Y3 → X11",
+          "path": [
+            {
+              "col": 24,
+              "row": 2,
+              "ref": "Y3"
+            },
+            {
+              "col": 23,
+              "row": 10,
+              "ref": "X11"
+            }
+          ],
+          "pads": 2,
+          "length_mm": 20.478134680678316,
+          "resistance_ohm": null,
+          "drop_mv": null,
+          "loss_mw": null,
+          "spine": null,
+          "cut": {
+            "conductor_id": "cond-2",
+            "net_name": "GND",
+            "from_hole": {
+              "col": 24,
+              "row": 2,
+              "ref": "Y3"
+            },
+            "to_hole": {
+              "col": 23,
+              "row": 10,
+              "ref": "X11"
+            },
+            "path_mm": 20.478134680678316,
+            "cut_mm": 29.678134680678316,
+            "strip_mm": 0.0,
+            "awg": 24,
+            "colour": "black",
+            "insulated": false
+          },
+          "risks": [],
+          "notes": [
+            "Çıplak tel: boyunca başka hiçbir iletkene değmemeli. Karta düz yatır ve komşu hatlarla arasını kontrol et."
+          ]
+        },
+        {
+          "kind": "conductor",
+          "conductor_id": "cond-4",
+          "conductor_kind": "solder-trace-wired",
+          "net_name": "GND",
+          "net_class": "ground",
+          "span": "T11 → D11, 21 ped",
+          "path": [
+            {
+              "col": 19,
+              "row": 10,
+              "ref": "T11"
+            },
+            {
+              "col": 18,
+              "row": 10,
+              "ref": "S11"
+            },
+            {
+              "col": 17,
+              "row": 10,
+              "ref": "R11"
+            },
+            {
+              "col": 17,
+              "row": 9,
+              "ref": "R10"
+            },
+            {
+              "col": 16,
+              "row": 9,
+              "ref": "Q10"
+            },
+            {
+              "col": 16,
+              "row": 8,
+              "ref": "Q9"
+            },
+            {
+              "col": 15,
+              "row": 8,
+              "ref": "P9"
+            },
+            {
+              "col": 14,
+              "row": 8,
+              "ref": "O9"
+            },
+            {
+              "col": 13,
+              "row": 8,
+              "ref": "N9"
+            },
+            {
+              "col": 12,
+              "row": 8,
+              "ref": "M9"
+            },
+            {
+              "col": 11,
+              "row": 8,
+              "ref": "L9"
+            },
+            {
+              "col": 10,
+              "row": 8,
+              "ref": "K9"
+            },
+            {
+              "col": 9,
+              "row": 8,
+              "ref": "J9"
+            },
+            {
+              "col": 8,
+              "row": 8,
+              "ref": "I9"
+            },
+            {
+              "col": 7,
+              "row": 8,
+              "ref": "H9"
+            },
+            {
+              "col": 7,
+              "row": 9,
+              "ref": "H10"
+            },
+            {
+              "col": 6,
+              "row": 9,
+              "ref": "G10"
+            },
+            {
+              "col": 6,
+              "row": 10,
+              "ref": "G11"
+            },
+            {
+              "col": 5,
+              "row": 10,
+              "ref": "F11"
+            },
+            {
+              "col": 4,
+              "row": 10,
+              "ref": "E11"
+            },
+            {
+              "col": 3,
+              "row": 10,
+              "ref": "D11"
+            }
+          ],
+          "pads": 21,
+          "length_mm": 50.79999999999999,
+          "resistance_ohm": 0.0026978282620874023,
+          "drop_mv": null,
+          "loss_mw": null,
+          "spine": {
+            "conductor_id": "cond-4",
+            "net_name": "GND",
+            "pads": 21,
+            "length_mm": 50.79999999999999,
+            "gauge_mm": 0.6,
+            "material": "tinned copper"
+          },
+          "cut": null,
+          "risks": [],
+          "notes": [
+            "0.6 mm kalaylı bakır omurgayı önce pedler boyunca yatır ve her pedde lehimle. Tek yönde ilerle, soğumuş bir bölümün üzerinden geri dönme.",
+            "Önce her pedi hafifçe kalayla, sonra birleştir.",
+            "Bu uzunlukta bir hatta flux şarttır."
+          ]
+        },
+        {
+          "kind": "conductor",
+          "conductor_id": "cond-5",
+          "conductor_kind": "bare-wire",
+          "net_name": "VCC",
+          "net_class": "power",
+          "span": "I3 → E3",
+          "path": [
+            {
+              "col": 8,
+              "row": 2,
+              "ref": "I3"
+            },
+            {
+              "col": 4,
+              "row": 2,
+              "ref": "E3"
+            }
+          ],
+          "pads": 2,
+          "length_mm": 10.16,
+          "resistance_ohm": null,
+          "drop_mv": null,
+          "loss_mw": null,
+          "spine": null,
+          "cut": {
+            "conductor_id": "cond-5",
+            "net_name": "VCC",
+            "from_hole": {
+              "col": 8,
+              "row": 2,
+              "ref": "I3"
+            },
+            "to_hole": {
+              "col": 4,
+              "row": 2,
+              "ref": "E3"
+            },
+            "path_mm": 10.16,
+            "cut_mm": 19.36,
+            "strip_mm": 0.0,
+            "awg": 24,
+            "colour": "red",
+            "insulated": false
+          },
+          "risks": [],
+          "notes": [
+            "Çıplak tel: boyunca başka hiçbir iletkene değmemeli. Karta düz yatır ve komşu hatlarla arasını kontrol et."
+          ]
+        },
+        {
+          "kind": "conductor",
+          "conductor_id": "cond-6",
+          "conductor_kind": "bare-wire",
+          "net_name": "VCC",
+          "net_class": "power",
+          "span": "W11 → I3",
+          "path": [
+            {
+              "col": 22,
+              "row": 10,
+              "ref": "W11"
+            },
+            {
+              "col": 8,
+              "row": 2,
+              "ref": "I3"
+            }
+          ],
+          "pads": 2,
+          "length_mm": 40.95626936135663,
+          "resistance_ohm": null,
+          "drop_mv": null,
+          "loss_mw": null,
+          "spine": null,
+          "cut": {
+            "conductor_id": "cond-6",
+            "net_name": "VCC",
+            "from_hole": {
+              "col": 22,
+              "row": 10,
+              "ref": "W11"
+            },
+            "to_hole": {
+              "col": 8,
+              "row": 2,
+              "ref": "I3"
+            },
+            "path_mm": 40.95626936135663,
+            "cut_mm": 50.156269361356635,
+            "strip_mm": 0.0,
+            "awg": 24,
+            "colour": "red",
+            "insulated": false
+          },
+          "risks": [],
+          "notes": [
+            "Çıplak tel: boyunca başka hiçbir iletkene değmemeli. Karta düz yatır ve komşu hatlarla arasını kontrol et."
+          ]
+        },
+        {
+          "kind": "conductor",
+          "conductor_id": "cond-12",
+          "conductor_kind": "bare-wire",
+          "net_name": "CTRL",
+          "net_class": "signal",
+          "span": "B11 → E6",
+          "path": [
+            {
+              "col": 1,
+              "row": 10,
+              "ref": "B11"
+            },
+            {
+              "col": 4,
+              "row": 5,
+              "ref": "E6"
+            }
+          ],
+          "pads": 2,
+          "length_mm": 14.810617812907063,
+          "resistance_ohm": null,
+          "drop_mv": null,
+          "loss_mw": null,
+          "spine": null,
+          "cut": {
+            "conductor_id": "cond-12",
+            "net_name": "CTRL",
+            "from_hole": {
+              "col": 1,
+              "row": 10,
+              "ref": "B11"
+            },
+            "to_hole": {
+              "col": 4,
+              "row": 5,
+              "ref": "E6"
+            },
+            "path_mm": 14.810617812907063,
+            "cut_mm": 24.010617812907064,
+            "strip_mm": 0.0,
+            "awg": 24,
+            "colour": "orange",
+            "insulated": false
+          },
+          "risks": [],
+          "notes": [
+            "Çıplak tel: boyunca başka hiçbir iletkene değmemeli. Karta düz yatır ve komşu hatlarla arasını kontrol et."
+          ]
+        },
+        {
+          "kind": "conductor",
+          "conductor_id": "cond-10",
+          "conductor_kind": "solder-trace",
+          "net_name": "DISCH",
+          "net_class": "signal",
+          "span": "M3 → P3, 4 ped",
+          "path": [
+            {
+              "col": 12,
+              "row": 2,
+              "ref": "M3"
+            },
+            {
+              "col": 13,
+              "row": 2,
+              "ref": "N3"
+            },
+            {
+              "col": 14,
+              "row": 2,
+              "ref": "O3"
+            },
+            {
+              "col": 15,
+              "row": 2,
+              "ref": "P3"
+            }
+          ],
+          "pads": 4,
+          "length_mm": 7.620000000000001,
+          "resistance_ohm": 0.0038100000000000013,
+          "drop_mv": null,
+          "loss_mw": null,
+          "spine": null,
+          "cut": null,
+          "risks": [],
+          "notes": [
+            "Hattı yalnızca lehimden oluşturmak yerine bu pedler boyunca omurga olarak bir bacak artığı yatırmayı düşün: direnci kabaca on kat düşürür ve aynı kalitede tekrarlamak çok daha kolaydır.",
+            "Önce her pedi hafifçe kalayla, sonra birleştir.",
+            "Bu uzunlukta bir hatta flux şarttır."
+          ]
+        },
+        {
+          "kind": "conductor",
+          "conductor_id": "cond-13",
+          "conductor_kind": "solder-trace",
+          "net_name": "LED_A",
+          "net_class": "signal",
+          "span": "P11 → M11, 4 ped",
+          "path": [
+            {
+              "col": 15,
+              "row": 10,
+              "ref": "P11"
+            },
+            {
+              "col": 14,
+              "row": 10,
+              "ref": "O11"
+            },
+            {
+              "col": 13,
+              "row": 10,
+              "ref": "N11"
+            },
+            {
+              "col": 12,
+              "row": 10,
+              "ref": "M11"
+            }
+          ],
+          "pads": 4,
+          "length_mm": 7.620000000000001,
+          "resistance_ohm": 0.0038100000000000013,
+          "drop_mv": null,
+          "loss_mw": null,
+          "spine": null,
+          "cut": null,
+          "risks": [],
+          "notes": [
+            "Hattı yalnızca lehimden oluşturmak yerine bu pedler boyunca omurga olarak bir bacak artığı yatırmayı düşün: direnci kabaca on kat düşürür ve aynı kalitede tekrarlamak çok daha kolaydır.",
+            "Önce her pedi hafifçe kalayla, sonra birleştir.",
+            "Bu uzunlukta bir hatta flux şarttır."
+          ]
+        },
+        {
+          "kind": "conductor",
+          "conductor_id": "cond-7",
+          "conductor_kind": "solder-trace",
+          "net_name": "THRESH",
+          "net_class": "signal",
+          "span": "W3 → T3, 4 ped",
+          "path": [
+            {
+              "col": 22,
+              "row": 2,
+              "ref": "W3"
+            },
+            {
+              "col": 21,
+              "row": 2,
+              "ref": "V3"
+            },
+            {
+              "col": 20,
+              "row": 2,
+              "ref": "U3"
+            },
+            {
+              "col": 19,
+              "row": 2,
+              "ref": "T3"
+            }
+          ],
+          "pads": 4,
+          "length_mm": 7.6200000000000045,
+          "resistance_ohm": 0.0038100000000000026,
+          "drop_mv": null,
+          "loss_mw": null,
+          "spine": null,
+          "cut": null,
+          "risks": [],
+          "notes": [
+            "Hattı yalnızca lehimden oluşturmak yerine bu pedler boyunca omurga olarak bir bacak artığı yatırmayı düşün: direnci kabaca on kat düşürür ve aynı kalitede tekrarlamak çok daha kolaydır.",
+            "Önce her pedi hafifçe kalayla, sonra birleştir.",
+            "Bu uzunlukta bir hatta flux şarttır."
+          ]
+        },
+        {
+          "kind": "conductor",
+          "conductor_id": "cond-8",
+          "conductor_kind": "bare-wire",
+          "net_name": "THRESH",
+          "net_class": "signal",
+          "span": "E5 → B4",
+          "path": [
+            {
+              "col": 4,
+              "row": 4,
+              "ref": "E5"
+            },
+            {
+              "col": 1,
+              "row": 3,
+              "ref": "B4"
+            }
+          ],
+          "pads": 2,
+          "length_mm": 8.032185256827683,
+          "resistance_ohm": null,
+          "drop_mv": null,
+          "loss_mw": null,
+          "spine": null,
+          "cut": {
+            "conductor_id": "cond-8",
+            "net_name": "THRESH",
+            "from_hole": {
+              "col": 4,
+              "row": 4,
+              "ref": "E5"
+            },
+            "to_hole": {
+              "col": 1,
+              "row": 3,
+              "ref": "B4"
+            },
+            "path_mm": 8.032185256827683,
+            "cut_mm": 17.232185256827684,
+            "strip_mm": 0.0,
+            "awg": 24,
+            "colour": "blue",
+            "insulated": false
+          },
+          "risks": [],
+          "notes": [
+            "Çıplak tel: boyunca başka hiçbir iletkene değmemeli. Karta düz yatır ve komşu hatlarla arasını kontrol et."
+          ]
+        }
+      ],
+      "checkpoints": [
+        {
+          "kind": "continuity",
+          "title": "J1.1 ↔ R1.1",
+          "instruction": "J1 pin 1 ile R1 pin 1 arasını ölç.",
+          "expected": "Sürekli — ikisi de VCC netinde.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "J1",
+              "pin": "1"
+            },
+            {
+              "component_ref": "R1",
+              "pin": "1"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "continuity",
+          "title": "R1.1 ↔ U1.8",
+          "instruction": "R1 pin 1 ile U1 pin 8 arasını ölç.",
+          "expected": "Sürekli — ikisi de VCC netinde.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "R1",
+              "pin": "1"
+            },
+            {
+              "component_ref": "U1",
+              "pin": "8"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "continuity",
+          "title": "LED1.1 ↔ R3.2",
+          "instruction": "LED1 pin 1 ile R3 pin 2 arasını ölç.",
+          "expected": "Sürekli — ikisi de LED_A netinde.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "LED1",
+              "pin": "1"
+            },
+            {
+              "component_ref": "R3",
+              "pin": "2"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "continuity",
+          "title": "C2.1 ↔ U1.5",
+          "instruction": "C2 pin 1 ile U1 pin 5 arasını ölç.",
+          "expected": "Sürekli — ikisi de CTRL netinde.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "C2",
+              "pin": "1"
+            },
+            {
+              "component_ref": "U1",
+              "pin": "5"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "resistance",
+          "title": "GND hattı T11 → D11, 21 ped tam kısa devre okumalı",
+          "instruction": "T11 ile D11 arasını ölç, sonra uçları birbirine değdirip karşılaştır. İyi bir hat okunabilir hiçbir şey eklemez.",
+          "expected": "Uçlar birbirine değerken okunanla aynı, bir basamak artı eksi. Bu hat yaklaşık 2.7 mΩ olmalı, el tipi bir ölçü aletinin çözebildiğinin çok altında — yani gerçekten ayırt edebildiğin her değer bakır değil, soğuk lehim ya da çatlaktır.",
+          "holes": [
+            {
+              "col": 19,
+              "row": 10,
+              "ref": "T11"
+            },
+            {
+              "col": 3,
+              "row": 10,
+              "ref": "D11"
+            }
+          ],
+          "pins": [],
+          "blocking": false
+        }
+      ]
+    },
+    {
+      "number": 7,
+      "title": "Uzun izoleli teller",
+      "summary": "Lehim yüzünde zaten olan her şeyin üzerinden geçebilen izoleli tel.",
+      "steps": [
+        {
+          "kind": "conductor",
+          "conductor_id": "cond-1",
+          "conductor_kind": "insulated-wire",
+          "net_name": "GND",
+          "net_class": "ground",
+          "span": "X11 → T11",
+          "path": [
+            {
+              "col": 23,
+              "row": 10,
+              "ref": "X11"
+            },
+            {
+              "col": 19,
+              "row": 10,
+              "ref": "T11"
+            }
+          ],
+          "pads": 2,
+          "length_mm": 10.160000000000004,
+          "resistance_ohm": null,
+          "drop_mv": null,
+          "loss_mw": null,
+          "spine": null,
+          "cut": {
+            "conductor_id": "cond-1",
+            "net_name": "GND",
+            "from_hole": {
+              "col": 23,
+              "row": 10,
+              "ref": "X11"
+            },
+            "to_hole": {
+              "col": 19,
+              "row": 10,
+              "ref": "T11"
+            },
+            "path_mm": 10.160000000000004,
+            "cut_mm": 29.360000000000003,
+            "strip_mm": 5.0,
+            "awg": 24,
+            "colour": "black",
+            "insulated": true
+          },
+          "risks": [],
+          "notes": []
+        },
+        {
+          "kind": "conductor",
+          "conductor_id": "cond-3",
+          "conductor_kind": "insulated-wire",
+          "net_name": "GND",
+          "net_class": "ground",
+          "span": "D11 → B3",
+          "path": [
+            {
+              "col": 3,
+              "row": 10,
+              "ref": "D11"
+            },
+            {
+              "col": 1,
+              "row": 2,
+              "ref": "B3"
+            }
+          ],
+          "pads": 2,
+          "length_mm": 20.945376578137715,
+          "resistance_ohm": null,
+          "drop_mv": null,
+          "loss_mw": null,
+          "spine": null,
+          "cut": {
+            "conductor_id": "cond-3",
+            "net_name": "GND",
+            "from_hole": {
+              "col": 3,
+              "row": 10,
+              "ref": "D11"
+            },
+            "to_hole": {
+              "col": 1,
+              "row": 2,
+              "ref": "B3"
+            },
+            "path_mm": 20.945376578137715,
+            "cut_mm": 40.145376578137714,
+            "strip_mm": 5.0,
+            "awg": 24,
+            "colour": "black",
+            "insulated": true
+          },
+          "risks": [],
+          "notes": []
+        },
+        {
+          "kind": "conductor",
+          "conductor_id": "cond-11",
+          "conductor_kind": "insulated-wire",
+          "net_name": "DISCH",
+          "net_class": "signal",
+          "span": "M3 → E4",
+          "path": [
+            {
+              "col": 12,
+              "row": 2,
+              "ref": "M3"
+            },
+            {
+              "col": 4,
+              "row": 3,
+              "ref": "E4"
+            }
+          ],
+          "pads": 2,
+          "length_mm": 20.478134680678316,
+          "resistance_ohm": null,
+          "drop_mv": null,
+          "loss_mw": null,
+          "spine": null,
+          "cut": {
+            "conductor_id": "cond-11",
+            "net_name": "DISCH",
+            "from_hole": {
+              "col": 12,
+              "row": 2,
+              "ref": "M3"
+            },
+            "to_hole": {
+              "col": 4,
+              "row": 3,
+              "ref": "E4"
+            },
+            "path_mm": 20.478134680678316,
+            "cut_mm": 39.67813468067831,
+            "strip_mm": 5.0,
+            "awg": 24,
+            "colour": "white",
+            "insulated": true
+          },
+          "risks": [],
+          "notes": []
+        },
+        {
+          "kind": "conductor",
+          "conductor_id": "cond-14",
+          "conductor_kind": "insulated-wire",
+          "net_name": "OUT",
+          "net_class": "signal",
+          "span": "I11 → B5",
+          "path": [
+            {
+              "col": 8,
+              "row": 10,
+              "ref": "I11"
+            },
+            {
+              "col": 1,
+              "row": 4,
+              "ref": "B5"
+            }
+          ],
+          "pads": 2,
+          "length_mm": 23.417642921523935,
+          "resistance_ohm": null,
+          "drop_mv": null,
+          "loss_mw": null,
+          "spine": null,
+          "cut": {
+            "conductor_id": "cond-14",
+            "net_name": "OUT",
+            "from_hole": {
+              "col": 8,
+              "row": 10,
+              "ref": "I11"
+            },
+            "to_hole": {
+              "col": 1,
+              "row": 4,
+              "ref": "B5"
+            },
+            "path_mm": 23.417642921523935,
+            "cut_mm": 42.61764292152394,
+            "strip_mm": 5.0,
+            "awg": 24,
+            "colour": "yellow",
+            "insulated": true
+          },
+          "risks": [],
+          "notes": []
+        },
+        {
+          "kind": "conductor",
+          "conductor_id": "cond-9",
+          "conductor_kind": "insulated-wire",
+          "net_name": "THRESH",
+          "net_class": "signal",
+          "span": "T3 → E5",
+          "path": [
+            {
+              "col": 19,
+              "row": 2,
+              "ref": "T3"
+            },
+            {
+              "col": 4,
+              "row": 4,
+              "ref": "E5"
+            }
+          ],
+          "pads": 2,
+          "length_mm": 38.43717471407075,
+          "resistance_ohm": null,
+          "drop_mv": null,
+          "loss_mw": null,
+          "spine": null,
+          "cut": {
+            "conductor_id": "cond-9",
+            "net_name": "THRESH",
+            "from_hole": {
+              "col": 19,
+              "row": 2,
+              "ref": "T3"
+            },
+            "to_hole": {
+              "col": 4,
+              "row": 4,
+              "ref": "E5"
+            },
+            "path_mm": 38.43717471407075,
+            "cut_mm": 57.63717471407075,
+            "strip_mm": 5.0,
+            "awg": 24,
+            "colour": "blue",
+            "insulated": true
+          },
+          "risks": [],
+          "notes": []
+        }
+      ],
+      "checkpoints": [
+        {
+          "kind": "continuity",
+          "title": "R3.1 ↔ U1.3",
+          "instruction": "R3 pin 1 ile U1 pin 3 arasını ölç.",
+          "expected": "Sürekli — ikisi de OUT netinde.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "R3",
+              "pin": "1"
+            },
+            {
+              "component_ref": "U1",
+              "pin": "3"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "continuity",
+          "title": "C1.2 ↔ C2.2",
+          "instruction": "C1 pin 2 ile C2 pin 2 arasını ölç.",
+          "expected": "Sürekli — ikisi de GND netinde.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "C1",
+              "pin": "2"
+            },
+            {
+              "component_ref": "C2",
+              "pin": "2"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "continuity",
+          "title": "C2.2 ↔ J1.2",
+          "instruction": "C2 pin 2 ile J1 pin 2 arasını ölç.",
+          "expected": "Sürekli — ikisi de GND netinde.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "C2",
+              "pin": "2"
+            },
+            {
+              "component_ref": "J1",
+              "pin": "2"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "continuity",
+          "title": "J1.2 ↔ LED1.2",
+          "instruction": "J1 pin 2 ile LED1 pin 2 arasını ölç.",
+          "expected": "Sürekli — ikisi de GND netinde.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "J1",
+              "pin": "2"
+            },
+            {
+              "component_ref": "LED1",
+              "pin": "2"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "continuity",
+          "title": "LED1.2 ↔ U1.1",
+          "instruction": "LED1 pin 2 ile U1 pin 1 arasını ölç.",
+          "expected": "Sürekli — ikisi de GND netinde.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "LED1",
+              "pin": "2"
+            },
+            {
+              "component_ref": "U1",
+              "pin": "1"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "continuity",
+          "title": "C1.1 ↔ R2.2",
+          "instruction": "C1 pin 1 ile R2 pin 2 arasını ölç.",
+          "expected": "Sürekli — ikisi de THRESH netinde.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "C1",
+              "pin": "1"
+            },
+            {
+              "component_ref": "R2",
+              "pin": "2"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "continuity",
+          "title": "R2.2 ↔ U1.2",
+          "instruction": "R2 pin 2 ile U1 pin 2 arasını ölç.",
+          "expected": "Sürekli — ikisi de THRESH netinde.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "R2",
+              "pin": "2"
+            },
+            {
+              "component_ref": "U1",
+              "pin": "2"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "continuity",
+          "title": "U1.2 ↔ U1.6",
+          "instruction": "U1 pin 2 ile U1 pin 6 arasını ölç.",
+          "expected": "Sürekli — ikisi de THRESH netinde.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "U1",
+              "pin": "2"
+            },
+            {
+              "component_ref": "U1",
+              "pin": "6"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "continuity",
+          "title": "R1.2 ↔ R2.1",
+          "instruction": "R1 pin 2 ile R2 pin 1 arasını ölç.",
+          "expected": "Sürekli — ikisi de DISCH netinde.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "R1",
+              "pin": "2"
+            },
+            {
+              "component_ref": "R2",
+              "pin": "1"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "continuity",
+          "title": "R2.1 ↔ U1.7",
+          "instruction": "R2 pin 1 ile U1 pin 7 arasını ölç.",
+          "expected": "Sürekli — ikisi de DISCH netinde.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "R2",
+              "pin": "1"
+            },
+            {
+              "component_ref": "U1",
+              "pin": "7"
+            }
+          ],
+          "blocking": false
+        }
+      ]
+    },
+    {
+      "number": 8,
+      "title": "Kapanış",
+      "summary": "Entegreleri tak, son kontrolleri yap ve akım sınırı altında enerji ver.",
+      "steps": [],
+      "checkpoints": [
+        {
+          "kind": "isolation",
+          "title": "VCC ↔ GND ayrı olmalı",
+          "instruction": "J1 pin 1 (VCC) ile C1 pin 2 (GND) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "J1",
+              "pin": "1"
+            },
+            {
+              "component_ref": "C1",
+              "pin": "2"
+            }
+          ],
+          "blocking": true
+        },
+        {
+          "kind": "isolation",
+          "title": "VCC ↔ CTRL ayrı olmalı",
+          "instruction": "J1 pin 1 (VCC) ile C2 pin 1 (CTRL) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "J1",
+              "pin": "1"
+            },
+            {
+              "component_ref": "C2",
+              "pin": "1"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "isolation",
+          "title": "VCC ↔ DISCH ayrı olmalı",
+          "instruction": "J1 pin 1 (VCC) ile R1 pin 2 (DISCH) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "J1",
+              "pin": "1"
+            },
+            {
+              "component_ref": "R1",
+              "pin": "2"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "isolation",
+          "title": "VCC ↔ LED_A ayrı olmalı",
+          "instruction": "J1 pin 1 (VCC) ile LED1 pin 1 (LED_A) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "J1",
+              "pin": "1"
+            },
+            {
+              "component_ref": "LED1",
+              "pin": "1"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "isolation",
+          "title": "VCC ↔ OUT ayrı olmalı",
+          "instruction": "J1 pin 1 (VCC) ile R3 pin 1 (OUT) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "J1",
+              "pin": "1"
+            },
+            {
+              "component_ref": "R3",
+              "pin": "1"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "isolation",
+          "title": "VCC ↔ THRESH ayrı olmalı",
+          "instruction": "J1 pin 1 (VCC) ile C1 pin 1 (THRESH) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "J1",
+              "pin": "1"
+            },
+            {
+              "component_ref": "C1",
+              "pin": "1"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "isolation",
+          "title": "DISCH ↔ CTRL ayrı olmalı",
+          "instruction": "R1 pin 2 (DISCH) ile C2 pin 1 (CTRL) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "R1",
+              "pin": "2"
+            },
+            {
+              "component_ref": "C2",
+              "pin": "1"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "isolation",
+          "title": "GND ↔ CTRL ayrı olmalı",
+          "instruction": "C1 pin 2 (GND) ile C2 pin 1 (CTRL) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "C1",
+              "pin": "2"
+            },
+            {
+              "component_ref": "C2",
+              "pin": "1"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "isolation",
+          "title": "GND ↔ DISCH ayrı olmalı",
+          "instruction": "C1 pin 2 (GND) ile R1 pin 2 (DISCH) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "C1",
+              "pin": "2"
+            },
+            {
+              "component_ref": "R1",
+              "pin": "2"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "isolation",
+          "title": "GND ↔ LED_A ayrı olmalı",
+          "instruction": "C1 pin 2 (GND) ile LED1 pin 1 (LED_A) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "C1",
+              "pin": "2"
+            },
+            {
+              "component_ref": "LED1",
+              "pin": "1"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "isolation",
+          "title": "GND ↔ THRESH ayrı olmalı",
+          "instruction": "C1 pin 2 (GND) ile C1 pin 1 (THRESH) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "C1",
+              "pin": "2"
+            },
+            {
+              "component_ref": "C1",
+              "pin": "1"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "isolation",
+          "title": "LED_A ↔ CTRL ayrı olmalı",
+          "instruction": "LED1 pin 1 (LED_A) ile C2 pin 1 (CTRL) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "LED1",
+              "pin": "1"
+            },
+            {
+              "component_ref": "C2",
+              "pin": "1"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "isolation",
+          "title": "LED_A ↔ DISCH ayrı olmalı",
+          "instruction": "LED1 pin 1 (LED_A) ile R1 pin 2 (DISCH) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "LED1",
+              "pin": "1"
+            },
+            {
+              "component_ref": "R1",
+              "pin": "2"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "isolation",
+          "title": "LED_A ↔ THRESH ayrı olmalı",
+          "instruction": "LED1 pin 1 (LED_A) ile C1 pin 1 (THRESH) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "LED1",
+              "pin": "1"
+            },
+            {
+              "component_ref": "C1",
+              "pin": "1"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "isolation",
+          "title": "OUT ↔ CTRL ayrı olmalı",
+          "instruction": "R3 pin 1 (OUT) ile C2 pin 1 (CTRL) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "R3",
+              "pin": "1"
+            },
+            {
+              "component_ref": "C2",
+              "pin": "1"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "isolation",
+          "title": "OUT ↔ DISCH ayrı olmalı",
+          "instruction": "R3 pin 1 (OUT) ile R1 pin 2 (DISCH) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "R3",
+              "pin": "1"
+            },
+            {
+              "component_ref": "R1",
+              "pin": "2"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "isolation",
+          "title": "OUT ↔ GND ayrı olmalı",
+          "instruction": "R3 pin 1 (OUT) ile C1 pin 2 (GND) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "R3",
+              "pin": "1"
+            },
+            {
+              "component_ref": "C1",
+              "pin": "2"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "isolation",
+          "title": "OUT ↔ LED_A ayrı olmalı",
+          "instruction": "R3 pin 1 (OUT) ile LED1 pin 1 (LED_A) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "R3",
+              "pin": "1"
+            },
+            {
+              "component_ref": "LED1",
+              "pin": "1"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "isolation",
+          "title": "OUT ↔ THRESH ayrı olmalı",
+          "instruction": "R3 pin 1 (OUT) ile C1 pin 1 (THRESH) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "R3",
+              "pin": "1"
+            },
+            {
+              "component_ref": "C1",
+              "pin": "1"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "isolation",
+          "title": "THRESH ↔ CTRL ayrı olmalı",
+          "instruction": "C1 pin 1 (THRESH) ile C2 pin 1 (CTRL) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "C1",
+              "pin": "1"
+            },
+            {
+              "component_ref": "C2",
+              "pin": "1"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "isolation",
+          "title": "THRESH ↔ DISCH ayrı olmalı",
+          "instruction": "C1 pin 1 (THRESH) ile R1 pin 2 (DISCH) arasını ölç.",
+          "expected": "Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.",
+          "holes": [],
+          "pins": [
+            {
+              "component_ref": "C1",
+              "pin": "1"
+            },
+            {
+              "component_ref": "R1",
+              "pin": "2"
+            }
+          ],
+          "blocking": false
+        },
+        {
+          "kind": "polarity",
+          "title": "Enerji vermeden önce kutup taraması",
+          "instruction": "Kutuplu her parçaya bir kez daha bak ve komponent yüzü çıktısıyla karşılaştır: C1, C2.",
+          "expected": "Her şerit, bant ve düz taraf çıktının gösterdiği yöne bakıyor. Ters takılmış bir elektrolitik gürültüyle bozulur, ters bir diyot ise sessizce.",
+          "holes": [],
+          "pins": [],
+          "blocking": true
+        },
+        {
+          "kind": "polarity",
+          "title": "Entegreleri tak, 1. pin gösterildiği gibi",
+          "instruction": "U1 entegresini ancak şimdi soketine — soket takmadıysan doğrudan karta — çentiği çıktının işaretlediği uca gelecek şekilde tak. Önce bacaklarını düz bir yüzeyde düzelt.",
+          "expected": "Her çentik ve nokta çıktıdakiyle aynı yöne bakıyor.",
+          "holes": [],
+          "pins": [],
+          "blocking": true
+        },
+        {
+          "kind": "power-on",
+          "title": "İlk enerji, akım sınırlı",
+          "instruction": "Güç kaynağını devrenin gerilimine, akım sınırını da devrenin çekmesini beklediğin değerin biraz üstüne ayarla. Açarken akımı izle ve elin şalterde olsun.",
+          "expected": "Akım aşağı yukarı beklediğin değerde oturur. Sınıra dayanırsa hemen kapat ve yalıtım kontrollerine geri dön — bir yerde köprü var.",
+          "holes": [],
+          "pins": [],
+          "blocking": true
+        }
+      ]
+    }
+  ],
+  "totals": {
+    "part_steps": 8,
+    "conductor_steps": 14,
+    "checkpoints": 39
+  }
+}

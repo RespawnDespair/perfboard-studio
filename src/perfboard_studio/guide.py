@@ -86,6 +86,7 @@ from .model import (
     declared_pin_name,
     pin_name_of,
 )
+from .phrasebook import ENGLISH, GuideLanguage, Phrasebook, phrasebook
 from .stripboard import is_stripboard, strip_axis
 from .wiregauge import awg_diameter_mm, cut_gauge_awg, fits_hole
 
@@ -252,6 +253,10 @@ class GuideOptions:
     #: Cap on isolation pairs carried into the guide, matching lvs.isolation_checks.
     isolation_cap: int = 40
     drc: DrcOptions = DEFAULT_DRC_OPTIONS
+    #: The language every sentence of the guide is written in (``phrasebook``). English by
+    #: default, and English is the guide it always was, word for word -- which is what the
+    #: guide golden holds it to.
+    language: GuideLanguage = "en"
 
 
 DEFAULT_GUIDE_OPTIONS = GuideOptions()
@@ -471,6 +476,10 @@ class Guide:
     part_steps: int
     conductor_steps: int
     checkpoint_count: int
+    #: What every sentence above is written in. Carried so that an exporter writes its own
+    #: words -- headings, table columns, the tags beside a step -- in the same language as
+    #: the guide it is given, without being told twice.
+    language: GuideLanguage = "en"
 
     @property
     def total_steps(self) -> int:
@@ -494,13 +503,14 @@ def build_guide(
     schematic intent and there is none. Every such gap is reported in ``warnings`` rather
     than silently producing a shorter guide.
     """
+    say = phrasebook(options.language)
     violations = run_drc(doc, lookup, options.drc)
     nets_by_id: dict[str, Net] = {net.id: net for net in doc.nets}
     color_by_net = _assign_colors(doc)
 
-    part_steps = _part_steps(doc, lookup, violations)
+    part_steps = _part_steps(doc, lookup, violations, say)
     conductor_steps, cut_list, spine_list = _conductor_steps(
-        doc, nets_by_id, color_by_net, violations, options
+        doc, nets_by_id, color_by_net, violations, options, say
     )
 
     by_phase: dict[PhaseNumber, list[GuideStep]] = {n: [] for n in PHASE_TITLES}
@@ -509,40 +519,42 @@ def build_guide(
     for conductor_step, conductor_phase in conductor_steps:
         by_phase[conductor_phase].append(conductor_step)
 
-    checkpoints = _checkpoints(doc, lookup, violations, conductor_steps, options)
-    track_cuts = _track_cuts(doc)
-    checkpoints[0].extend(_cut_checks(track_cuts))
+    checkpoints = _checkpoints(doc, lookup, violations, conductor_steps, options, say)
+    track_cuts = _track_cuts(doc, say)
+    checkpoints[0].extend(_cut_checks(track_cuts, say))
 
     phases = tuple(
         GuidePhase(
             number=number,
-            title=PHASE_TITLES[number],
-            summary=_phase_summary(number, doc),
+            title=say(PHASE_TITLES[number]),
+            summary=_phase_summary(number, doc, say),
             steps=tuple(by_phase[number]),
             checkpoints=tuple(checkpoints.get(number, ())),
         )
         for number in sorted(PHASE_TITLES)
     )
 
+    iron = IRON_BY_MATERIAL[doc.board.material]
     all_checks = sum(len(phase.checkpoints) for phase in phases)
     return Guide(
         board=doc.board,
         document_name=doc.meta.name,
         phases=phases,
-        bom=_bom(doc, lookup),
+        bom=_bom(doc, lookup, say),
         cut_list=tuple(cut_list),
         spine_list=tuple(spine_list),
         track_cuts=track_cuts,
-        iron=IRON_BY_MATERIAL[doc.board.material],
-        tools=_tools(doc, cut_list, spine_list),
-        warnings=_warnings(doc, lookup, violations),
+        iron=dataclasses.replace(iron, note=say(iron.note)),
+        tools=_tools(doc, cut_list, spine_list, say),
+        warnings=_warnings(doc, lookup, violations, say),
         part_steps=len(part_steps),
         conductor_steps=len(conductor_steps),
         checkpoint_count=all_checks,
+        language=options.language,
     )
 
 
-def _phase_summary(number: PhaseNumber, doc: PerfDocument) -> str:
+def _phase_summary(number: PhaseNumber, doc: PerfDocument, say: Phrasebook) -> str:
     """The phase's standing summary, with what the BOARD changes about it folded in.
 
     Only phase 0 varies today, and it varies for a reason worth stating: every hole
@@ -553,10 +565,10 @@ def _phase_summary(number: PhaseNumber, doc: PerfDocument) -> str:
     board in front of them.
     """
     if number != 0:
-        return PHASE_SUMMARIES[number]
+        return say(PHASE_SUMMARIES[number])
 
     board = doc.board
-    parts: list[str] = ["Cut the board"]
+    parts: list[str] = [say("Cut the board")]
     if doc.mounting_holes:
         count = len(doc.mounting_holes)
         sizes = ", ".join(f"{d:g} mm" for d in sorted({m.diameter for m in doc.mounting_holes}))
@@ -566,37 +578,48 @@ def _phase_summary(number: PhaseNumber, doc: PerfDocument) -> str:
         )
         # Parenthesised rather than run on with a dash: this clause sits inside a comma
         # list, and a second comma list beside it reads as one long ambiguous string.
-        parts.append(
-            f"drill the {count} mounting {'hole' if count == 1 else 'holes'} ({sizes} at {where})"
-        )
-    parts.append(
-        "mark hole A1"
-        if board.labels is None
-        else "check which corner the board's printed A1 is in"
-    )
-    parts.append("get the iron and the parts ready")
+        if count == 1:
+            parts.append(
+                say("drill the {count} mounting hole ({sizes} at {where})",
+                    count=count, sizes=sizes, where=where)
+            )
+        else:
+            parts.append(
+                say("drill the {count} mounting holes ({sizes} at {where})",
+                    count=count, sizes=sizes, where=where)
+            )
+    if board.labels is None:
+        parts.append(say("mark hole A1"))
+    else:
+        parts.append(say("check which corner the board's printed A1 is in"))
+    parts.append(say("get the iron and the parts ready"))
 
-    summary = ", ".join(parts[:-1]) + f", and {parts[-1]}."
+    summary = say("{items}, and {last}.", items=", ".join(parts[:-1]), last=parts[-1])
     summary = summary[0].upper() + summary[1:]
 
     if doc.mounting_holes:
         # Its own sentence, because it is an instruction about ORDER rather than another
         # thing to do: swarf brushes off a bare board and digs out of a finished one, and
         # a board that still has to go in a vice should not have parts on it yet.
-        summary += (
-            " Drill before anything is soldered — the board can still go in a vice, and "
+        summary += " " + say(
+            "Drill before anything is soldered — the board can still go in a vice, and "
             "swarf brushes off a bare board instead of having to be picked out of a built one."
         )
 
     if board.pad_shape == "oblong" and board.pad_length is not None:
-        along = "along a row" if board.pad_axis == "horizontal" else "down a column"
-        across = "down a column" if board.pad_axis == "horizontal" else "along a row"
-        summary += (
-            f" This board's pads are oblong ({board.pad_length:g} × {board.pad_diameter:g} mm), "
-            f"so neighbouring pads {along} nearly touch while pads {across} are well clear. "
-            f"Solder flows between them far more easily in the first direction than the "
-            f"second — which is what makes the traces below quick, and what makes an "
-            f"accidental bridge {along} quick too."
+        row, column = say("along a row"), say("down a column")
+        along = row if board.pad_axis == "horizontal" else column
+        across = column if board.pad_axis == "horizontal" else row
+        summary += " " + say(
+            "This board's pads are oblong ({length:g} × {width:g} mm), so neighbouring pads "
+            "{along} nearly touch while pads {across} are well clear. Solder flows between "
+            "them far more easily in the first direction than the second — which is what "
+            "makes the traces below quick, and what makes an accidental bridge {along} quick "
+            "too.",
+            length=board.pad_length,
+            width=board.pad_diameter,
+            along=along,
+            across=across,
         )
     return summary
 
@@ -605,7 +628,7 @@ def _phase_summary(number: PhaseNumber, doc: PerfDocument) -> str:
 
 
 def _part_steps(
-    doc: PerfDocument, lookup: FootprintLookup, violations: list[DrcViolation]
+    doc: PerfDocument, lookup: FootprintLookup, violations: list[DrcViolation], say: Phrasebook
 ) -> list[tuple[PartStep, PhaseNumber]]:
     """One step per placed component, in build order.
 
@@ -613,7 +636,7 @@ def _part_steps(
     matters physically, and the reference is what makes the order stable rather than
     dependent on document order.
     """
-    extra_notes = _part_notes_from_drc(doc, violations)
+    extra_notes = _part_notes_from_drc(doc, violations, say)
     entries: list[tuple[PhaseNumber, Mm, str, PartStep]] = []
     for component in doc.components:
         footprint = lookup(component.footprint_id)
@@ -625,6 +648,7 @@ def _part_steps(
             doc.board,
             doc.height_limit_mm,
             extra_notes.get(component.id, ()),
+            say,
         )
         phase = PHASE_BY_ARCHETYPE.get(footprint.body.archetype, 5)
         entries.append((phase, footprint.body_height, component.ref, step))
@@ -634,7 +658,7 @@ def _part_steps(
 
 
 def _part_notes_from_drc(
-    doc: PerfDocument, violations: list[DrcViolation]
+    doc: PerfDocument, violations: list[DrcViolation], say: Phrasebook
 ) -> dict[str, tuple[str, ...]]:
     """The DRC findings that change how a part is FITTED, moved onto that part's step.
 
@@ -651,36 +675,45 @@ def _part_notes_from_drc(
     for violation in violations:
         if violation.rule == "jumper-under-body" and violation.component_ids:
             wheres = [
-                _conductor_where(path_by_id.get(conductor_id))
+                _conductor_where(path_by_id.get(conductor_id), say)
                 for conductor_id in violation.conductor_ids
             ]
-            many = len(wheres) > 1
-            notes.setdefault(violation.component_ids[0], []).append(
-                f"The top jumper{'s' if many else ''} {' and '.join(wheres)} "
-                f"{'run' if many else 'runs'} underneath this part, so "
-                f"{'they have' if many else 'it has'} to be soldered first — "
-                f"{'they are' if many else 'it is'} in phase 1 for that reason. Check "
-                f"{'they are' if many else 'it is'} down and lying flat before this "
-                f"goes in."
-            )
+            if len(wheres) > 1:
+                note = say(
+                    "The top jumpers {wheres} run underneath this part, so they have to be "
+                    "soldered first — they are in phase 1 for that reason. Check they are "
+                    "down and lying flat before this goes in.",
+                    wheres=say.joined(wheres),
+                )
+            else:
+                note = say(
+                    "The top jumper {where} runs underneath this part, so it has to be "
+                    "soldered first — it is in phase 1 for that reason. Check it is down "
+                    "and lying flat before this goes in.",
+                    where=say.joined(wheres),
+                )
+            notes.setdefault(violation.component_ids[0], []).append(note)
         elif violation.rule == "heat-proximity" and len(violation.component_ids) == 2:
-            source_ref = ref_by_id.get(violation.component_ids[0], "the part next to it")
+            source_ref = ref_by_id.get(violation.component_ids[0], say("the part next to it"))
             # On the part that suffers, not the one that gets hot: this is advice about
             # which capacitor to reach for, and it is only useful while fitting that one.
             notes.setdefault(violation.component_ids[1], []).append(
-                f"{source_ref} runs hot and sits close by. Fit a 105 °C-rated part here "
-                f"if you have one — an 85 °C electrolytic beside a heatsink is the first "
-                f"thing on the board to dry out."
+                say(
+                    "{source} runs hot and sits close by. Fit a 105 °C-rated part here if you "
+                    "have one — an 85 °C electrolytic beside a heatsink is the first thing on "
+                    "the board to dry out.",
+                    source=source_ref,
+                )
             )
 
     return {component_id: tuple(lines) for component_id, lines in notes.items()}
 
 
-def _conductor_where(path: tuple[HoleCoord, ...] | None) -> str:
+def _conductor_where(path: tuple[HoleCoord, ...] | None, say: Phrasebook) -> str:
     """A conductor named by its ends, for a message a person reads holding the board."""
     if not path:
-        return "on this board"
-    return f"from {format_hole(path[0])} to {format_hole(path[-1])}"
+        return say("on this board")
+    return say("from {start} to {end}", start=format_hole(path[0]), end=format_hole(path[-1]))
 
 
 def _part_step(
@@ -689,6 +722,7 @@ def _part_step(
     board: Board,
     height_limit_mm: Mm | None = None,
     extra_notes: tuple[str, ...] = (),
+    say: Phrasebook = ENGLISH,
 ) -> PartStep:
     holes = all_pin_holes(component, footprint)
     pin_holes = tuple((pin.number, at) for pin, at in holes)
@@ -698,16 +732,16 @@ def _part_step(
         # The old wording told the reader to "leave it until phase 8", which is where the
         # IC goes in but is not where this step is: PHASE_BY_ARCHETYPE puts a DIP in phase
         # 2, the SOCKET phase. Say which of the two things happens now and which does not.
-        notes.append(
+        notes.append(say(
             "Fit a socket here if you have one — this phase is the sockets. The IC "
             "itself does not go in until the closing checks in phase 8, socket or no "
             "socket: it is the last thing on the board that should meet an iron."
-        )
+        ))
     if component.mirrored:
-        notes.append(
+        notes.append(say(
             "This part is mirrored: it goes in from the SOLDER side, not the component "
             "side. Check the pin order against the board before soldering."
-        )
+        ))
     facing = wire_entry(footprint)
     if facing is not None:
         # A terminal block is the one part that goes in the same holes either way round and
@@ -717,42 +751,45 @@ def _part_step(
         side = entry_side(
             transform_offset(facing[0], facing[1], component.rotation, component.mirrored)
         )
-        notes.append(
-            f"The wire entries face the {side} edge of the board — the screws on top, the "
-            f"openings towards the {side}. Check before soldering: it fits the holes either "
-            f"way round."
-        )
+        notes.append(say(
+            "The wire entries face the {side} edge of the board — the screws on top, the "
+            "openings towards the {side}. Check before soldering: it fits the holes either "
+            "way round.",
+            side=say(side),
+        ))
     if footprint.body.archetype == "screw-terminal-vertical":
-        notes.append(
+        notes.append(say(
             "The wires go in from ABOVE: this is the header, and the screw plug is pushed "
             "down into it. Keep the space over it clear for the plug and a screwdriver."
-        )
+        ))
     if footprint.body.archetype == "module-board":
         seat = footprint.body.dims.get("seat", 0.0)
         if seat >= 5.0:
-            notes.append(
+            notes.append(say(
                 "Solder the female header strips here, not the module: it plugs in last, "
                 "after the power-up checks, and can come out again. Seat each strip square "
                 "on the board before soldering its end pins."
-            )
+            ))
         else:
-            notes.append(
+            notes.append(say(
                 "Soldered straight in on its own pins, so it cannot come out again without "
                 "desoldering every pin: check its orientation against the pin names first."
-            )
+            ))
     if height_limit_mm is not None and footprint.body_height > height_limit_mm:
-        notes.append(
-            f"{footprint.body_height:g} mm tall, and this build has {height_limit_mm:g} mm "
-            f"of room. It will not fit as it stands — lay it down or swap it before you "
-            f"solder it in."
-        )
+        notes.append(say(
+            "{height:g} mm tall, and this build has {limit:g} mm of room. It will not fit "
+            "as it stands — lay it down or swap it before you solder it in.",
+            height=footprint.body_height,
+            limit=height_limit_mm,
+        ))
     elif footprint.body_height >= 10:
         # The guess, kept only for a board that has not said what it has to fit inside.
         # Once there is a real number the real number wins.
-        notes.append(
-            f"{footprint.body_height:.0f} mm tall — check it clears anything meant to go "
-            "over the board before you solder it down."
-        )
+        notes.append(say(
+            "{height:.0f} mm tall — check it clears anything meant to go over the board "
+            "before you solder it down.",
+            height=footprint.body_height,
+        ))
     notes.extend(extra_notes)
 
     return PartStep(
@@ -760,21 +797,21 @@ def _part_step(
         component_id=component.id,
         ref=component.ref,
         value=component.value,
-        footprint_name=footprint.name,
+        footprint_name=say.footprint(footprint.name),
         archetype=footprint.body.archetype,
         anchor=component.anchor,
         pin_holes=pin_holes,
-        span=_span_of(pin_holes),
+        span=_span_of(pin_holes, say),
         bend_template_mm=_bend_template(pin_holes, board),
         rotation=component.rotation,
         mirrored=component.mirrored,
         height_mm=footprint.body_height,
-        polarity=_polarity_note(footprint, pin_holes, component),
+        polarity=_polarity_note(footprint, pin_holes, component, say),
         notes=tuple(notes),
     )
 
 
-def _span_of(pin_holes: tuple[tuple[str, HoleCoord], ...]) -> str:
+def _span_of(pin_holes: tuple[tuple[str, HoleCoord], ...], say: Phrasebook = ENGLISH) -> str:
     """Where the part sits, in the form that is useful for THAT part.
 
     Two leads get "C7 → C11, 4 holes apart", which is a thing you can set a pair of
@@ -782,7 +819,7 @@ def _span_of(pin_holes: tuple[tuple[str, HoleCoord], ...]) -> str:
     pin 8 is a diagonal and "3 holes apart" would be a true statement that helps nobody.
     """
     if not pin_holes:
-        return "no pins"
+        return say("no pins")
     if len(pin_holes) == 1:
         return format_hole(pin_holes[0][1])
 
@@ -791,15 +828,23 @@ def _span_of(pin_holes: tuple[tuple[str, HoleCoord], ...]) -> str:
     if len(pin_holes) == 2:
         first, last = pin_holes[0][1], pin_holes[1][1]
         steps = max(max(cols) - min(cols), max(rows) - min(rows))
-        return f"{format_hole(first)} → {format_hole(last)}, {steps} holes apart"
+        return say(
+            "{start} → {end}, {steps} holes apart",
+            start=format_hole(first), end=format_hole(last), steps=steps,
+        )
 
     corner_a = HoleCoord(min(cols), min(rows))
     corner_b = HoleCoord(max(cols), max(rows))
     pin_one = dict(pin_holes).get("1")
-    where = f" with pin 1 at {format_hole(pin_one)}" if pin_one is not None else ""
-    return (
-        f"{format_hole(corner_a)} → {format_hole(corner_b)}, "
-        f"{len(pin_holes)} pins{where}"
+    if pin_one is None:
+        return say(
+            "{start} → {end}, {count} pins",
+            start=format_hole(corner_a), end=format_hole(corner_b), count=len(pin_holes),
+        )
+    return say(
+        "{start} → {end}, {count} pins with pin 1 at {hole}",
+        start=format_hole(corner_a), end=format_hole(corner_b), count=len(pin_holes),
+        hole=format_hole(pin_one),
     )
 
 
@@ -850,6 +895,7 @@ def _polarity_note(
     footprint: Footprint,
     pin_holes: tuple[tuple[str, HoleCoord], ...],
     component: ComponentInstance | None = None,
+    say: Phrasebook = ENGLISH,
 ) -> str | None:
     """How to orient this part, in words, or None if it does not matter.
 
@@ -863,7 +909,11 @@ def _polarity_note(
     for pin in footprint.pins:
         name = pin_name_of(component, pin)
         if name in _PIN_NAME_MEANING and pin.number in by_number:
-            named.append(f"{_PIN_NAME_MEANING[name]} in {format_hole(by_number[pin.number])}")
+            named.append(say(
+                "{lead} in {hole}",
+                lead=say(_PIN_NAME_MEANING[name]),
+                hole=format_hole(by_number[pin.number]),
+            ))
     if named:
         return "; ".join(named)
 
@@ -880,14 +930,18 @@ def _polarity_note(
                 legs = []
                 break
             meaning = _LEAD_NAME_MEANING.get(name)
-            said = f"{name} ({meaning})" if meaning else name
-            legs.append(f"{said} in {format_hole(hole)}")
+            said = f"{name} ({say(meaning)})" if meaning else name
+            legs.append(say("{lead} in {hole}", lead=said, hole=format_hole(hole)))
         if legs:
-            return "; ".join(legs) + " — check against the part's datasheet"
+            return say("{legs} — check against the part's datasheet", legs="; ".join(legs))
 
     if footprint.body.archetype == "dip":
         first = by_number.get("1")
-        return f"Pin 1 (the notched end, marked with a dot) in {format_hole(first)}" if first else None
+        if first is None:
+            return None
+        return say(
+            "Pin 1 (the notched end, marked with a dot) in {hole}", hole=format_hole(first)
+        )
 
     if footprint.body.archetype == "box-header":
         # The shroud goes on one way round only as far as the CABLE is concerned: soldered
@@ -895,9 +949,10 @@ def _polarity_note(
         # neighbour across the row. The key slot is in the wall beside pin 1's row.
         first = by_number.get("1")
         if first is not None:
-            return (
-                f"Key slot on the side of the pin-1 row; pin 1 in {format_hole(first)} "
-                "(the cable's red stripe goes to pin 1)"
+            return say(
+                "Key slot on the side of the pin-1 row; pin 1 in {hole} "
+                "(the cable's red stripe goes to pin 1)",
+                hole=format_hole(first),
             )
 
     if footprint.polarized:
@@ -905,12 +960,15 @@ def _polarity_note(
         # this registry and KiCad's DO-41 both follow.
         first = by_number.get("1")
         if first is not None:
-            return f"Cathode — the banded end — in {format_hole(first)}"
+            return say("Cathode — the banded end — in {hole}", hole=format_hole(first))
 
     if footprint.body.archetype in ("to92", "to220"):
         first = by_number.get("1")
         if first is not None:
-            return f"Pin 1 in {format_hole(first)}; check the package outline against the board"
+            return say(
+                "Pin 1 in {hole}; check the package outline against the board",
+                hole=format_hole(first),
+            )
     return None
 
 
@@ -923,6 +981,7 @@ def _conductor_steps(
     color_by_net: dict[str, str],
     violations: list[DrcViolation],
     options: GuideOptions,
+    say: Phrasebook,
 ) -> tuple[list[tuple[ConductorStep, PhaseNumber]], list[WireCut], list[SpineCut]]:
     """One step per conductor, grouped by net and ordered ground, power, then signal.
 
@@ -930,7 +989,7 @@ def _conductor_steps(
     reason turned around: the rails are the connections everything else is measured
     against, so they want to exist and be verified first.
     """
-    risks_by_conductor = _risks_by_conductor(violations)
+    risks_by_conductor = _risks_by_conductor(violations, say)
     trapped = trapped_jumper_ids(violations)
     class_order: dict[NetClass, int] = {"ground": 0, "power": 1, "signal": 2}
 
@@ -940,7 +999,7 @@ def _conductor_steps(
 
     for conductor in doc.conductors:
         net = nets_by_id.get(conductor.net_id) if conductor.net_id else None
-        net_name = net.name if net is not None else "(unassigned)"
+        net_name = net.name if net is not None else say("(unassigned)")
         net_class: NetClass = net.net_class if net is not None else "signal"
         current_a = net.current_a if net is not None else None
 
@@ -953,6 +1012,7 @@ def _conductor_steps(
             color_by_net.get(conductor.net_id or "", "grey"),
             risks_by_conductor.get(conductor.id, ()),
             options,
+            say,
         )
         if step.cut is not None:
             cut_list.append(step.cut)
@@ -986,6 +1046,7 @@ def _conductor_step(
     color: str,
     risks: tuple[RiskNote, ...],
     options: GuideOptions,
+    say: Phrasebook,
 ) -> ConductorStep:
     path = conductor.path
     pads = len(path)
@@ -1010,23 +1071,25 @@ def _conductor_step(
                 gauge_mm=conductor.spine.gauge,
                 material=conductor.spine.material.replace("-", " "),
             )
-            notes.append(
-                f"Lay the {conductor.spine.gauge} mm {spine.material} along the pads first "
-                "and solder it at each one. Work in one direction and do not go back over "
-                "a section that has cooled."
-            )
+            notes.append(say(
+                "Lay the {gauge} mm {material} along the pads first and solder it at each "
+                "one. Work in one direction and do not go back over a section that has "
+                "cooled.",
+                gauge=conductor.spine.gauge,
+                material=say(spine.material),
+            ))
         elif pads >= 3:
-            notes.append(
+            notes.append(say(
                 "Consider laying a lead offcut along these pads as a spine rather than "
                 "building the run out of solder alone: it drops the resistance by roughly "
                 "an order of magnitude and is far easier to make repeatable."
-            )
+            ))
         # Tinning applies to every run; the flux sentence says "on a run this long" and
         # was appended to two-pad joints as well. Same threshold as the spine suggestion
         # above, so one run is either long or it is not.
-        notes.append("Tin each pad lightly first, then join them.")
+        notes.append(say("Tin each pad lightly first, then join them."))
         if pads >= 3:
-            notes.append("Flux is not optional on a run this long.")
+            notes.append(say("Flux is not optional on a run this long."))
     elif conductor.kind in ("bare-wire", "insulated-wire", "top-jumper"):
         insulated = conductor.kind != "bare-wire"
         stored_awg = conductor.gauge_awg if isinstance(conductor, WireConductor) else None
@@ -1036,26 +1099,29 @@ def _conductor_step(
         if not fits_hole(cut.awg, board.drill_diameter):
             # DRC's wire-too-thick-for-hole says the same thing, from the same function; it
             # is repeated at the step because this is where the builder has the wire in hand.
-            notes.append(
-                f"AWG {cut.awg} is {awg_diameter_mm(cut.awg):.2f} mm of copper and will not go "
-                f"through this board's {board.drill_diameter:g} mm holes. Lap-solder each end "
-                "onto the face of its pad instead of passing it through."
-            )
+            notes.append(say(
+                "AWG {awg} is {copper:.2f} mm of copper and will not go through this board's "
+                "{drill:g} mm holes. Lap-solder each end onto the face of its pad instead of "
+                "passing it through.",
+                awg=cut.awg,
+                copper=awg_diameter_mm(cut.awg),
+                drill=board.drill_diameter,
+            ))
         if conductor.kind == "top-jumper":
-            notes.append(
+            notes.append(say(
                 "This one runs over the COMPONENT side, not the solder side. Keep it clear "
                 "of anything that has to be reachable later."
-            )
+            ))
         if conductor.kind == "bare-wire":
-            notes.append(
+            notes.append(say(
                 "Bare wire: it must not touch any other conductor along its length. Keep it "
                 "flat against the board and check it against the neighbouring runs."
-            )
+            ))
     elif conductor.kind == "lead-bend":
-        notes.append(
+        notes.append(say(
             "No extra wire: bend the component's own lead over to reach the second hole, "
             "and solder both ends."
-        )
+        ))
 
     return ConductorStep(
         kind="conductor",
@@ -1063,7 +1129,7 @@ def _conductor_step(
         conductor_kind=conductor.kind,
         net_name=net_name,
         net_class=net_class,
-        span=_conductor_span(conductor.kind, path, pads),
+        span=_conductor_span(conductor.kind, path, pads, say),
         path=path,
         pads=pads,
         length_mm=length_mm,
@@ -1077,12 +1143,14 @@ def _conductor_step(
     )
 
 
-def _conductor_span(kind: ConductorKind, path: tuple[HoleCoord, ...], pads: int) -> str:
+def _conductor_span(
+    kind: ConductorKind, path: tuple[HoleCoord, ...], pads: int, say: Phrasebook
+) -> str:
     if not path:
-        return "(empty path)"
+        return say("(empty path)")
     ends = f"{format_hole(path[0])} → {format_hole(path[-1])}"
     if kind in ("solder-trace", "solder-trace-wired", "strip"):
-        return f"{ends}, {pads} pads"
+        return say("{ends}, {pads} pads", ends=ends, pads=pads)
     return ends
 
 
@@ -1160,7 +1228,9 @@ def trapped_jumper_ids(violations: list[DrcViolation]) -> frozenset[ConductorId]
     )
 
 
-def _risks_by_conductor(violations: list[DrcViolation]) -> dict[ConductorId, tuple[RiskNote, ...]]:
+def _risks_by_conductor(
+    violations: list[DrcViolation], say: Phrasebook
+) -> dict[ConductorId, tuple[RiskNote, ...]]:
     """R5' proximity warnings, indexed by the trace that causes them.
 
     This is the join that makes PLAN.md Sec 7.5 work: the risk DRC predicts and the
@@ -1175,10 +1245,11 @@ def _risks_by_conductor(violations: list[DrcViolation]) -> dict[ConductorId, tup
                 RiskNote(
                     hole=violation.holes[0],
                     neighbour=violation.holes[1],
-                    message=(
-                        f"{format_hole(violation.holes[0])} sits about "
-                        f"one pad gap from {format_hole(violation.holes[1])}, which is on "
-                        "another net. Do not let solder run across."
+                    message=say(
+                        "{hole} sits about one pad gap from {neighbour}, which is on another "
+                        "net. Do not let solder run across.",
+                        hole=format_hole(violation.holes[0]),
+                        neighbour=format_hole(violation.holes[1]),
                     ),
                 )
             )
@@ -1188,7 +1259,7 @@ def _risks_by_conductor(violations: list[DrcViolation]) -> dict[ConductorId, tup
 # -- checkpoints ------------------------------------------------------------
 
 
-def _track_cuts(doc: PerfDocument) -> tuple[TrackCutJob, ...]:
+def _track_cuts(doc: PerfDocument, say: Phrasebook) -> tuple[TrackCutJob, ...]:
     """Every track to break, in reading order.
 
     Sorted by where they are rather than by when they were made, because they are done in
@@ -1213,9 +1284,9 @@ def _track_cuts(doc: PerfDocument) -> tuple[TrackCutJob, ...]:
             TrackCutJob(
                 at=cut.at,
                 strip=(
-                    f"row {row_label(cut.at.row)}"
+                    say("row {label}", label=row_label(cut.at.row))
                     if horizontal
-                    else f"column {column_label(cut.at.col)}"
+                    else say("column {label}", label=column_label(cut.at.col))
                 ),
                 separates=neighbours if on_board else None,
             )
@@ -1223,7 +1294,7 @@ def _track_cuts(doc: PerfDocument) -> tuple[TrackCutJob, ...]:
     return tuple(jobs)
 
 
-def _cut_checks(cuts: tuple[TrackCutJob, ...]) -> list[Checkpoint]:
+def _cut_checks(cuts: tuple[TrackCutJob, ...], say: Phrasebook) -> list[Checkpoint]:
     """One isolation probe per cut, before anything is soldered.
 
     Blocking, and the only checks in this guide that can be made on a bare board. A cut
@@ -1239,13 +1310,17 @@ def _cut_checks(cuts: tuple[TrackCutJob, ...]) -> list[Checkpoint]:
         checks.append(
             Checkpoint(
                 kind="isolation",
-                title=f"{format_hole(left)} ↔ {format_hole(right)} must be open",
-                instruction=(
-                    f"After cutting the track at {format_hole(cut.at)}, measure resistance "
-                    f"between {format_hole(left)} and {format_hole(right)}."
+                title=say(
+                    "{a} ↔ {b} must be open", a=format_hole(left), b=format_hole(right)
                 ),
-                expected="Open circuit. Anything below a few hundred kΩ means copper is "
-                "still bridging the cut — clear it before soldering anything.",
+                instruction=say(
+                    "After cutting the track at {cut}, measure resistance between {a} and {b}.",
+                    cut=format_hole(cut.at), a=format_hole(left), b=format_hole(right),
+                ),
+                expected=say(
+                    "Open circuit. Anything below a few hundred kΩ means copper is still "
+                    "bridging the cut — clear it before soldering anything."
+                ),
                 holes=(left, right),
                 blocking=True,
             )
@@ -1259,6 +1334,7 @@ def _checkpoints(
     violations: list[DrcViolation],
     conductor_steps: list[tuple[ConductorStep, PhaseNumber]],
     options: GuideOptions,
+    say: Phrasebook,
 ) -> dict[PhaseNumber, list[Checkpoint]]:
     """Every measurement, attached to the phase after which it can be made.
 
@@ -1274,12 +1350,20 @@ def _checkpoints(
             checks[phase].append(
                 Checkpoint(
                     kind="isolation",
-                    title=f"{format_hole(risk.hole)} ↔ {format_hole(risk.neighbour)} must be open",
-                    instruction=(
-                        f"With the trace for {step.net_name} finished, measure resistance "
-                        f"between {format_hole(risk.hole)} and {format_hole(risk.neighbour)}."
+                    title=say(
+                        "{a} ↔ {b} must be open",
+                        a=format_hole(risk.hole), b=format_hole(risk.neighbour),
                     ),
-                    expected="Open circuit. Any reading at all means solder has bridged them.",
+                    instruction=say(
+                        "With the trace for {net} finished, measure resistance between {a} "
+                        "and {b}.",
+                        net=step.net_name,
+                        a=format_hole(risk.hole),
+                        b=format_hole(risk.neighbour),
+                    ),
+                    expected=say(
+                        "Open circuit. Any reading at all means solder has bridged them."
+                    ),
                     holes=(risk.hole, risk.neighbour),
                 )
             )
@@ -1294,11 +1378,14 @@ def _checkpoints(
             Checkpoint(
                 kind="continuity",
                 title=f"{check.a.component_ref}.{check.a.pin} ↔ {check.b.component_ref}.{check.b.pin}",
-                instruction=(
-                    f"Probe {_pin_phrase(doc, check.a.component_ref, check.a.pin)} and "
-                    f"{_pin_phrase(doc, check.b.component_ref, check.b.pin)}."
+                instruction=say(
+                    "Probe {a} and {b}.",
+                    a=_pin_phrase(doc, check.a.component_ref, check.a.pin, say),
+                    b=_pin_phrase(doc, check.b.component_ref, check.b.pin, say),
                 ),
-                expected=f"Continuous — they are both on net {check.net_name}.",
+                expected=say(
+                    "Continuous — they are both on net {net}.", net=check.net_name
+                ),
                 pins=(check.a, check.b),
             )
         )
@@ -1308,14 +1395,16 @@ def _checkpoints(
     for step, phase in conductor_steps:
         if step.resistance_ohm is None or step.pads < options.resistance_check_min_pads:
             continue
-        checks[phase].append(_resistance_check(step, options))
+        checks[phase].append(_resistance_check(step, options, say))
 
-    checks[8].extend(_closing_checks(doc, lookup, options))
+    checks[8].extend(_closing_checks(doc, lookup, options, say))
     del violations
     return checks
 
 
-def _resistance_check(step: ConductorStep, options: GuideOptions) -> Checkpoint:
+def _resistance_check(
+    step: ConductorStep, options: GuideOptions, say: Phrasebook
+) -> Checkpoint:
     """The end-to-end check on one run, in the form the reader's meter can carry out.
 
     Two forms, and which one a run gets is decided by ``meter_resolution_ohm`` -- because
@@ -1342,30 +1431,40 @@ def _resistance_check(step: ConductorStep, options: GuideOptions) -> Checkpoint:
         band = options.resistance_tolerance
         return Checkpoint(
             kind="resistance",
-            title=f"{step.net_name} run {step.span}: about {milliohm:.1f} mΩ end to end",
-            instruction=(
-                f"Measure between {span_from} and {span_to}. Subtract the reading with the "
-                f"probes touched together, or use four-wire mode if your meter has it."
+            title=say(
+                "{net} run {span}: about {milliohm:.1f} mΩ end to end",
+                net=step.net_name, span=step.span, milliohm=milliohm,
             ),
-            expected=(
-                f"About {milliohm:.1f} mΩ (accept {milliohm * (1 - band):.1f}–"
-                f"{milliohm * (1 + band):.1f} mΩ). Much higher means a cold joint or a "
-                "crack in the run."
+            instruction=say(
+                "Measure between {start} and {end}. Subtract the reading with the probes "
+                "touched together, or use four-wire mode if your meter has it.",
+                start=span_from, end=span_to,
+            ),
+            expected=say(
+                "About {milliohm:.1f} mΩ (accept {low:.1f}–{high:.1f} mΩ). Much higher "
+                "means a cold joint or a crack in the run.",
+                milliohm=milliohm,
+                low=milliohm * (1 - band),
+                high=milliohm * (1 + band),
             ),
             holes=(step.path[0], step.path[-1]),
         )
     return Checkpoint(
         kind="resistance",
-        title=f"{step.net_name} run {step.span} must read as a dead short",
-        instruction=(
-            f"Measure between {span_from} and {span_to}, then touch the probes together "
-            f"and compare. A good run adds nothing you can read."
+        title=say(
+            "{net} run {span} must read as a dead short", net=step.net_name, span=step.span
         ),
-        expected=(
-            f"The same as your probes touched together, give or take one count. This run "
-            f"should be about {milliohm:.1f} mΩ, far below what a hand meter resolves — so "
-            f"any reading you can actually distinguish is a cold joint or a crack, not the "
-            f"copper."
+        instruction=say(
+            "Measure between {start} and {end}, then touch the probes together and "
+            "compare. A good run adds nothing you can read.",
+            start=span_from, end=span_to,
+        ),
+        expected=say(
+            "The same as your probes touched together, give or take one count. This run "
+            "should be about {milliohm:.1f} mΩ, far below what a hand meter resolves — so "
+            "any reading you can actually distinguish is a cold joint or a crack, not the "
+            "copper.",
+            milliohm=milliohm,
         ),
         holes=(step.path[0], step.path[-1]),
     )
@@ -1382,7 +1481,7 @@ def _last_phase_by_net(
     return last
 
 
-def _pin_phrase(doc: PerfDocument, ref: str, pin: str) -> str:
+def _pin_phrase(doc: PerfDocument, ref: str, pin: str, say: Phrasebook) -> str:
     """"U1 pin 4", or "U1 pin 4 (GPIO21)" when the part names that pin.
 
     Only a DECLARED name is added, never the footprint's own: a probe on "D1 pin 1 (A)"
@@ -1392,11 +1491,13 @@ def _pin_phrase(doc: PerfDocument, ref: str, pin: str) -> str:
     """
     component = next((c for c in doc.components if c.ref == ref), None)
     name = declared_pin_name(component, pin) if component is not None else None
-    return f"{ref} pin {pin} ({name})" if name else f"{ref} pin {pin}"
+    if name:
+        return say("{ref} pin {pin} ({name})", ref=ref, pin=pin, name=name)
+    return say("{ref} pin {pin}", ref=ref, pin=pin)
 
 
 def _closing_checks(
-    doc: PerfDocument, lookup: FootprintLookup, options: GuideOptions
+    doc: PerfDocument, lookup: FootprintLookup, options: GuideOptions, say: Phrasebook
 ) -> list[Checkpoint]:
     """Phase 8: everything that must be true before power is applied."""
     checks: list[Checkpoint] = []
@@ -1406,13 +1507,17 @@ def _closing_checks(
         checks.append(
             Checkpoint(
                 kind="isolation",
-                title=f"{check.net_a} ↔ {check.net_b} must be separate",
-                instruction=(
-                    f"Probe {_pin_phrase(doc, check.a.component_ref, check.a.pin)} "
-                    f"({check.net_a}) and "
-                    f"{_pin_phrase(doc, check.b.component_ref, check.b.pin)} ({check.net_b})."
+                title=say("{a} ↔ {b} must be separate", a=check.net_a, b=check.net_b),
+                instruction=say(
+                    "Probe {a} ({net_a}) and {b} ({net_b}).",
+                    a=_pin_phrase(doc, check.a.component_ref, check.a.pin, say),
+                    net_a=check.net_a,
+                    b=_pin_phrase(doc, check.b.component_ref, check.b.pin, say),
+                    net_b=check.net_b,
                 ),
-                expected="Open, or at least the circuit's own resistance — never a short.",
+                expected=say(
+                    "Open, or at least the circuit's own resistance — never a short."
+                ),
                 pins=(check.a, check.b),
                 blocking=bool(blocking),
             )
@@ -1428,12 +1533,13 @@ def _closing_checks(
         checks.append(
             Checkpoint(
                 kind="polarity",
-                title="Polarity sweep before power",
-                instruction=(
+                title=say("Polarity sweep before power"),
+                instruction=say(
                     "Look at every polarised part once more and compare it against the "
-                    f"component-side sheet: {', '.join(sorted(polarised))}."
+                    "component-side sheet: {parts}.",
+                    parts=", ".join(sorted(polarised)),
                 ),
-                expected=(
+                expected=say(
                     "Every stripe, band and flat facing the way the sheet shows. A backwards "
                     "electrolytic fails loudly and a backwards diode fails silently."
                 ),
@@ -1451,17 +1557,26 @@ def _closing_checks(
         checks.append(
             Checkpoint(
                 kind="polarity",
-                title="Fit the ICs, pin 1 as shown",
+                title=say("Fit the ICs, pin 1 as shown"),
+                # Plural agreement on the actual count, and "sockets" is not a fact:
+                # nothing in the document records whether one was fitted, so the
+                # sentence has to work for a board where none was.
                 instruction=(
-                    # Plural agreement on the actual count, and "sockets" is not a fact:
-                    # nothing in the document records whether one was fitted, so the
-                    # sentence has to work for a board where none was.
-                    f"Only now put {', '.join(sorted(dips))} into "
-                    + ("its socket" if len(dips) == 1 else "their sockets")
-                    + ", or straight into the board if you did not fit one, notch to the "
-                    "end the sheet marks. Straighten the legs on a flat surface first."
+                    say(
+                        "Only now put {parts} into its socket, or straight into the board "
+                        "if you did not fit one, notch to the end the sheet marks. "
+                        "Straighten the legs on a flat surface first.",
+                        parts=", ".join(sorted(dips)),
+                    )
+                    if len(dips) == 1
+                    else say(
+                        "Only now put {parts} into their sockets, or straight into the board "
+                        "if you did not fit one, notch to the end the sheet marks. "
+                        "Straighten the legs on a flat surface first.",
+                        parts=", ".join(sorted(dips)),
+                    )
                 ),
-                expected="Every notch and dot pointing the same way as the sheet.",
+                expected=say("Every notch and dot pointing the same way as the sheet."),
                 blocking=True,
             )
         )
@@ -1469,13 +1584,13 @@ def _closing_checks(
     checks.append(
         Checkpoint(
             kind="power-on",
-            title="First power-up, current limited",
-            instruction=(
+            title=say("First power-up, current limited"),
+            instruction=say(
                 "Set the supply to the circuit's voltage and the current limit to a little "
                 "above what you expect it to draw. Watch the current as it comes up, and "
                 "keep a hand on the switch."
             ),
-            expected=(
+            expected=say(
                 "Current settles at roughly what you expected. If it runs into the limit, "
                 "power down at once and go back to the isolation checks — something is "
                 "bridged."
@@ -1495,11 +1610,11 @@ def _is_power_pair(doc: PerfDocument, name_a: str, name_b: str) -> bool:
 # -- supporting lists -------------------------------------------------------
 
 
-def _bom(doc: PerfDocument, lookup: FootprintLookup) -> tuple[BomLine, ...]:
+def _bom(doc: PerfDocument, lookup: FootprintLookup, say: Phrasebook) -> tuple[BomLine, ...]:
     grouped: dict[tuple[str, str], list[str]] = {}
     for component in doc.components:
         footprint = lookup(component.footprint_id)
-        name = footprint.name if footprint is not None else component.footprint_id
+        name = say.footprint(footprint.name) if footprint is not None else component.footprint_id
         grouped.setdefault((component.value, name), []).append(component.ref)
 
     lines = [
@@ -1515,46 +1630,64 @@ def _bom(doc: PerfDocument, lookup: FootprintLookup) -> tuple[BomLine, ...]:
     return tuple(lines)
 
 
-def _tools(doc: PerfDocument, cuts: list[WireCut], spines: list[SpineCut]) -> tuple[str, ...]:
+def _tools(
+    doc: PerfDocument, cuts: list[WireCut], spines: list[SpineCut], say: Phrasebook
+) -> tuple[str, ...]:
     """What to have on the bench, derived from what the board actually needs."""
     iron = IRON_BY_MATERIAL[doc.board.material]
     tools = [
-        f"Soldering iron with a fine tip, set to {iron.temperature_c} °C",
-        "60/40 or lead-free solder, 0.7–1.0 mm",
-        "Flux — a pen or a small pot. Solder traces are not reliably makeable without it",
-        "Side cutters and small pliers",
-        "A multimeter with a continuity buzzer (every checkpoint below uses it)",
+        say(
+            "Soldering iron with a fine tip, set to {temperature} °C",
+            temperature=iron.temperature_c,
+        ),
+        say("60/40 or lead-free solder, 0.7–1.0 mm"),
+        say("Flux — a pen or a small pot. Solder traces are not reliably makeable without it"),
+        say("Side cutters and small pliers"),
+        say("A multimeter with a continuity buzzer (every checkpoint below uses it)"),
     ]
     if cuts:
         gauges = sorted({cut.awg for cut in cuts})
-        colors = sorted({cut.colour for cut in cuts})
+        # Alphabetical in the language they are READ in, which is how somebody scans a
+        # list of colours for the one they are holding.
+        colors = sorted({say(cut.colour) for cut in cuts})
         total = sum(cut.cut_mm for cut in cuts)
-        tools.append(
-            f"Hookup wire, AWG {', '.join(str(g) for g in gauges)} in {', '.join(colors)} "
-            f"— about {total / 1000:.2f} m in total"
-        )
+        tools.append(say(
+            "Hookup wire, AWG {gauges} in {colours} — about {metres:.2f} m in total",
+            gauges=", ".join(str(g) for g in gauges),
+            colours=", ".join(colors),
+            metres=total / 1000,
+        ))
         if any(cut.insulated for cut in cuts):
-            tools.append("Wire strippers")
+            tools.append(say("Wire strippers"))
     if doc.mounting_holes:
         diameters = sorted({m.diameter for m in doc.mounting_holes})
         sizes = ", ".join(f"{d:g} mm" for d in diameters)
-        tools.append(
-            f"A drill and {sizes} bit{'s' if len(diameters) > 1 else ''} for the mounting "
-            f"holes, plus a deburring tool or a larger bit turned by hand"
-        )
+        if len(diameters) > 1:
+            tools.append(say(
+                "A drill and {sizes} bits for the mounting holes, plus a deburring tool or a "
+                "larger bit turned by hand",
+                sizes=sizes,
+            ))
+        else:
+            tools.append(say(
+                "A drill and {sizes} bit for the mounting holes, plus a deburring tool or a "
+                "larger bit turned by hand",
+                sizes=sizes,
+            ))
     if spines:
         total_spine = sum(spine.length_mm for spine in spines)
         spine_gauges = sorted({spine.gauge_mm for spine in spines})
-        tools.append(
-            f"Tinned copper wire for the trace spines, "
-            f"{', '.join(f'{g:g} mm' for g in spine_gauges)} — about {total_spine:.0f} mm "
-            "(component lead offcuts do the job just as well)"
-        )
+        tools.append(say(
+            "Tinned copper wire for the trace spines, {gauges} — about {length:.0f} mm "
+            "(component lead offcuts do the job just as well)",
+            gauges=", ".join(f"{g:g} mm" for g in spine_gauges),
+            length=total_spine,
+        ))
     return tuple(tools)
 
 
 def _warnings(
-    doc: PerfDocument, lookup: FootprintLookup, violations: list[DrcViolation]
+    doc: PerfDocument, lookup: FootprintLookup, violations: list[DrcViolation], say: Phrasebook
 ) -> tuple[GuideWarning, ...]:
     """Everything that makes this guide less than a complete description of the build."""
     warnings: list[GuideWarning] = []
@@ -1568,9 +1701,10 @@ def _warnings(
         warnings.append(
             GuideWarning(
                 code="unknown-footprint",
-                message=(
-                    f"No step was written for {', '.join(unknown)}: their footprint is not in "
-                    "the library, so this guide cannot say which holes they go in."
+                message=say(
+                    "No step was written for {parts}: their footprint is not in the library, "
+                    "so this guide cannot say which holes they go in.",
+                    parts=", ".join(unknown),
                 ),
             )
         )
@@ -1581,19 +1715,24 @@ def _warnings(
         # never reads that they are there is a builder who solders a connector to the
         # wrong end of the board.
         runs = ", ".join(
-            f"{connector.count} fingers on the {connector.edge} edge from "
-            f"{format_hole(edge_connector_holes(connector, doc.board)[0])}"
+            say(
+                "{count} fingers on the {edge} edge from {hole}",
+                count=connector.count,
+                edge=say(connector.edge),
+                hole=format_hole(edge_connector_holes(connector, doc.board)[0]),
+            )
             for connector in doc.edge_connectors
             if edge_connector_holes(connector, doc.board)
         )
         warnings.append(
             GuideWarning(
                 code="edge-connector",
-                message=(
-                    f"This board has edge-connector fingers ({runs}). No step below covers "
+                message=say(
+                    "This board has edge-connector fingers ({runs}). No step below covers "
                     "them: they are part of the board, not something to make. Fit whatever "
                     "mates with them last, and keep the iron off them until then — a tinned "
-                    "finger no longer fits a connector."
+                    "finger no longer fits a connector.",
+                    runs=runs,
                 ),
             )
         )
@@ -1602,7 +1741,7 @@ def _warnings(
         warnings.append(
             GuideWarning(
                 code="no-netlist",
-                message=(
+                message=say(
                     "No netlist has been imported, so there are no continuity checks. The "
                     "steps describe what to build; nothing here can confirm it is the right "
                     "circuit. Import the schematic's netlist to get the verification half."
@@ -1615,10 +1754,11 @@ def _warnings(
             warnings.append(
                 GuideWarning(
                     code="lvs-open",
-                    message=(
-                        f"{lvs.summary.opens} net(s) are not fully connected on this board. "
-                        "Following this guide will reproduce the board as it is, including "
-                        "those gaps — route them first."
+                    message=say(
+                        "{count} net(s) are not fully connected on this board. Following this "
+                        "guide will reproduce the board as it is, including those gaps — "
+                        "route them first.",
+                        count=lvs.summary.opens,
                     ),
                 )
             )
@@ -1626,9 +1766,10 @@ def _warnings(
             warnings.append(
                 GuideWarning(
                     code="lvs-short",
-                    message=(
-                        f"{lvs.summary.shorts} short(s) between nets the schematic keeps "
-                        "apart. Do not build this board until they are gone."
+                    message=say(
+                        "{count} short(s) between nets the schematic keeps apart. Do not "
+                        "build this board until they are gone.",
+                        count=lvs.summary.shorts,
                     ),
                 )
             )
@@ -1638,10 +1779,11 @@ def _warnings(
         warnings.append(
             GuideWarning(
                 code="drc-error",
-                message=(
-                    f"{len(errors)} DRC error(s) on this board — overlapping parts, crossing "
+                message=say(
+                    "{count} DRC error(s) on this board — overlapping parts, crossing "
                     "conductors or pins sharing a hole. The steps below describe it anyway; "
-                    "some of them will not be physically possible."
+                    "some of them will not be physically possible.",
+                    count=len(errors),
                 ),
             )
         )
@@ -1650,7 +1792,7 @@ def _warnings(
         warnings.append(
             GuideWarning(
                 code="no-conductors",
-                message=(
+                message=say(
                     "Nothing is routed yet, so this guide covers fitting the parts and "
                     "nothing else."
                 ),
@@ -1665,17 +1807,31 @@ def _warnings(
 
 
 def describe(guide: Guide) -> str:
-    """One line for a status bar."""
+    """One line for a status bar, in the guide's own language."""
+    say = phrasebook(guide.language)
     phases = sum(1 for phase in guide.phases if not phase.is_empty)
     parts = [
-        f"{guide.total_steps} step(s) across {phases} phase(s)",
-        f"{guide.checkpoint_count} check(s)",
+        say(
+            "{steps} step(s) across {phases} phase(s)",
+            steps=guide.total_steps,
+            phases=phases,
+        ),
+        say("{count} check(s)", count=guide.checkpoint_count),
     ]
     if guide.cut_list:
-        parts.append(f"{len(guide.cut_list)} wire(s) to cut")
+        parts.append(say("{count} wire(s) to cut", count=len(guide.cut_list)))
     if guide.warnings:
-        parts.append(f"{len(guide.warnings)} warning(s)")
+        parts.append(say("{count} warning(s)", count=len(guide.warnings)))
     return ", ".join(parts)
+
+
+def conductor_word(kind: ConductorKind, language: GuideLanguage = "en") -> str:
+    """What a conductor is made of, in words: "solder trace", "çıplak tel".
+
+    One spelling for the tag beside a step in the exported guide and the step's line in the
+    window's guide panel, which is why it is here and not in either of them.
+    """
+    return phrasebook(language)(kind.replace("-", " "))
 
 
 def all_checkpoints(guide: Guide) -> tuple[Checkpoint, ...]:

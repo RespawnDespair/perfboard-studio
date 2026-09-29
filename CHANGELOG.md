@@ -22,6 +22,19 @@ closed without a bump.
 
 ### Added
 
+- **The build guide in Turkish.** The guide is what this application is for — the thing a
+  person follows with an iron in their hand — and it was English in a Turkish window: every
+  step, every check, the cut list, the parts list and the page they are printed from. It is
+  now written in the window's language: "D1 1N4007 — I32 → E32, 4 delik ara", "Katot —
+  bantlı uç — I32 deliğine", "K32 ↔ L32 açık devre olmalı", down to the column headings of
+  the CSVs and the progress counter on the page. The panel, the exported files and a saved
+  project's outputs agree, `--headless --lang tr` writes it too, and an agent asks for it
+  with `language` on `generate_guide`. English is unchanged, word for word. The
+  translation lives in the engine (`phrasebook.py`) because the sentences are built from
+  the board rather than looked up, and a test builds every board in the repository in both
+  languages and searches the Turkish for English left in it. Part names are said the same
+  way in the Parts panel and the guide, from one table.
+
 - **Route ▸ Crossings: routing with no wire at all.** The engine could always be told what
   a solder trace does where it meets something it may not cross, and nothing let anybody
   tell it. A short jumper over the crossing stays the default; "one wire for the whole
@@ -142,8 +155,7 @@ closed without a bump.
   and in a dock a few hundred pixels wide what was left of it was "R1…" and a phase called
   "1. Lowes…". A step is now one line — the part or the connection first, its holes once —
   with phase headings in full, and the panel, its summary and the 3D caption speak the
-  window's language: "GND · çıplak tel — C14 → B10" under "6. Lehim yüzü". The guide
-  itself, and every export of it, is written by the engine and is still English.
+  window's language: "GND · çıplak tel — C14 → B10" under "6. Lehim yüzü".
 
 - **The Parts panel named its packages by their ids.** Below "Transistors" and "Diodes"
   came "axial cylinder", "box film" and "to92", in both languages and in alphabetical order

@@ -1,0 +1,9 @@
+adet,değer,kılıf,referanslar
+1,NE555,DIP-8,U1
+1,100k,"Direnç (eksenel, 4 delik açıklık)",R2
+1,10k,"Direnç (eksenel, 4 delik açıklık)",R1
+1,330,"Direnç (eksenel, 4 delik açıklık)",R3
+1,LED,"Direnç (eksenel, 4 delik açıklık)",LED1
+1,0.01uF,"Elektrolitik kondansatör, 5 mm çap, 2 delik aralık",C2
+1,10uF,"Elektrolitik kondansatör, 5 mm çap, 2 delik aralık",C1
+1,Conn_01x02,"Pin başlığı, 1x4",J1

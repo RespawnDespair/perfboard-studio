@@ -325,6 +325,28 @@ def test_generating_a_guide_writes_nothing_unless_asked(loaded: BoardSession) ->
     assert any(w["code"] == "lvs-open" for w in result["warnings"])
 
 
+def test_an_agent_can_ask_for_the_guide_in_turkish(loaded: BoardSession) -> None:
+    """The language is the BUILDER's, and the builder is not necessarily whoever is driving
+    the agent. Codes stay codes -- an agent branches on them -- and the words are Turkish."""
+    result = loaded.generate_guide(language="tr")
+    assert result["ok"]
+    assert "adım" in result["summary"]
+    assert result["phases"][0]["title"] == "En alçak parçalar"
+    assert any(w["code"] == "lvs-open" for w in result["warnings"])
+    assert all("net" in w["message"] for w in result["warnings"] if w["code"] == "lvs-open")
+
+
+def test_a_guide_language_nobody_wrote_is_refused_not_guessed(loaded: BoardSession) -> None:
+    """An agent that asked for German and got English without a word would pass it on as
+    German."""
+    result = loaded.generate_guide(language="de")
+    assert result == {
+        "ok": False,
+        "code": "unknown-language",
+        "message": "A guide can be written in en, tr; 'de' is not one of them.",
+    }
+
+
 @requires_offscreen_gl  # writes step images, so it puts the board through VTK
 def test_generating_a_guide_with_a_directory_writes_all_four_files(
     loaded: BoardSession, tmp_path: Path

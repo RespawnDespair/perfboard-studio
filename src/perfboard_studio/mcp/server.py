@@ -709,7 +709,7 @@ def set_height_limit(height_limit_mm: float | None = None) -> dict[str, Any]:
 
 
 @mcp.tool()
-def generate_guide(directory: str | None = None) -> dict[str, Any]:
+def generate_guide(directory: str | None = None, language: str = "en") -> dict[str, Any]:
     """Produce the step-by-step soldering guide: phases in build order, hole addresses,
     orientations, a wire cut list, and measurement checkpoints derived from the netlist
     and from DRC's own risk list.
@@ -717,8 +717,12 @@ def generate_guide(directory: str | None = None) -> dict[str, Any]:
     Without a directory it returns the summary and anything the guide could not cover —
     which is the useful form of "is this board buildable yet". With one it writes
     guide.html (self-contained, offline), guide.json, cut_list.csv and bom.csv.
+
+    language is the language the guide is written in, for whoever builds from it: "en"
+    (the default) or "tr". Hole addresses, net names and part references are the same in
+    both.
     """
-    return session.generate_guide(directory)
+    return session.generate_guide(directory, language)
 
 
 @mcp.tool()

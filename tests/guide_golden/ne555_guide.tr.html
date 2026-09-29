@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>diffcheck — montaj rehberi</title>
+<style>
+:root {
+  --bg: #14161b; --panel: #1b1e25; --panel-2: #22262f; --line: #2e333d;
+  --text: #e7e9ee; --dim: #9aa3b2; --accent: #6fb3ff; --ok: #57c785;
+  --warn: #f0b34a; --error: #ef6b6b; --trace: #d8a44a;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --line: #d9dee6;
+    --text: #1a1d23; --dim: #5d6673; --accent: #1667c8; --ok: #1d7a49;
+    --warn: #8a5a00; --error: #b32020; --trace: #8a6100;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 54rem; margin: 0 auto; padding: 1.5rem 1rem 6rem; }
+h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
+h2 { font-size: 1.2rem; margin: 2.5rem 0 .25rem; }
+h3 { font-size: 1rem; margin: 1.5rem 0 .5rem; color: var(--dim);
+     text-transform: uppercase; letter-spacing: .06em; }
+p  { margin: .4rem 0; }
+a  { color: var(--accent); }
+.sub { color: var(--dim); }
+.phase { border-top: 2px solid var(--line); padding-top: .5rem; margin-top: 2rem; }
+.phase-num { color: var(--accent); font-variant-numeric: tabular-nums; }
+.step, .check {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: .7rem .9rem; margin: .5rem 0; display: flex; gap: .75rem; align-items: start;
+}
+.step.done, .check.done { opacity: .45; }
+.step.done .title { text-decoration: line-through; }
+input[type=checkbox] { width: 1.25rem; height: 1.25rem; margin-top: .2rem; flex: none; }
+.body { flex: 1; min-width: 0; }
+.title { font-weight: 600; }
+.meta { color: var(--dim); font-size: .875rem; }
+.note { font-size: .9rem; margin-top: .35rem; }
+.shot { display: block; width: 100%; max-width: 30rem; margin: .6rem 0 .1rem;
+        border: 1px solid var(--line); border-radius: 8px; background: #14161b; }
+.hole { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        background: var(--panel-2); border-radius: 4px; padding: 0 .3rem; }
+.tag { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em;
+       border: 1px solid var(--line); border-radius: 999px; padding: .1rem .5rem;
+       color: var(--dim); white-space: nowrap; }
+.polarity { color: var(--warn); font-weight: 600; }
+.risk { color: var(--error); }
+.check { border-left: 3px solid var(--ok); }
+.check.isolation { border-left-color: var(--warn); }
+.check.blocking { border-left-color: var(--error); }
+.warnbox { background: var(--panel-2); border-left: 3px solid var(--warn);
+           border-radius: 6px; padding: .6rem .9rem; margin: .5rem 0; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; margin: .5rem 0; }
+th, td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid var(--line); }
+th { color: var(--dim); font-weight: 600; }
+.wrap { overflow-x: auto; }
+.progress { position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel);
+            border-top: 1px solid var(--line); padding: .6rem 1rem;
+            display: flex; gap: 1rem; align-items: center; justify-content: center; }
+.bar { flex: 1; max-width: 30rem; height: 8px; background: var(--panel-2);
+       border-radius: 999px; overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 0; background: var(--ok); }
+button { font: inherit; color: var(--text); background: var(--panel-2);
+         border: 1px solid var(--line); border-radius: 6px; padding: .3rem .7rem;
+         cursor: pointer; }
+@media print {
+  /* The whole palette, not just body: printed from a browser whose OS is in dark mode
+     the tokens above are still the dark ones, and browsers drop background colours when
+     they print -- so --dim's pale grey lands on white paper and the meta line under
+     every step is the part that fades out. This guide gets taped next to the board. */
+  :root {
+    --bg: #fff; --panel: #fff; --panel-2: #f0f0f0; --line: #bbb;
+    --text: #000; --dim: #444; --accent: #10305c; --ok: #14562f;
+    --warn: #6b4300; --error: #8c1616; --trace: #6b4b00;
+  }
+  .progress, input[type=checkbox] { display: none; }
+  body { background: #fff; color: #000; }
+  .step, .check { break-inside: avoid; }
+  .shot { break-inside: avoid; max-width: 20rem; }
+}
+</style></head>
+<body data-doc="diffcheck"><main>
+<h1>diffcheck</h1>
+<p class="sub">Lehimleme rehberi · 32 × 22 FR-4 delikli plaket, 2.54 mm aralık · 22 adım, 39 kontrol · Perfboard Studio {VERSION}</p>
+<section class="phase"><h2><span class="phase-num">Aşama 0</span> — Hazırlık</h2><p class="sub">Kartı kes, A1 deliğini işaretle ve havyayı ısıtıp parçaları hazırla.</p><h3>Tezgâhta</h3><ul><li>İnce uçlu havya, 350 °C&#x27;ye ayarlı</li><li>60/40 ya da kurşunsuz lehim teli, 0.7–1.0 mm</li><li>Flux — kalem ya da küçük bir kutu. Lehim yolları onsuz güvenilir biçimde yapılamaz</li><li>Yan keski ve küçük bir pense</li><li>Süreklilik buzzer&#x27;ı olan bir multimetre (aşağıdaki her kontrol noktası onu kullanır)</li><li>Bağlantı teli, AWG 24, renkler: beyaz, kırmızı, mavi, sarı, siyah, turuncu — toplam yaklaşık 0.35 m</li><li>Tel sıyırıcı</li><li>Lehim yolu omurgaları için kalaylı bakır tel, 0.6 mm — yaklaşık 51 mm (parça bacağı artıkları da aynı işi görür)</li></ul><h3>Havya</h3><p>350 °C, bir pedde en fazla 3 s. FR-4 ısıya iyi dayanır; buradaki sınır kart değil, parçadır.</p><h3>Kart</h3><p>Kartı 32 × 22 delik olarak kes (81.3 × 55.9 mm) ve KOMPONENT yüzünde sol üst köşedeki <span class="hole">A1</span> deliğini işaretle. Aşağıdaki her adres ondan sayılır; yanlış işaretlenirse geri kalan her şey de yanlış olur.</p></section>
+<section class="phase"><h2><span class="phase-num">Aşama 1</span> — En alçak parçalar</h2><p class="sub">Düz yatan her şey: eksenel dirençler ve diyotlar. Önce bunlar takılır, çünkü üzerinde uzun bir parça olan kart tezgâhta düz durmaz ve bastırılamayan bir parça eğri lehimlenir.</p>
+<label class="step" for="s1"><input type="checkbox" id="s1"><span class="body"><div class="title">LED1 LED — P11 → T11, 4 delik ara</div><div class="meta">Direnç (eksenel, 4 delik açıklık) · pinler 1:<span class="hole">P11</span> 2:<span class="hole">T11</span></div><div class="note">Bacakları 10.16 mm'ye bük (4 delik).</div></span><span class="tag">eksenel</span></label>
+<label class="step" for="s2"><input type="checkbox" id="s2"><span class="body"><div class="title">R1 10k — I3 → M3, 4 delik ara</div><div class="meta">Direnç (eksenel, 4 delik açıklık) · pinler 1:<span class="hole">I3</span> 2:<span class="hole">M3</span></div><div class="note">Bacakları 10.16 mm'ye bük (4 delik).</div></span><span class="tag">eksenel</span></label>
+<label class="step" for="s3"><input type="checkbox" id="s3"><span class="body"><div class="title">R2 100k — P3 → T3, 4 delik ara</div><div class="meta">Direnç (eksenel, 4 delik açıklık) · pinler 1:<span class="hole">P3</span> 2:<span class="hole">T3</span></div><div class="note">Bacakları 10.16 mm'ye bük (4 delik).</div></span><span class="tag">eksenel</span></label>
+<label class="step" for="s4"><input type="checkbox" id="s4"><span class="body"><div class="title">R3 330 — I11 → M11, 4 delik ara</div><div class="meta">Direnç (eksenel, 4 delik açıklık) · pinler 1:<span class="hole">I11</span> 2:<span class="hole">M11</span></div><div class="note">Bacakları 10.16 mm'ye bük (4 delik).</div></span><span class="tag">eksenel</span></label>
+</section>
+<section class="phase"><h2><span class="phase-num">Aşama 2</span> — Entegre soketleri</h2><p class="sub">Entegre soketleri. Entegrelerin kendisi en sonda takılır — onları öldüren iki şey ısı ve statik elektriktir ve en son takılarak ikisinden de kaçınılır.</p>
+<label class="step" for="s5"><input type="checkbox" id="s5"><span class="body"><div class="title">U1 NE555 — B3 → E6, 8 pin, 1. pin B3 deliğinde</div><div class="meta">DIP-8 · pinler 1:<span class="hole">B3</span> 2:<span class="hole">B4</span> 3:<span class="hole">B5</span> 4:<span class="hole">B6</span> 5:<span class="hole">E6</span> 6:<span class="hole">E5</span> 7:<span class="hole">E4</span> 8:<span class="hole">E3</span></div><div class="note polarity">1. pin (çentikli, noktayla işaretli uç): B3 deliğine</div><div class="note sub">Varsa buraya bir soket tak — bu aşama soketlerin aşaması. Entegrenin kendisi, soket olsun olmasın, 8. aşamadaki kapanış kontrollerine kadar takılmaz: kartta havyayla karşılaşması gereken son şey odur.</div></span><span class="tag">DIP</span></label>
+</section>
+<section class="phase"><h2><span class="phase-num">Aşama 4</span> — Orta gövdeler</h2><p class="sub">Orta gövdeler: elektrolitikler, TO-220 kılıflar, kristaller.</p>
+<label class="step" for="s6"><input type="checkbox" id="s6"><span class="body"><div class="title">C1 10uF — W3 → Y3, 2 delik ara</div><div class="meta">Elektrolitik kondansatör, 5 mm çap, 2 delik aralık · pinler 1:<span class="hole">W3</span> 2:<span class="hole">Y3</span></div><div class="note">Bacakları 5.08 mm'ye bük (2 delik).</div><div class="note polarity">Pozitif (uzun) bacak: W3 deliğine; Negatif bacak (baskılı şeritli taraf): Y3 deliğine</div></span><span class="tag">elektrolitik</span></label>
+<label class="step" for="s7"><input type="checkbox" id="s7"><span class="body"><div class="title">C2 0.01uF — B11 → D11, 2 delik ara</div><div class="meta">Elektrolitik kondansatör, 5 mm çap, 2 delik aralık · pinler 1:<span class="hole">B11</span> 2:<span class="hole">D11</span></div><div class="note">Bacakları 5.08 mm'ye bük (2 delik).</div><div class="note polarity">Pozitif (uzun) bacak: B11 deliğine; Negatif bacak (baskılı şeritli taraf): D11 deliğine</div></span><span class="tag">elektrolitik</span></label>
+</section>
+<section class="phase"><h2><span class="phase-num">Aşama 5</span> — Uzun ve mekanik parçalar</h2><p class="sub">Uzun ve mekanik parçalar: konnektörler, klemensler, potansiyometreler, anahtarlar, röleler.</p>
+<label class="step" for="s8"><input type="checkbox" id="s8"><span class="body"><div class="title">J1 Conn_01x02 — W11 → Z11, 4 pin, 1. pin W11 deliğinde</div><div class="meta">Pin başlığı, 1x4 · pinler 1:<span class="hole">W11</span> 2:<span class="hole">X11</span> 3:<span class="hole">Y11</span> 4:<span class="hole">Z11</span></div></span><span class="tag">pin başlığı</span></label>
+</section>
+<section class="phase"><h2><span class="phase-num">Aşama 6</span> — Lehim yüzü: lehim yolları ve çıplak tel</h2><p class="sub">Kartı ters çevir. Lehim yolları ve çıplak tel, her net bir sonraki onun üzerinden geçmeden önce bitsin ve kontrol edilsin diye birer birer.</p>
+<label class="step" for="s9"><input type="checkbox" id="s9"><span class="body"><div class="title">GND: <span class="hole">Y3</span> → <span class="hole">X11</span></div><div class="meta">çıplak tel · 20.5 mm</div><div class="note">30 mm siyah AWG 24 tel kes.</div><div class="note sub">Çıplak tel: boyunca başka hiçbir iletkene değmemeli. Karta düz yatır ve komşu hatlarla arasını kontrol et.</div></span><span class="tag" style="color:var(--trace)">çıplak tel</span></label>
+<label class="step" for="s10"><input type="checkbox" id="s10"><span class="body"><div class="title">GND: <span class="hole">T11</span> → <span class="hole">D11</span></div><div class="meta">omurgalı lehim yolu · 50.8 mm · 21 ped · yaklaşık 2.7 mΩ</div><div class="meta">Yol: <span class="hole">T11</span> → <span class="hole">S11</span> → <span class="hole">R11</span> → <span class="hole">R10</span> → <span class="hole">Q10</span> → <span class="hole">Q9</span> → <span class="hole">P9</span> → <span class="hole">O9</span> → <span class="hole">N9</span> → <span class="hole">M9</span> → <span class="hole">L9</span> → <span class="hole">K9</span> → <span class="hole">J9</span> → <span class="hole">I9</span> → <span class="hole">H9</span> → <span class="hole">H10</span> → <span class="hole">G10</span> → <span class="hole">G11</span> → <span class="hole">F11</span> → <span class="hole">E11</span> → <span class="hole">D11</span></div><div class="note">Omurga: 51 mm, 0.6 mm kalaylı bakır.</div><div class="note sub">0.6 mm kalaylı bakır omurgayı önce pedler boyunca yatır ve her pedde lehimle. Tek yönde ilerle, soğumuş bir bölümün üzerinden geri dönme.</div><div class="note sub">Önce her pedi hafifçe kalayla, sonra birleştir.</div><div class="note sub">Bu uzunlukta bir hatta flux şarttır.</div></span><span class="tag" style="color:var(--trace)">omurgalı lehim yolu</span></label>
+<label class="step" for="s11"><input type="checkbox" id="s11"><span class="body"><div class="title">VCC: <span class="hole">I3</span> → <span class="hole">E3</span></div><div class="meta">çıplak tel · 10.2 mm</div><div class="note">19 mm kırmızı AWG 24 tel kes.</div><div class="note sub">Çıplak tel: boyunca başka hiçbir iletkene değmemeli. Karta düz yatır ve komşu hatlarla arasını kontrol et.</div></span><span class="tag" style="color:var(--trace)">çıplak tel</span></label>
+<label class="step" for="s12"><input type="checkbox" id="s12"><span class="body"><div class="title">VCC: <span class="hole">W11</span> → <span class="hole">I3</span></div><div class="meta">çıplak tel · 41.0 mm</div><div class="note">50 mm kırmızı AWG 24 tel kes.</div><div class="note sub">Çıplak tel: boyunca başka hiçbir iletkene değmemeli. Karta düz yatır ve komşu hatlarla arasını kontrol et.</div></span><span class="tag" style="color:var(--trace)">çıplak tel</span></label>
+<label class="step" for="s13"><input type="checkbox" id="s13"><span class="body"><div class="title">CTRL: <span class="hole">B11</span> → <span class="hole">E6</span></div><div class="meta">çıplak tel · 14.8 mm</div><div class="note">24 mm turuncu AWG 24 tel kes.</div><div class="note sub">Çıplak tel: boyunca başka hiçbir iletkene değmemeli. Karta düz yatır ve komşu hatlarla arasını kontrol et.</div></span><span class="tag" style="color:var(--trace)">çıplak tel</span></label>
+<label class="step" for="s14"><input type="checkbox" id="s14"><span class="body"><div class="title">DISCH: <span class="hole">M3</span> → <span class="hole">P3</span></div><div class="meta">lehim yolu · 7.6 mm · 4 ped · yaklaşık 3.8 mΩ</div><div class="meta">Yol: <span class="hole">M3</span> → <span class="hole">N3</span> → <span class="hole">O3</span> → <span class="hole">P3</span></div><div class="note sub">Hattı yalnızca lehimden oluşturmak yerine bu pedler boyunca omurga olarak bir bacak artığı yatırmayı düşün: direnci kabaca on kat düşürür ve aynı kalitede tekrarlamak çok daha kolaydır.</div><div class="note sub">Önce her pedi hafifçe kalayla, sonra birleştir.</div><div class="note sub">Bu uzunlukta bir hatta flux şarttır.</div></span><span class="tag" style="color:var(--trace)">lehim yolu</span></label>
+<label class="step" for="s15"><input type="checkbox" id="s15"><span class="body"><div class="title">LED_A: <span class="hole">P11</span> → <span class="hole">M11</span></div><div class="meta">lehim yolu · 7.6 mm · 4 ped · yaklaşık 3.8 mΩ</div><div class="meta">Yol: <span class="hole">P11</span> → <span class="hole">O11</span> → <span class="hole">N11</span> → <span class="hole">M11</span></div><div class="note sub">Hattı yalnızca lehimden oluşturmak yerine bu pedler boyunca omurga olarak bir bacak artığı yatırmayı düşün: direnci kabaca on kat düşürür ve aynı kalitede tekrarlamak çok daha kolaydır.</div><div class="note sub">Önce her pedi hafifçe kalayla, sonra birleştir.</div><div class="note sub">Bu uzunlukta bir hatta flux şarttır.</div></span><span class="tag" style="color:var(--trace)">lehim yolu</span></label>
+<label class="step" for="s16"><input type="checkbox" id="s16"><span class="body"><div class="title">THRESH: <span class="hole">W3</span> → <span class="hole">T3</span></div><div class="meta">lehim yolu · 7.6 mm · 4 ped · yaklaşık 3.8 mΩ</div><div class="meta">Yol: <span class="hole">W3</span> → <span class="hole">V3</span> → <span class="hole">U3</span> → <span class="hole">T3</span></div><div class="note sub">Hattı yalnızca lehimden oluşturmak yerine bu pedler boyunca omurga olarak bir bacak artığı yatırmayı düşün: direnci kabaca on kat düşürür ve aynı kalitede tekrarlamak çok daha kolaydır.</div><div class="note sub">Önce her pedi hafifçe kalayla, sonra birleştir.</div><div class="note sub">Bu uzunlukta bir hatta flux şarttır.</div></span><span class="tag" style="color:var(--trace)">lehim yolu</span></label>
+<label class="step" for="s17"><input type="checkbox" id="s17"><span class="body"><div class="title">THRESH: <span class="hole">E5</span> → <span class="hole">B4</span></div><div class="meta">çıplak tel · 8.0 mm</div><div class="note">17 mm mavi AWG 24 tel kes.</div><div class="note sub">Çıplak tel: boyunca başka hiçbir iletkene değmemeli. Karta düz yatır ve komşu hatlarla arasını kontrol et.</div></span><span class="tag" style="color:var(--trace)">çıplak tel</span></label>
+<h3>Devam etmeden önce kontrol et</h3>
+<label class="check continuity" for="s18"><input type="checkbox" id="s18"><span class="body"><div class="title">J1.1 ↔ R1.1</div><div class="note">J1 pin 1 ile R1 pin 1 arasını ölç.</div><div class="note sub">Beklenen: Sürekli — ikisi de VCC netinde.</div></span><span class="tag">süreklilik</span></label>
+<label class="check continuity" for="s19"><input type="checkbox" id="s19"><span class="body"><div class="title">R1.1 ↔ U1.8</div><div class="note">R1 pin 1 ile U1 pin 8 arasını ölç.</div><div class="note sub">Beklenen: Sürekli — ikisi de VCC netinde.</div></span><span class="tag">süreklilik</span></label>
+<label class="check continuity" for="s20"><input type="checkbox" id="s20"><span class="body"><div class="title">LED1.1 ↔ R3.2</div><div class="note">LED1 pin 1 ile R3 pin 2 arasını ölç.</div><div class="note sub">Beklenen: Sürekli — ikisi de LED_A netinde.</div></span><span class="tag">süreklilik</span></label>
+<label class="check continuity" for="s21"><input type="checkbox" id="s21"><span class="body"><div class="title">C2.1 ↔ U1.5</div><div class="note">C2 pin 1 ile U1 pin 5 arasını ölç.</div><div class="note sub">Beklenen: Sürekli — ikisi de CTRL netinde.</div></span><span class="tag">süreklilik</span></label>
+<label class="check resistance" for="s22"><input type="checkbox" id="s22"><span class="body"><div class="title">GND hattı T11 → D11, 21 ped tam kısa devre okumalı</div><div class="note">T11 ile D11 arasını ölç, sonra uçları birbirine değdirip karşılaştır. İyi bir hat okunabilir hiçbir şey eklemez.</div><div class="meta">Ölçüm noktaları: <span class="hole">T11</span> ve <span class="hole">D11</span></div><div class="note sub">Beklenen: Uçlar birbirine değerken okunanla aynı, bir basamak artı eksi. Bu hat yaklaşık 2.7 mΩ olmalı, el tipi bir ölçü aletinin çözebildiğinin çok altında — yani gerçekten ayırt edebildiğin her değer bakır değil, soğuk lehim ya da çatlaktır.</div></span><span class="tag">direnç</span></label>
+</section>
+<section class="phase"><h2><span class="phase-num">Aşama 7</span> — Uzun izoleli teller</h2><p class="sub">Lehim yüzünde zaten olan her şeyin üzerinden geçebilen izoleli tel.</p>
+<label class="step" for="s23"><input type="checkbox" id="s23"><span class="body"><div class="title">GND: <span class="hole">X11</span> → <span class="hole">T11</span></div><div class="meta">izoleli tel · 10.2 mm</div><div class="note">29 mm siyah AWG 24 tel kes, iki ucundan 5 mm soy.</div></span><span class="tag" style="color:var(--trace)">izoleli tel</span></label>
+<label class="step" for="s24"><input type="checkbox" id="s24"><span class="body"><div class="title">GND: <span class="hole">D11</span> → <span class="hole">B3</span></div><div class="meta">izoleli tel · 20.9 mm</div><div class="note">40 mm siyah AWG 24 tel kes, iki ucundan 5 mm soy.</div></span><span class="tag" style="color:var(--trace)">izoleli tel</span></label>
+<label class="step" for="s25"><input type="checkbox" id="s25"><span class="body"><div class="title">DISCH: <span class="hole">M3</span> → <span class="hole">E4</span></div><div class="meta">izoleli tel · 20.5 mm</div><div class="note">40 mm beyaz AWG 24 tel kes, iki ucundan 5 mm soy.</div></span><span class="tag" style="color:var(--trace)">izoleli tel</span></label>
+<label class="step" for="s26"><input type="checkbox" id="s26"><span class="body"><div class="title">OUT: <span class="hole">I11</span> → <span class="hole">B5</span></div><div class="meta">izoleli tel · 23.4 mm</div><div class="note">43 mm sarı AWG 24 tel kes, iki ucundan 5 mm soy.</div></span><span class="tag" style="color:var(--trace)">izoleli tel</span></label>
+<label class="step" for="s27"><input type="checkbox" id="s27"><span class="body"><div class="title">THRESH: <span class="hole">T3</span> → <span class="hole">E5</span></div><div class="meta">izoleli tel · 38.4 mm</div><div class="note">58 mm mavi AWG 24 tel kes, iki ucundan 5 mm soy.</div></span><span class="tag" style="color:var(--trace)">izoleli tel</span></label>
+<h3>Devam etmeden önce kontrol et</h3>
+<label class="check continuity" for="s28"><input type="checkbox" id="s28"><span class="body"><div class="title">R3.1 ↔ U1.3</div><div class="note">R3 pin 1 ile U1 pin 3 arasını ölç.</div><div class="note sub">Beklenen: Sürekli — ikisi de OUT netinde.</div></span><span class="tag">süreklilik</span></label>
+<label class="check continuity" for="s29"><input type="checkbox" id="s29"><span class="body"><div class="title">C1.2 ↔ C2.2</div><div class="note">C1 pin 2 ile C2 pin 2 arasını ölç.</div><div class="note sub">Beklenen: Sürekli — ikisi de GND netinde.</div></span><span class="tag">süreklilik</span></label>
+<label class="check continuity" for="s30"><input type="checkbox" id="s30"><span class="body"><div class="title">C2.2 ↔ J1.2</div><div class="note">C2 pin 2 ile J1 pin 2 arasını ölç.</div><div class="note sub">Beklenen: Sürekli — ikisi de GND netinde.</div></span><span class="tag">süreklilik</span></label>
+<label class="check continuity" for="s31"><input type="checkbox" id="s31"><span class="body"><div class="title">J1.2 ↔ LED1.2</div><div class="note">J1 pin 2 ile LED1 pin 2 arasını ölç.</div><div class="note sub">Beklenen: Sürekli — ikisi de GND netinde.</div></span><span class="tag">süreklilik</span></label>
+<label class="check continuity" for="s32"><input type="checkbox" id="s32"><span class="body"><div class="title">LED1.2 ↔ U1.1</div><div class="note">LED1 pin 2 ile U1 pin 1 arasını ölç.</div><div class="note sub">Beklenen: Sürekli — ikisi de GND netinde.</div></span><span class="tag">süreklilik</span></label>
+<label class="check continuity" for="s33"><input type="checkbox" id="s33"><span class="body"><div class="title">C1.1 ↔ R2.2</div><div class="note">C1 pin 1 ile R2 pin 2 arasını ölç.</div><div class="note sub">Beklenen: Sürekli — ikisi de THRESH netinde.</div></span><span class="tag">süreklilik</span></label>
+<label class="check continuity" for="s34"><input type="checkbox" id="s34"><span class="body"><div class="title">R2.2 ↔ U1.2</div><div class="note">R2 pin 2 ile U1 pin 2 arasını ölç.</div><div class="note sub">Beklenen: Sürekli — ikisi de THRESH netinde.</div></span><span class="tag">süreklilik</span></label>
+<label class="check continuity" for="s35"><input type="checkbox" id="s35"><span class="body"><div class="title">U1.2 ↔ U1.6</div><div class="note">U1 pin 2 ile U1 pin 6 arasını ölç.</div><div class="note sub">Beklenen: Sürekli — ikisi de THRESH netinde.</div></span><span class="tag">süreklilik</span></label>
+<label class="check continuity" for="s36"><input type="checkbox" id="s36"><span class="body"><div class="title">R1.2 ↔ R2.1</div><div class="note">R1 pin 2 ile R2 pin 1 arasını ölç.</div><div class="note sub">Beklenen: Sürekli — ikisi de DISCH netinde.</div></span><span class="tag">süreklilik</span></label>
+<label class="check continuity" for="s37"><input type="checkbox" id="s37"><span class="body"><div class="title">R2.1 ↔ U1.7</div><div class="note">R2 pin 1 ile U1 pin 7 arasını ölç.</div><div class="note sub">Beklenen: Sürekli — ikisi de DISCH netinde.</div></span><span class="tag">süreklilik</span></label>
+</section>
+<section class="phase"><h2><span class="phase-num">Aşama 8</span> — Kapanış</h2><p class="sub">Entegreleri tak, son kontrolleri yap ve akım sınırı altında enerji ver.</p>
+<h3>Devam etmeden önce kontrol et</h3>
+<label class="check isolation blocking" for="s38"><input type="checkbox" id="s38"><span class="body"><div class="title">VCC ↔ GND ayrı olmalı</div><div class="note">J1 pin 1 (VCC) ile C1 pin 2 (GND) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div><div class="note risk">Bu geçmeden enerji verme.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s39"><input type="checkbox" id="s39"><span class="body"><div class="title">VCC ↔ CTRL ayrı olmalı</div><div class="note">J1 pin 1 (VCC) ile C2 pin 1 (CTRL) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s40"><input type="checkbox" id="s40"><span class="body"><div class="title">VCC ↔ DISCH ayrı olmalı</div><div class="note">J1 pin 1 (VCC) ile R1 pin 2 (DISCH) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s41"><input type="checkbox" id="s41"><span class="body"><div class="title">VCC ↔ LED_A ayrı olmalı</div><div class="note">J1 pin 1 (VCC) ile LED1 pin 1 (LED_A) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s42"><input type="checkbox" id="s42"><span class="body"><div class="title">VCC ↔ OUT ayrı olmalı</div><div class="note">J1 pin 1 (VCC) ile R3 pin 1 (OUT) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s43"><input type="checkbox" id="s43"><span class="body"><div class="title">VCC ↔ THRESH ayrı olmalı</div><div class="note">J1 pin 1 (VCC) ile C1 pin 1 (THRESH) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s44"><input type="checkbox" id="s44"><span class="body"><div class="title">DISCH ↔ CTRL ayrı olmalı</div><div class="note">R1 pin 2 (DISCH) ile C2 pin 1 (CTRL) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s45"><input type="checkbox" id="s45"><span class="body"><div class="title">GND ↔ CTRL ayrı olmalı</div><div class="note">C1 pin 2 (GND) ile C2 pin 1 (CTRL) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s46"><input type="checkbox" id="s46"><span class="body"><div class="title">GND ↔ DISCH ayrı olmalı</div><div class="note">C1 pin 2 (GND) ile R1 pin 2 (DISCH) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s47"><input type="checkbox" id="s47"><span class="body"><div class="title">GND ↔ LED_A ayrı olmalı</div><div class="note">C1 pin 2 (GND) ile LED1 pin 1 (LED_A) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s48"><input type="checkbox" id="s48"><span class="body"><div class="title">GND ↔ THRESH ayrı olmalı</div><div class="note">C1 pin 2 (GND) ile C1 pin 1 (THRESH) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s49"><input type="checkbox" id="s49"><span class="body"><div class="title">LED_A ↔ CTRL ayrı olmalı</div><div class="note">LED1 pin 1 (LED_A) ile C2 pin 1 (CTRL) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s50"><input type="checkbox" id="s50"><span class="body"><div class="title">LED_A ↔ DISCH ayrı olmalı</div><div class="note">LED1 pin 1 (LED_A) ile R1 pin 2 (DISCH) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s51"><input type="checkbox" id="s51"><span class="body"><div class="title">LED_A ↔ THRESH ayrı olmalı</div><div class="note">LED1 pin 1 (LED_A) ile C1 pin 1 (THRESH) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s52"><input type="checkbox" id="s52"><span class="body"><div class="title">OUT ↔ CTRL ayrı olmalı</div><div class="note">R3 pin 1 (OUT) ile C2 pin 1 (CTRL) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s53"><input type="checkbox" id="s53"><span class="body"><div class="title">OUT ↔ DISCH ayrı olmalı</div><div class="note">R3 pin 1 (OUT) ile R1 pin 2 (DISCH) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s54"><input type="checkbox" id="s54"><span class="body"><div class="title">OUT ↔ GND ayrı olmalı</div><div class="note">R3 pin 1 (OUT) ile C1 pin 2 (GND) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s55"><input type="checkbox" id="s55"><span class="body"><div class="title">OUT ↔ LED_A ayrı olmalı</div><div class="note">R3 pin 1 (OUT) ile LED1 pin 1 (LED_A) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s56"><input type="checkbox" id="s56"><span class="body"><div class="title">OUT ↔ THRESH ayrı olmalı</div><div class="note">R3 pin 1 (OUT) ile C1 pin 1 (THRESH) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s57"><input type="checkbox" id="s57"><span class="body"><div class="title">THRESH ↔ CTRL ayrı olmalı</div><div class="note">C1 pin 1 (THRESH) ile C2 pin 1 (CTRL) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check isolation" for="s58"><input type="checkbox" id="s58"><span class="body"><div class="title">THRESH ↔ DISCH ayrı olmalı</div><div class="note">C1 pin 1 (THRESH) ile R1 pin 2 (DISCH) arasını ölç.</div><div class="note sub">Beklenen: Açık devre ya da en az devrenin kendi direnci — asla kısa devre değil.</div></span><span class="tag">yalıtım</span></label>
+<label class="check polarity blocking" for="s59"><input type="checkbox" id="s59"><span class="body"><div class="title">Enerji vermeden önce kutup taraması</div><div class="note">Kutuplu her parçaya bir kez daha bak ve komponent yüzü çıktısıyla karşılaştır: C1, C2.</div><div class="note sub">Beklenen: Her şerit, bant ve düz taraf çıktının gösterdiği yöne bakıyor. Ters takılmış bir elektrolitik gürültüyle bozulur, ters bir diyot ise sessizce.</div><div class="note risk">Bu geçmeden enerji verme.</div></span><span class="tag">kutup</span></label>
+<label class="check polarity blocking" for="s60"><input type="checkbox" id="s60"><span class="body"><div class="title">Entegreleri tak, 1. pin gösterildiği gibi</div><div class="note">U1 entegresini ancak şimdi soketine — soket takmadıysan doğrudan karta — çentiği çıktının işaretlediği uca gelecek şekilde tak. Önce bacaklarını düz bir yüzeyde düzelt.</div><div class="note sub">Beklenen: Her çentik ve nokta çıktıdakiyle aynı yöne bakıyor.</div><div class="note risk">Bu geçmeden enerji verme.</div></span><span class="tag">kutup</span></label>
+<label class="check power-on blocking" for="s61"><input type="checkbox" id="s61"><span class="body"><div class="title">İlk enerji, akım sınırlı</div><div class="note">Güç kaynağını devrenin gerilimine, akım sınırını da devrenin çekmesini beklediğin değerin biraz üstüne ayarla. Açarken akımı izle ve elin şalterde olsun.</div><div class="note sub">Beklenen: Akım aşağı yukarı beklediğin değerde oturur. Sınıra dayanırsa hemen kapat ve yalıtım kontrollerine geri dön — bir yerde köprü var.</div><div class="note risk">Bu geçmeden enerji verme.</div></span><span class="tag">enerji verme</span></label>
+</section>
+<section class="phase"><h2>Listeler</h2><h3>Parçalar</h3><div class="wrap"><table><tr><th>Adet</th><th>Değer</th><th>Kılıf</th><th>Referanslar</th></tr><tr><td>1</td><td>NE555</td><td>DIP-8</td><td>U1</td></tr><tr><td>1</td><td>100k</td><td>Direnç (eksenel, 4 delik açıklık)</td><td>R2</td></tr><tr><td>1</td><td>10k</td><td>Direnç (eksenel, 4 delik açıklık)</td><td>R1</td></tr><tr><td>1</td><td>330</td><td>Direnç (eksenel, 4 delik açıklık)</td><td>R3</td></tr><tr><td>1</td><td>LED</td><td>Direnç (eksenel, 4 delik açıklık)</td><td>LED1</td></tr><tr><td>1</td><td>0.01uF</td><td>Elektrolitik kondansatör, 5 mm çap, 2 delik aralık</td><td>C2</td></tr><tr><td>1</td><td>10uF</td><td>Elektrolitik kondansatör, 5 mm çap, 2 delik aralık</td><td>C1</td></tr><tr><td>1</td><td>Conn_01x02</td><td>Pin başlığı, 1x4</td><td>J1</td></tr></table></div><h3>Tel</h3><div class="wrap"><table><tr><th>Tür</th><th>Net</th><th>Nereden</th><th>Nereye</th><th>Kesim</th><th>AWG</th><th>Renk</th></tr><tr><td>izoleli tel</td><td>GND</td><td><span class="hole">X11</span></td><td><span class="hole">T11</span></td><td>29 mm</td><td>24</td><td>siyah</td></tr><tr><td>çıplak tel</td><td>GND</td><td><span class="hole">Y3</span></td><td><span class="hole">X11</span></td><td>30 mm</td><td>24</td><td>siyah</td></tr><tr><td>izoleli tel</td><td>GND</td><td><span class="hole">D11</span></td><td><span class="hole">B3</span></td><td>40 mm</td><td>24</td><td>siyah</td></tr><tr><td>çıplak tel</td><td>VCC</td><td><span class="hole">I3</span></td><td><span class="hole">E3</span></td><td>19 mm</td><td>24</td><td>kırmızı</td></tr><tr><td>çıplak tel</td><td>VCC</td><td><span class="hole">W11</span></td><td><span class="hole">I3</span></td><td>50 mm</td><td>24</td><td>kırmızı</td></tr><tr><td>çıplak tel</td><td>THRESH</td><td><span class="hole">E5</span></td><td><span class="hole">B4</span></td><td>17 mm</td><td>24</td><td>mavi</td></tr><tr><td>izoleli tel</td><td>THRESH</td><td><span class="hole">T3</span></td><td><span class="hole">E5</span></td><td>58 mm</td><td>24</td><td>mavi</td></tr><tr><td>izoleli tel</td><td>DISCH</td><td><span class="hole">M3</span></td><td><span class="hole">E4</span></td><td>40 mm</td><td>24</td><td>beyaz</td></tr><tr><td>çıplak tel</td><td>CTRL</td><td><span class="hole">B11</span></td><td><span class="hole">E6</span></td><td>24 mm</td><td>24</td><td>turuncu</td></tr><tr><td>izoleli tel</td><td>OUT</td><td><span class="hole">I11</span></td><td><span class="hole">B5</span></td><td>43 mm</td><td>24</td><td>sarı</td></tr><tr><td>yol omurgası</td><td>GND</td><td colspan=2>21 ped</td><td>51 mm</td><td>0.6 mm</td><td>kalaylı bakır</td></tr></table></div></section>
+</main><div class="progress"><span class="count"></span><span class="bar"><i></i></span><button class="reset" type="button">İlerlemeyi sıfırla</button></div><script>
+(function () {
+  var key = 'perfboard-studio-guide:' + document.body.dataset.doc;
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('input[type=checkbox]'));
+  var fill = document.querySelector('.bar > i');
+  var count = document.querySelector('.count');
+  var done = {};
+  try { done = JSON.parse(localStorage.getItem(key) || '{}'); } catch (e) { done = {}; }
+
+  function paint() {
+    var n = 0;
+    boxes.forEach(function (box) {
+      box.closest('.step, .check').classList.toggle('done', box.checked);
+      if (box.checked) n++;
+    });
+    if (fill) fill.style.width = (boxes.length ? (n / boxes.length) * 100 : 0) + '%';
+    if (count) count.textContent = n + ' / ' + boxes.length + ' tamam';
+  }
+
+  boxes.forEach(function (box) {
+    box.checked = !!done[box.id];
+    box.addEventListener('change', function () {
+      done[box.id] = box.checked;
+      try { localStorage.setItem(key, JSON.stringify(done)); } catch (e) {}
+      paint();
+    });
+  });
+
+  var reset = document.querySelector('.reset');
+  if (reset) reset.addEventListener('click', function () {
+    done = {};
+    try { localStorage.removeItem(key); } catch (e) {}
+    boxes.forEach(function (box) { box.checked = false; });
+    paint();
+  });
+
+  paint();
+})();
+</script></body></html>

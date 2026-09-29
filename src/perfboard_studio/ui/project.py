@@ -26,9 +26,10 @@ from pathlib import Path
 from typing import Any
 
 from perfboard_studio.connectivity import FootprintLookup
-from perfboard_studio.guide import build_guide
+from perfboard_studio.guide import GuideOptions, build_guide
 from perfboard_studio.guide_export import bom_to_csv, cut_list_to_csv, guide_to_html, guide_to_json
 from perfboard_studio.model import PerfDocument
+from perfboard_studio.phrasebook import GuideLanguage
 from perfboard_studio.project import EXPORTS, OUTPUT_DIR, ExportSpec, ProjectLayout, layout_for
 from perfboard_studio.schematic import build_schematic
 from perfboard_studio.schematic_export import drawing_to_svg
@@ -67,13 +68,15 @@ def write_project(
     lookup: FootprintLookup,
     scene: Any,
     step_images: Mapping[str, bytes] | None = None,
+    language: GuideLanguage = "en",
 ) -> ProjectWrite:
     """Write the document and every export that can be made, beside it.
 
     ``scene`` is the 2D board scene the 1:1 sheets are printed from, and ``step_images``
     the per-step 3D renders for the guide -- both supplied by the caller because both come
     from a window, and this module is not going to build one. Either may be absent; the
-    exports that need them are then skipped and named.
+    exports that need them are then skipped and named. ``language`` is what the guide is
+    written in: the window's, which is the caller's to know.
 
     Raises ``OSError`` if the DOCUMENT cannot be written, and only then. Everything else is
     reported rather than raised.
@@ -97,7 +100,8 @@ def write_project(
             ),
         )
 
-    for spec, produce in _producers(document, lookup, scene, step_images or {}).items():
+    producers = _producers(document, lookup, scene, step_images or {}, language)
+    for spec, produce in producers.items():
         target = outputs / spec.name_for(layout.name)
         try:
             result = produce(target)
@@ -123,6 +127,7 @@ def _producers(
     lookup: FootprintLookup,
     scene: Any,
     step_images: Mapping[str, bytes],
+    language: GuideLanguage,
 ) -> dict[ExportSpec, Any]:
     """One writer per export, keyed by its spec.
 
@@ -130,7 +135,7 @@ def _producers(
     file: ``build_guide`` runs DRC and LVS, and four files asking for it separately would
     pay for that four times and could in principle disagree.
     """
-    guide = build_guide(document, lookup)
+    guide = build_guide(document, lookup, GuideOptions(language=language))
     drawing = build_schematic(document, lookup)
     svg = drawing_to_svg(drawing, title=document.meta.name) if drawing.symbols else None
 

@@ -16,6 +16,12 @@ Pure and deterministic, stdlib only: no Qt, no I/O of its own beyond returning s
 That is what lets the MCP server and a headless CI run produce the same guide the
 desktop app does.
 
+Every word this file adds -- a heading, a column, the tag beside a step -- is said in the
+guide's own language (``guide.language``, through ``phrasebook``), so a Turkish guide is
+Turkish all the way through without anybody passing the language twice. The ids the
+guide carries as DATA (an archetype, a checkpoint kind, a wire colour) stay ids in the
+JSON and are said in words where a person reads them.
+
 The 1:1 printable sheets are a different thing and live in ui/export_pdf.py, because
 they need a real renderer. This file references them rather than reproducing them.
 """
@@ -33,8 +39,17 @@ from typing import Any
 
 from .drc import MATERIAL_LABELS
 from .geometry import board_size_mm, format_hole
-from .guide import Checkpoint, ConductorStep, Guide, GuideStep, PartStep, step_focus
+from .guide import (
+    Checkpoint,
+    ConductorStep,
+    Guide,
+    GuideStep,
+    PartStep,
+    conductor_word,
+    step_focus,
+)
 from .model import HoleCoord
+from .phrasebook import Phrasebook, phrasebook
 from .version import __version__
 
 # ---------------------------------------------------------------------------
@@ -50,10 +65,18 @@ def guide_to_json(guide: Guide, indent: int = 2) -> str:
     and making either one derive the other means two implementations of the hole
     encoding in the wild.
     """
+    head: dict[str, Any] = {
+        "generator": f"Perfboard Studio {__version__}",
+        "document": guide.document_name,
+    }
+    # Only when it is not English -- the stripAxis rule, applied to an export: every
+    # English guide ever written is still byte for byte what it was, and a reader that
+    # finds no language knows it is reading English.
+    if guide.language != "en":
+        head["language"] = guide.language
     return json.dumps(
         {
-            "generator": f"Perfboard Studio {__version__}",
-            "document": guide.document_name,
+            **head,
             "board": {
                 "cols": guide.board.cols,
                 "rows": guide.board.rows,
@@ -111,6 +134,14 @@ def _plain(value: Any) -> Any:
 # CSV
 # ---------------------------------------------------------------------------
 
+#: Column headings, said in the guide's language like every other word here. Named here,
+#: rather than written where they are used, because they reach ``say`` one at a time
+#: through a loop -- and ``tests/test_phrasebook.py`` reads these to know they are said.
+CUT_LIST_COLUMNS: tuple[str, ...] = (
+    "type", "net", "from", "to", "path_mm", "cut_mm", "strip_mm", "awg", "colour", "note",
+)
+BOM_COLUMNS: tuple[str, ...] = ("quantity", "value", "footprint", "references")
+
 
 def cut_list_to_csv(guide: Guide) -> str:
     """The wire cut list (PLAN.md Sec 7.3), plus the spine wires as their own rows.
@@ -118,15 +149,14 @@ def cut_list_to_csv(guide: Guide) -> str:
     One table rather than two files: at the bench they are the same job -- cut these
     lengths of this wire -- and the ``type`` column is enough to tell them apart.
     """
+    say = phrasebook(guide.language)
     out = io.StringIO(newline="")
     writer = csv.writer(out, lineterminator="\n")
-    writer.writerow(
-        ["type", "net", "from", "to", "path_mm", "cut_mm", "strip_mm", "awg", "colour", "note"]
-    )
+    writer.writerow([say(column) for column in CUT_LIST_COLUMNS])
     for cut in guide.cut_list:
         writer.writerow(
             [
-                "insulated wire" if cut.insulated else "bare wire",
+                _wire_type(cut.insulated, say),
                 cut.net_name,
                 format_hole(cut.from_hole),
                 format_hole(cut.to_hole),
@@ -134,14 +164,14 @@ def cut_list_to_csv(guide: Guide) -> str:
                 f"{cut.cut_mm:.1f}",
                 f"{cut.strip_mm:.1f}",
                 cut.awg,
-                cut.colour,
+                say(cut.colour),
                 "",
             ]
         )
     for spine in guide.spine_list:
         writer.writerow(
             [
-                "trace spine",
+                say("trace spine"),
                 spine.net_name,
                 "",
                 "",
@@ -149,17 +179,23 @@ def cut_list_to_csv(guide: Guide) -> str:
                 f"{spine.length_mm:.1f}",
                 "0.0",
                 "",
-                spine.material,
-                f"{spine.gauge_mm:g} mm, laid along {spine.pads} pads",
+                say(spine.material),
+                say("{gauge:g} mm, laid along {pads} pads", gauge=spine.gauge_mm, pads=spine.pads),
             ]
         )
     return out.getvalue()
 
 
+def _wire_type(insulated: bool, say: Phrasebook) -> str:
+    """One spelling for the cut list's two kinds of wire, in the CSV and the HTML table."""
+    return say("insulated wire") if insulated else say("bare wire")
+
+
 def bom_to_csv(guide: Guide) -> str:
+    say = phrasebook(guide.language)
     out = io.StringIO(newline="")
     writer = csv.writer(out, lineterminator="\n")
-    writer.writerow(["quantity", "value", "footprint", "references"])
+    writer.writerow([say(column) for column in BOM_COLUMNS])
     for line in guide.bom:
         writer.writerow([line.quantity, line.value, line.footprint_name, line.refs])
     return out.getvalue()
@@ -168,6 +204,9 @@ def bom_to_csv(guide: Guide) -> str:
 # ---------------------------------------------------------------------------
 # HTML
 # ---------------------------------------------------------------------------
+
+#: The wire table's headings -- the same list as the cut-list CSV, for a person.
+WIRE_TABLE_COLUMNS: tuple[str, ...] = ("Type", "Net", "From", "To", "Cut", "AWG", "Colour")
 
 _STYLE = """
 :root {
@@ -268,7 +307,7 @@ _SCRIPT = """
       if (box.checked) n++;
     });
     if (fill) fill.style.width = (boxes.length ? (n / boxes.length) * 100 : 0) + '%';
-    if (count) count.textContent = n + ' of ' + boxes.length + ' done';
+    if (count) count.textContent = n + '__OF__' + boxes.length + '__DONE__';
   }
 
   boxes.forEach(function (box) {
@@ -308,11 +347,14 @@ def guide_to_html(guide: Guide, step_images: Mapping[str, bytes] | None = None) 
     board looks like and still does not — including what format its pictures are in,
     which ``_image_media_type`` reads off the bytes rather than agreeing in advance.
     """
+    say = phrasebook(guide.language)
     parts: list[str] = [
         "<!doctype html>",
-        '<html lang="en"><head><meta charset="utf-8">',
+        f'<html lang="{guide.language}"><head><meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
-        f"<title>{escape(guide.document_name)} — build guide</title>",
+        "<title>"
+        + say("{name} — build guide", name=escape(guide.document_name))
+        + "</title>",
         f"<style>{_STYLE}</style></head>",
         f'<body data-doc="{escape(guide.document_name)}"><main>',
         f"<h1>{escape(guide.document_name)}</h1>",
@@ -320,20 +362,28 @@ def guide_to_html(guide: Guide, step_images: Mapping[str, bytes] | None = None) 
         # material as the guide's own prose writes it (FR-4, not the enum's FR4). The
         # header and the "Cut it to..." line twelve lines down described one board in two
         # notations.
-        f'<p class="sub">Soldering guide · {guide.board.cols} × {guide.board.rows} '
-        f"{escape(MATERIAL_LABELS[guide.board.material])} perfboard at "
-        f"{guide.board.pitch:g} mm pitch · "
-        f"{guide.total_steps} steps, {guide.checkpoint_count} checks · "
-        f"Perfboard Studio {escape(__version__)}</p>",
+        '<p class="sub">'
+        + say(
+            "Soldering guide · {cols} × {rows} {material} perfboard at {pitch:g} mm pitch · "
+            "{steps} steps, {checks} checks · Perfboard Studio {version}",
+            cols=guide.board.cols,
+            rows=guide.board.rows,
+            material=escape(MATERIAL_LABELS[guide.board.material]),
+            pitch=guide.board.pitch,
+            steps=guide.total_steps,
+            checks=guide.checkpoint_count,
+            version=escape(__version__),
+        )
+        + "</p>",
     ]
 
     for warning in guide.warnings:
         parts.append(
-            f'<div class="warnbox"><b>{escape(warning.code)}</b> — '
+            f'<div class="warnbox"><b>{escape(say(warning.code))}</b> — '
             f"{escape(warning.message)}</div>"
         )
 
-    parts.append(_html_preparation(guide))
+    parts.append(_html_preparation(guide, say))
 
     images = step_images or {}
     step_id = 0
@@ -341,26 +391,32 @@ def guide_to_html(guide: Guide, step_images: Mapping[str, bytes] | None = None) 
         if phase.is_empty or phase.number == 0:
             continue
         parts.append(
-            f'<section class="phase"><h2><span class="phase-num">Phase {phase.number}</span> '
-            f"— {escape(phase.title)}</h2>"
+            '<section class="phase"><h2><span class="phase-num">'
+            + say("Phase {number}", number=phase.number)
+            + f"</span> — {escape(phase.title)}</h2>"
             f'<p class="sub">{escape(phase.summary)}</p>'
         )
         for step in phase.steps:
             step_id += 1
-            parts.append(_html_step(step, f"s{step_id}", images))
+            parts.append(_html_step(step, f"s{step_id}", images, say))
         if phase.checkpoints:
-            parts.append("<h3>Check before moving on</h3>")
+            parts.append("<h3>" + say("Check before moving on") + "</h3>")
             for check in phase.checkpoints:
                 step_id += 1
-                parts.append(_html_check(check, f"s{step_id}"))
+                parts.append(_html_check(check, f"s{step_id}", say))
         parts.append("</section>")
 
-    parts.append(_html_tables(guide))
+    parts.append(_html_tables(guide, say))
+    # The counter's words go into the script as JavaScript string literals, which is why
+    # a translation of them may hold no quote or backslash (tests/test_phrasebook.py).
+    script = _SCRIPT.replace("__OF__", say(" of ")).replace("__DONE__", say(" done"))
     parts.append(
         '</main><div class="progress"><span class="count"></span>'
         '<span class="bar"><i></i></span>'
-        '<button class="reset" type="button">Reset progress</button></div>'
-        f"<script>{_SCRIPT}</script></body></html>"
+        '<button class="reset" type="button">'
+        + say("Reset progress")
+        + "</button></div>"
+        f"<script>{script}</script></body></html>"
     )
     return "\n".join(parts)
 
@@ -369,7 +425,7 @@ def _hole(at: HoleCoord) -> str:
     return f'<span class="hole">{escape(format_hole(at))}</span>'
 
 
-def _html_cuts(guide: Guide) -> str:
+def _html_cuts(guide: Guide, say: Phrasebook) -> str:
     """The tracks to break, before anything is soldered.
 
     In phase 0 and nowhere else, because that is when they are physically possible: the
@@ -386,13 +442,17 @@ def _html_cuts(guide: Guide) -> str:
         for cut in guide.track_cuts
     )
     return (
-        f"<h3>Cut these tracks first</h3>"
-        f"<p>{len(guide.track_cuts)} cut(s), made from the copper side with a spot-face "
-        f"cutter or a 3 mm drill turned by hand. Each one takes the pad with it, so the "
-        f"hole it is made in has nothing to solder to afterwards. Do them all before the "
-        f"first part goes in — once a part is over a hole there is no way back to it.</p>"
-        f'<div class="wrap"><table>'
-        f"<tr><th>Hole</th><th>Strip</th><th>Separates</th></tr>{rows}</table></div>"
+        "<h3>" + say("Cut these tracks first") + "</h3><p>"
+        + say(
+            "{count} cut(s), made from the copper side with a spot-face cutter or a 3 mm "
+            "drill turned by hand. Each one takes the pad with it, so the hole it is made in "
+            "has nothing to solder to afterwards. Do them all before the first part goes in "
+            "— once a part is over a hole there is no way back to it.",
+            count=len(guide.track_cuts),
+        )
+        + '</p><div class="wrap"><table>'
+        f"<tr><th>{say('Hole')}</th><th>{say('Strip')}</th><th>{say('Separates')}</th></tr>"
+        f"{rows}</table></div>"
     )
 
 
@@ -402,34 +462,50 @@ def _board_mm(guide: Guide) -> str:
     return f"{width:.1f} × {height:.1f} mm"
 
 
-def _html_preparation(guide: Guide) -> str:
+def _html_preparation(guide: Guide, say: Phrasebook) -> str:
     phase = guide.phases[0]
     rows = "".join(f"<li>{escape(tool)}</li>" for tool in guide.tools)
-    checks = "".join(_html_check(check, f"p0-{n}") for n, check in enumerate(phase.checkpoints))
+    checks = "".join(
+        _html_check(check, f"p0-{n}", say) for n, check in enumerate(phase.checkpoints)
+    )
     return (
-        f'<section class="phase"><h2><span class="phase-num">Phase 0</span> — '
-        f"{escape(phase.title)}</h2>"
+        '<section class="phase"><h2><span class="phase-num">'
+        + say("Phase {number}", number=0)
+        + f"</span> — {escape(phase.title)}</h2>"
         f'<p class="sub">{escape(phase.summary)}</p>'
-        f"<h3>On the bench</h3><ul>{rows}</ul>"
-        f"<h3>Iron</h3><p>{guide.iron.temperature_c} °C, no more than "
-        f"{guide.iron.max_dwell_s:g} s on any one pad. {escape(guide.iron.note)}</p>"
-        f"<h3>The board</h3><p>Cut it to {guide.board.cols} × {guide.board.rows} holes "
-        # geometry.board_size_mm, never cols*pitch: the substrate runs half a pitch past
-        # the outermost hole centres PLUS the printed border, and its docstring says
-        # nothing else may recompute it. Cutting to the recomputed number cuts a bordered
-        # board short by the border on both sides.
-        f"({_board_mm(guide)}) and mark hole "
-        f'<span class="hole">A1</span> in the top-left corner on the COMPONENT side. '
-        f"Every address below is counted from it, so if it is marked wrong, everything "
-        f"else is.</p>{_html_cuts(guide)}{checks}</section>"
+        f"<h3>{say('On the bench')}</h3><ul>{rows}</ul>"
+        f"<h3>{say('Iron')}</h3><p>"
+        + say(
+            "{temperature} °C, no more than {dwell:g} s on any one pad. {note}",
+            temperature=guide.iron.temperature_c,
+            dwell=guide.iron.max_dwell_s,
+            note=escape(guide.iron.note),
+        )
+        + f"</p><h3>{say('The board')}</h3><p>"
+        + say(
+            "Cut it to {cols} × {rows} holes ({size}) and mark hole {a1} in the top-left "
+            "corner on the COMPONENT side. Every address below is counted from it, so if it "
+            "is marked wrong, everything else is.",
+            cols=guide.board.cols,
+            rows=guide.board.rows,
+            # geometry.board_size_mm, never cols*pitch: the substrate runs half a pitch
+            # past the outermost hole centres PLUS the printed border, and its docstring
+            # says nothing else may recompute it. Cutting to the recomputed number cuts a
+            # bordered board short by the border on both sides.
+            size=_board_mm(guide),
+            a1='<span class="hole">A1</span>',
+        )
+        + f"</p>{_html_cuts(guide, say)}{checks}</section>"
     )
 
 
-def _html_step(step: GuideStep, dom_id: str, images: Mapping[str, bytes]) -> str:
+def _html_step(
+    step: GuideStep, dom_id: str, images: Mapping[str, bytes], say: Phrasebook
+) -> str:
     picture = _html_step_image(step, images)
     if isinstance(step, PartStep):
-        return _html_part_step(step, dom_id, picture)
-    return _html_conductor_step(step, dom_id, picture)
+        return _html_part_step(step, dom_id, picture, say)
+    return _html_conductor_step(step, dom_id, picture, say)
 
 
 #: Magic bytes to media type, longest signature first. A data URI carries its own type,
@@ -476,18 +552,27 @@ def _html_step_image(step: GuideStep, images: Mapping[str, bytes]) -> str:
     )
 
 
-def _html_part_step(step: PartStep, dom_id: str, picture: str = "") -> str:
+def _html_part_step(
+    step: PartStep, dom_id: str, picture: str = "", say: Phrasebook | None = None
+) -> str:
+    say = say or phrasebook("en")
     holes = " ".join(f"{escape(number)}:{_hole(at)}" for number, at in step.pin_holes)
     bits = [
         f'<div class="title">{escape(step.title)}</div>',
-        f'<div class="meta">{escape(step.footprint_name)} · pins {holes}'
+        '<div class="meta">'
+        + say("{footprint} · pins {holes}", footprint=escape(step.footprint_name), holes=holes)
         + (f" · {step.rotation}°" if step.rotation else "")
         + "</div>",
     ]
     if step.bend_template_mm:
         bits.append(
-            f'<div class="note">Bend the leads to {step.bend_template_mm:.2f} mm '
-            f"({step.bend_template_mm / 2.54:.0f} holes).</div>"
+            '<div class="note">'
+            + say(
+                "Bend the leads to {pitch:.2f} mm ({holes:.0f} holes).",
+                pitch=step.bend_template_mm,
+                holes=step.bend_template_mm / 2.54,
+            )
+            + "</div>"
         )
     if step.polarity:
         bits.append(f'<div class="note polarity">{escape(step.polarity)}</div>')
@@ -497,49 +582,74 @@ def _html_part_step(step: PartStep, dom_id: str, picture: str = "") -> str:
         f'<label class="step" for="{dom_id}">'
         f'<input type="checkbox" id="{dom_id}">'
         f'<span class="body">{"".join(bits)}{picture}</span>'
-        f'<span class="tag">{escape(step.archetype)}</span></label>'
+        f'<span class="tag">{escape(say(step.archetype))}</span></label>'
     )
 
 
-def _html_conductor_step(step: ConductorStep, dom_id: str, picture: str = "") -> str:
+def _conductor_word(step: ConductorStep, say: Phrasebook) -> str:
+    """What the copper is made of, as the tag beside the step and its meta line say it."""
+    return conductor_word(step.conductor_kind, say.language)
+
+
+def _html_conductor_step(
+    step: ConductorStep, dom_id: str, picture: str = "", say: Phrasebook | None = None
+) -> str:
+    say = say or phrasebook("en")
     bits = [
         f'<div class="title">{escape(step.net_name)}: '
         f"{_hole(step.path[0])} → {_hole(step.path[-1])}</div>"
         if step.path
         else f'<div class="title">{escape(step.title)}</div>',
-        f'<div class="meta">{escape(step.conductor_kind.replace("-", " "))} · '
+        f'<div class="meta">{escape(_conductor_word(step, say))} · '
         f"{step.length_mm:.1f} mm"
-        + (f" · {step.pads} pads" if step.pads > 2 else "")
+        + (" · " + say("{pads} pads", pads=step.pads) if step.pads > 2 else "")
         + (
-            f" · about {step.resistance_ohm * 1000:.1f} mΩ"
+            " · " + say("about {milliohm:.1f} mΩ", milliohm=step.resistance_ohm * 1000)
             if step.resistance_ohm is not None
             else ""
         )
-        + (f" · {step.drop_mv:.0f} mV drop" if step.drop_mv is not None else "")
+        + (
+            " · " + say("{drop:.0f} mV drop", drop=step.drop_mv)
+            if step.drop_mv is not None
+            else ""
+        )
         + "</div>",
     ]
     if step.pads > 2 and step.path:
         bits.append(
-            '<div class="meta">Path: '
-            + " → ".join(_hole(at) for at in step.path)
+            '<div class="meta">'
+            + say("Path: {holes}", holes=" → ".join(_hole(at) for at in step.path))
             + "</div>"
         )
     if step.cut is not None:
         # Bare wire has nothing to strip, and "strip 0 mm at each end" is an instruction
         # to do nothing -- so the clause is left out rather than printed as a zero.
         strip = (
-            f", strip {step.cut.strip_mm:.0f} mm at each end"
+            say(", strip {strip:.0f} mm at each end", strip=step.cut.strip_mm)
             if step.cut.strip_mm > 0
             else ""
         )
         bits.append(
-            f'<div class="note">Cut {step.cut.cut_mm:.0f} mm of '
-            f"{escape(step.cut.colour)} AWG {step.cut.awg}{strip}.</div>"
+            '<div class="note">'
+            + say(
+                "Cut {length:.0f} mm of {colour} AWG {awg}{strip}.",
+                length=step.cut.cut_mm,
+                colour=escape(say(step.cut.colour)),
+                awg=step.cut.awg,
+                strip=strip,
+            )
+            + "</div>"
         )
     if step.spine is not None:
         bits.append(
-            f'<div class="note">Spine: {step.spine.length_mm:.0f} mm of '
-            f"{step.spine.gauge_mm:g} mm {escape(step.spine.material)}.</div>"
+            '<div class="note">'
+            + say(
+                "Spine: {length:.0f} mm of {gauge:g} mm {material}.",
+                length=step.spine.length_mm,
+                gauge=step.spine.gauge_mm,
+                material=escape(say(step.spine.material)),
+            )
+            + "</div>"
         )
     for note in step.notes:
         bits.append(f'<div class="note sub">{escape(note)}</div>')
@@ -550,19 +660,22 @@ def _html_conductor_step(step: ConductorStep, dom_id: str, picture: str = "") ->
         f'<input type="checkbox" id="{dom_id}">'
         f'<span class="body">{"".join(bits)}{picture}</span>'
         f'<span class="tag" style="color:var(--trace)">'
-        f'{escape(step.conductor_kind.replace("-", " "))}</span></label>'
+        f"{escape(_conductor_word(step, say))}</span></label>"
     )
 
 
-def _html_check(check: Checkpoint, dom_id: str) -> str:
+def _html_check(check: Checkpoint, dom_id: str, say: Phrasebook | None = None) -> str:
+    say = say or phrasebook("en")
     classes = f"check {check.kind}" + (" blocking" if check.blocking else "")
     holes = (
-        '<div class="meta">Probe ' + " and ".join(_hole(at) for at in check.holes) + "</div>"
+        '<div class="meta">'
+        + say("Probe {holes}", holes=say.joined([_hole(at) for at in check.holes]))
+        + "</div>"
         if check.holes
         else ""
     )
     gate = (
-        '<div class="note risk">Do not apply power until this passes.</div>'
+        '<div class="note risk">' + say("Do not apply power until this passes.") + "</div>"
         if check.blocking
         else ""
     )
@@ -571,16 +684,21 @@ def _html_check(check: Checkpoint, dom_id: str) -> str:
         f'<input type="checkbox" id="{dom_id}">'
         f'<span class="body"><div class="title">{escape(check.title)}</div>'
         f'<div class="note">{escape(check.instruction)}</div>{holes}'
-        f'<div class="note sub">Expect: {escape(check.expected)}</div>{gate}</span>'
-        f'<span class="tag">{escape(check.kind)}</span></label>'
+        '<div class="note sub">'
+        + say("Expect: {expected}", expected=escape(check.expected))
+        + f"</div>{gate}</span>"
+        f'<span class="tag">{escape(say(check.kind))}</span></label>'
     )
 
 
-def _html_tables(guide: Guide) -> str:
-    parts = ['<section class="phase"><h2>Lists</h2>']
+def _html_tables(guide: Guide, say: Phrasebook) -> str:
+    parts = [f'<section class="phase"><h2>{say("Lists")}</h2>']
 
-    parts.append("<h3>Parts</h3><div class=\"wrap\"><table>")
-    parts.append("<tr><th>Qty</th><th>Value</th><th>Package</th><th>References</th></tr>")
+    parts.append(f'<h3>{say("Parts")}</h3><div class="wrap"><table>')
+    parts.append(
+        f"<tr><th>{say('Qty')}</th><th>{say('Value')}</th><th>{say('Package')}</th>"
+        f"<th>{say('References')}</th></tr>"
+    )
     for line in guide.bom:
         parts.append(
             f"<tr><td>{line.quantity}</td><td>{escape(line.value)}</td>"
@@ -589,10 +707,14 @@ def _html_tables(guide: Guide) -> str:
     parts.append("</table></div>")
 
     if guide.cut_list or guide.spine_list:
-        parts.append('<h3>Wire</h3><div class="wrap"><table>')
+        parts.append(f'<h3>{say("Wire")}</h3><div class="wrap"><table>')
         parts.append(
-            "<tr><th>Type</th><th>Net</th><th>From</th><th>To</th><th>Cut</th>"
-            "<th>AWG</th><th>Colour</th></tr>"
+            "<tr>"
+            + "".join(
+                f"<th>{say(column)}</th>"
+                for column in WIRE_TABLE_COLUMNS
+            )
+            + "</tr>"
         )
         # One spelling per thing, and it is the CSV's: the two tables are the same list
         # and somebody comparing them should not have to work out that "bare" here and
@@ -601,16 +723,17 @@ def _html_tables(guide: Guide) -> str:
         # an em dash under AWG, so the column headings said the opposite of the cells.
         for cut in guide.cut_list:
             parts.append(
-                f'<tr><td>{"insulated wire" if cut.insulated else "bare wire"}</td>'
+                f"<tr><td>{_wire_type(cut.insulated, say)}</td>"
                 f"<td>{escape(cut.net_name)}</td><td>{_hole(cut.from_hole)}</td>"
                 f"<td>{_hole(cut.to_hole)}</td><td>{cut.cut_mm:.0f} mm</td>"
-                f"<td>{cut.awg}</td><td>{escape(cut.colour)}</td></tr>"
+                f"<td>{cut.awg}</td><td>{escape(say(cut.colour))}</td></tr>"
             )
         for spine in guide.spine_list:
             parts.append(
-                f"<tr><td>trace spine</td><td>{escape(spine.net_name)}</td><td colspan=2>"
-                f"{spine.pads} pads</td><td>{spine.length_mm:.0f} mm</td>"
-                f"<td>{spine.gauge_mm:g} mm</td><td>{escape(spine.material)}</td></tr>"
+                f"<tr><td>{say('trace spine')}</td><td>{escape(spine.net_name)}</td>"
+                f"<td colspan=2>{say('{pads} pads', pads=spine.pads)}</td>"
+                f"<td>{spine.length_mm:.0f} mm</td>"
+                f"<td>{spine.gauge_mm:g} mm</td><td>{escape(say(spine.material))}</td></tr>"
             )
         parts.append("</table></div>")
 
@@ -619,6 +742,9 @@ def _html_tables(guide: Guide) -> str:
 
 
 __all__ = [
+    "BOM_COLUMNS",
+    "CUT_LIST_COLUMNS",
+    "WIRE_TABLE_COLUMNS",
     "bom_to_csv",
     "cut_list_to_csv",
     "guide_to_html",

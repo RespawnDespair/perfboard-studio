@@ -213,7 +213,8 @@ imzalı değil**, o yüzden her biri ilk açılışta uyarı veriyor ve release 
 nasıl geçileceğini yazıyor — Windows EV sertifikası yılda ~$300, Apple notarization $99,
 ve ikisi de henüz alınmadı. Bkz. [docs/RELEASING.md](./docs/RELEASING.md).
 
-Arayüz **İngilizce ve Türkçe** konuşur (`--lang tr`, ya da sistem diline göre otomatik).
+Arayüz **İngilizce ve Türkçe** konuşur (`--lang tr`, ya da sistem diline göre otomatik);
+yazdığı montaj rehberi de öyle — adımlar, kontroller, kesim listesi.
 
 ### PyPI'dan
 
