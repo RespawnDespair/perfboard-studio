@@ -2644,6 +2644,14 @@ class MainWindow(QMainWindow):
         #: windows has no business leaving a great many files in the user's profile, and a
         #: constructor that wrote to disk would make every test that opens a window a test
         #: that writes one. ``test_building_a_window_saves_nothing`` is what holds it.
+        #: Edits come in bursts -- an arrow key held down is a move every keyboard repeat --
+        #: and re-actoring the 3D board costs about a third of a second on atmega328-relay,
+        #: so the panel follows the LAST edit of a burst rather than lagging behind every
+        #: one. Only edits wait: a toggle, the slider or a flip still redraws at once.
+        self._3d_refresh_timer = QTimer(self)
+        self._3d_refresh_timer.setSingleShot(True)
+        self._3d_refresh_timer.setInterval(self.REFRESH_3D_AFTER_MS)
+        self._3d_refresh_timer.timeout.connect(self._refresh_3d)
         self._autosave = Autosave()
         self._autosave_timer = QTimer(self)
         self._autosave_timer.setInterval(AUTOSAVE_INTERVAL_MS)
@@ -3311,6 +3319,17 @@ class MainWindow(QMainWindow):
 
     def _3d_is_live(self) -> bool:
         return self.vtk_widget is not None and self.dock_3d.isVisible()
+
+    #: How long the 3D panel waits after an edit for the next one. Long enough to span a
+    #: keyboard repeat, short enough that a single edit still looks immediate.
+    REFRESH_3D_AFTER_MS = 150
+
+    def _schedule_3d_refresh(self) -> None:
+        """Redraw the 3D board once the edits stop coming -- see ``_3d_refresh_timer``."""
+        if not self._3d_is_live():
+            self._refresh_3d()  # cheap when nobody is looking: it only marks itself stale
+            return
+        self._3d_refresh_timer.start()
 
     def _refresh_3d(self) -> None:
         """Re-actor the existing renderer. Deliberately does NOT touch the camera.
@@ -6725,7 +6744,7 @@ class MainWindow(QMainWindow):
             # Before the 3D refresh, so the panel repaints once with the new build rather
             # than once against the old step order and again against the new one.
             self._sync_assembly_range()
-        self._refresh_3d()
+        self._schedule_3d_refresh()
         # Marks itself stale and returns when the panel is shut, so a closed panel costs
         # nothing -- the guide it would need runs DRC and LVS to build.
         self._refresh_guide_panel()
@@ -8597,17 +8616,12 @@ class MainWindow(QMainWindow):
         assert self.current_path is not None
 
         document = self.bus.document
-        # Rendered before anything is written and only where there is something to render
-        # into: on a machine with no offscreen GL, VTK does not raise, it ends the process
-        # -- and taking the application down from inside Save is the one place that must
-        # not happen. A guide without pictures is still a complete guide.
+        # Rendered before anything is written -- see _render_step_images, which is also why
+        # a machine with no offscreen GL saves a guide without pictures rather than
+        # crashing from inside Save, the one place that must not happen.
+        images = self._render_step_images(document, build_guide(document, self.lookup)) or {}
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            images = (
-                view3d.render_step_images(document, build_guide(document, self.lookup), self.lookup)
-                if view3d.offscreen_gl_available()
-                else {}
-            )
             try:
                 result = write_project(
                     self.current_path,
@@ -9391,6 +9405,8 @@ class MainWindow(QMainWindow):
             # offer it back at the next start and ask them the same question again.
             self._autosave_timer.stop()
             self._autosave.clear()
+            # A redraw still waiting on the last edit would land on a window being torn down.
+            self._3d_refresh_timer.stop()
             event.accept()
         else:
             event.ignore()
@@ -9886,6 +9902,64 @@ class MainWindow(QMainWindow):
             ),
         )
 
+    def _render_step_images(self, document: PerfDocument, guide: Guide) -> dict[str, bytes] | None:
+        """One 3D picture per build step, counted out loud, with a way to do without them.
+
+        None when the user chose to skip the pictures; empty where there is nothing to
+        render into. On a machine with no offscreen GL -- a VM, a remote session, an old
+        driver -- VTK does not raise, it ends the process, so exporting a guide would take
+        the application down with every unsaved edit in it. A guide without pictures is
+        still a complete guide; losing the board is not recoverable.
+
+        IT USED TO BE A WAIT CURSOR AND NOTHING ELSE, on the belief that it took well under
+        a second. atmega328-relay's 83 steps take about forty, and Windows calls a window
+        that has not answered for five "Not Responding". The render stays on this thread --
+        VTK's GL context lives here and nowhere else -- so it reports after each picture and
+        the events are pumped from there, behind the same guard ``_run_planner`` raises: the
+        window disabled, and the file watcher and ``closeEvent`` standing down.
+        """
+        if not view3d.offscreen_gl_available():
+            return {}
+        started = time.perf_counter()
+        skipped = False
+        dialog: QProgressDialog | None = None
+
+        def progress(done: int, of: int) -> bool:
+            nonlocal dialog, skipped
+            if dialog is None and time.perf_counter() - started > self.PLANNER_GRACE_S:
+                dialog = QProgressDialog(
+                    t("Drawing the build steps…"), t("Skip the Pictures"), 0, of, self
+                )
+                dialog.setWindowTitle(t("Build Guide"))
+                dialog.setWindowModality(Qt.WindowModality.WindowModal)
+                dialog.setMinimumDuration(0)
+                dialog.setAutoClose(False)
+                dialog.setAutoReset(False)
+                dialog.show()
+            if dialog is not None:
+                dialog.setValue(done)
+                dialog.setLabelText(
+                    t("Drawing step {done} of {total}…").format(done=done, total=of)
+                )
+            QApplication.processEvents(QEventLoop.ProcessEventsFlag.AllEvents, 20)
+            if dialog is not None and dialog.wasCanceled():
+                skipped = True
+                return False
+            return True
+
+        self.setEnabled(False)
+        self._planner_running = True
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            images = view3d.render_step_images(document, guide, self.lookup, progress=progress)
+        finally:
+            QApplication.restoreOverrideCursor()
+            self._planner_running = False
+            if dialog is not None:
+                dialog.close()
+            self.setEnabled(True)
+        return None if skipped else images
+
     def on_export_guide(self) -> None:
         """Write the build guide beside the document, and say what it could not cover.
 
@@ -9897,24 +9971,9 @@ class MainWindow(QMainWindow):
         base = self.current_path.with_suffix("") if self.current_path else Path.cwd() / "board"
         guide = build_guide(self.bus.document, self.lookup)
 
-        # One 3D render per step, before anything is written. The cursor is the only
-        # feedback worth giving: it is well under a second on a board of this size,
-        # because the render window is built once and re-actored per step rather than
-        # stood up again for each one.
-        # ...and only where there is something to render into. On a machine with no
-        # offscreen GL -- a VM, a remote session, an old driver -- VTK does not raise,
-        # it ends the process, so exporting a guide would take the application down with
-        # every unsaved edit in it. A guide without pictures is still a complete guide;
-        # losing the board is not recoverable.
-        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        try:
-            images = (
-                view3d.render_step_images(self.bus.document, guide, self.lookup)
-                if view3d.offscreen_gl_available()
-                else {}
-            )
-        finally:
-            QApplication.restoreOverrideCursor()
+        # One 3D render per step, before anything is written -- see _render_step_images.
+        rendered = self._render_step_images(self.bus.document, guide)
+        images = rendered or {}
 
         written: list[Path] = []
         try:
@@ -9933,8 +9992,11 @@ class MainWindow(QMainWindow):
                 t("Export failed"), f"Could not write the guide: {err}")
             return
 
+        without = f" ({t('without its pictures')})" if rendered is None else ""
         self.statusBar().showMessage(
-            f"{describe_guide(guide)} — {written[0].name} and {len(written) - 1} more", 0
+            f"{describe_guide(guide)} — {written[0].name} and {len(written) - 1} more"
+            f"{without}",
+            0,
         )
         if guide.warnings:
             # Said in a dialog, not just the status bar: each of these is a statement that
@@ -9973,6 +10035,11 @@ class MainWindow(QMainWindow):
 
         svg = drawing_to_svg(drawing, title=self.bus.document.meta.name)
         written: list[Path] = []
+        # Seconds, not milliseconds, on a real circuit -- Qt paginating the PDF and
+        # rasterising the PNG -- and it used to give no sign at all that anything was
+        # happening. Not worth a dialog; worth a cursor.
+        failure: Exception | None = None
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             sheet = base.with_name(base.name + "_schematic.svg")
             sheet.write_text(svg, encoding="utf-8")
@@ -9986,8 +10053,12 @@ class MainWindow(QMainWindow):
             )
             written.append(svg_to_png(svg, base.with_name(base.name + "_schematic.png")))
         except (OSError, SchematicRenderError) as err:
+            failure = err
+        finally:
+            QApplication.restoreOverrideCursor()
+        if failure is not None:
             QMessageBox.critical(
-                self, t("Export failed"), f"Could not write the schematic: {err}"
+                self, t("Export failed"), f"Could not write the schematic: {failure}"
             )
             return
 

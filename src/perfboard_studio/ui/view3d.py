@@ -19,6 +19,7 @@ import math
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
 from itertools import pairwise
@@ -3277,8 +3278,8 @@ def build_drop_lines(
     different apparent meanings, decided by nothing but where the part happens to be.
 
     Lines fix it at any lift, and they are what the view is for (PLAN.md D7): the question
-    an exploded view answers is not "what is on this board" â€” the assembled view answers
-    that â€” but "which holes does THIS go in", and a leader line is the answer drawn.
+    an exploded view answers is not "what is on this board" — the assembled view answers
+    that — but "which holes does THIS go in", and a leader line is the answer drawn.
 
     One actor for every line on the board. A part with no known footprint contributes
     nothing, as everywhere else.
@@ -3388,8 +3389,8 @@ def populate_renderer(
     """Rebuild the board's actors in an EXISTING renderer, leaving the camera alone.
 
     ``exploded_mm`` lifts every part off the board, so the holes each one drops into are
-    visible at once (PLAN.md D7). ``highlight`` is a component or conductor id â€” the value
-    ``guide.step_focus`` returns â€” and dims everything else, which is what turns a frame
+    visible at once (PLAN.md D7). ``highlight`` is a component or conductor id — the value
+    ``guide.step_focus`` returns — and dims everything else, which is what turns a frame
     of the assembly sequence into an illustration of one step.
 
     The BOARD is never dimmed, only the other parts and the copper. A step card says which
@@ -3992,8 +3993,9 @@ def render_step_images(
     lookup: FootprintLookup,
     width: int = 560,
     height: int = 370,
+    progress: Callable[[int, int], bool] | None = None,
 ) -> dict[str, bytes]:
-    """One picture per build step (PLAN.md Â§7.2), keyed by ``guide.step_focus``.
+    """One picture per build step (PLAN.md §7.2), keyed by ``guide.step_focus``.
 
     JPEG bytes rather than files, because that is what ``guide_export.guide_to_html``
     takes: it base64s them into the document, so the finished guide cannot acquire a
@@ -4020,6 +4022,13 @@ def render_step_images(
     steps took the macOS CI runner 181 s that way and take it 85 s this way. The drift was
     a bug as well as a cost -- a component-side step after the first flip came out up to 23
     levels in 255 away from the same step drawn on its own.
+
+    ``progress`` is told ``(done, total)`` after every picture, and returning False stops:
+    the set then comes back EMPTY rather than as some of the pictures, because a guide
+    illustrated up to step 30 of 83 reads as a guide whose last steps went wrong.
+    It is how the window keeps somebody informed through the minute a big board takes --
+    the render stays on the thread that owns the GL context, which is the only one it can
+    run on, and the caller pumps its events from here.
     """
     steps = all_steps(guide)
     if not steps:
@@ -4056,4 +4065,6 @@ def render_step_images(
         writer.Write()
         jpeg = numpy_support.vtk_to_numpy(writer.GetResult())  # type: ignore[no-untyped-call]
         images[focus] = bytes(jpeg.tobytes())
+        if progress is not None and not progress(index + 1, len(steps)):
+            return {}
     return images

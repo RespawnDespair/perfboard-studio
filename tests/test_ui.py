@@ -1699,6 +1699,50 @@ def test_guide_gaps_are_reported_in_a_dialog_not_only_the_status_bar(tmp_path, m
     window.close()
 
 
+@requires_offscreen_gl  # the render is stubbed, but the scanner reads on_export_guide
+def test_the_step_pictures_are_counted_and_can_be_skipped(tmp_path, monkeypatch) -> None:
+    """They take about forty seconds on atmega328-relay and used to be a wait cursor and
+    nothing else, which Windows calls "Not Responding". The render reports after every
+    picture; skipping writes the guide without pictures rather than with some of them, and
+    the window is handed back either way."""
+    from PySide6.QtWidgets import QProgressDialog
+
+    from perfboard_studio.ui import main as main_module
+    from perfboard_studio.ui import view3d
+
+    window = _window_on(_load_dense())
+    window.current_path = tmp_path / "board.perf"
+    monkeypatch.setattr(main_module.MainWindow, "PLANNER_GRACE_S", 0.0)
+    monkeypatch.setattr(view3d, "offscreen_gl_available", lambda: True)
+    monkeypatch.setattr(
+        "perfboard_studio.ui.main.QMessageBox.warning", lambda *args, **kwargs: None
+    )
+    monkeypatch.setattr(main_module.MainWindow, "_offer_to_open", lambda self, written: None)
+    seen: list[tuple[int, int]] = []
+    guarded: list[bool] = []
+
+    def fake_render(document, guide, lookup, *, progress):
+        for done in (1, 2, 3):
+            seen.append((done, 3))
+            guarded.append(window._planner_running and not window.isEnabled())
+            if done == 2:
+                next(iter(window.findChildren(QProgressDialog))).cancel()
+            if not progress(done, 3):
+                return {}
+        return {"never": b""}
+
+    monkeypatch.setattr(view3d, "render_step_images", fake_render)
+
+    window.on_export_guide()
+
+    assert seen == [(1, 3), (2, 3)]
+    assert all(guarded)
+    html = (tmp_path / "board_guide.html").read_text(encoding="utf-8")
+    assert "data:image/jpeg" not in html
+    assert window.isEnabled() and not window._planner_running
+    _close(window)
+
+
 def test_the_export_offers_to_open_what_it_wrote(tmp_path, monkeypatch) -> None:
     """The export used to end at a line in the status bar naming a file in a directory
     the user then had to go and find."""
@@ -2862,6 +2906,29 @@ def test_every_step_gets_a_picture_of_its_own() -> None:
     # PNG stores at ~136 KB each against JPEG's 47 KB, and every one of them is base64ed
     # into a single file somebody opens on a phone.
     assert all(shot.startswith(b"\xff\xd8\xff") for shot in images.values())
+
+
+@requires_offscreen_gl
+def test_the_step_pictures_report_as_they_go_and_stop_when_told() -> None:
+    """Stopped part-way, the set comes back EMPTY: a guide illustrated up to step 2 of 30
+    reads as a guide whose last steps went wrong."""
+    from perfboard_studio.guide import all_steps, build_guide
+    from perfboard_studio.ui import view3d
+
+    doc = _load_dense()
+    lookup = footprint_lookup()
+    guide = build_guide(doc, lookup)
+    total = len(all_steps(guide))
+    told: list[tuple[int, int]] = []
+
+    def progress(done: int, of: int) -> bool:
+        told.append((done, of))
+        return done < 2
+
+    images = view3d.render_step_images(doc, guide, lookup, 120, 80, progress=progress)
+
+    assert told == [(1, total), (2, total)]
+    assert images == {}
 
 
 @requires_offscreen_gl
@@ -7786,6 +7853,38 @@ def test_undo_and_redo_name_the_command_in_the_menu() -> None:
         assert first.ref not in window.act_undo.text()
     finally:
         _close(window)
+
+
+def test_the_3d_panel_follows_the_last_edit_of_a_burst_not_every_one(monkeypatch) -> None:
+    """Re-actoring the 3D board costs about a third of a second on atmega328-relay, and an
+    arrow key held down is a move every keyboard repeat -- so every nudge used to wait for
+    the 3D panel. Three quick edits are one redraw, after they stop."""
+    import time
+
+    from PySide6.QtWidgets import QApplication
+
+    from perfboard_studio.ui.main import MainWindow
+
+    window = _window_on(_load_dense())
+    redraws: list[int] = []
+    monkeypatch.setattr(MainWindow, "_3d_is_live", lambda self: True)
+    monkeypatch.setattr(MainWindow, "_refresh_3d", lambda self: redraws.append(1))
+    part = window.bus.document.components[0]
+
+    for col in (3, 4, 5):
+        window.bus.dispatch(
+            "component.move", MoveComponentPayload(id=part.id, anchor=HoleCoord(col, 3))
+        )
+    assert redraws == []
+
+    deadline = time.perf_counter() + 2.0
+    while not redraws and time.perf_counter() < deadline:
+        QApplication.processEvents()
+    assert redraws == [1]
+
+    window.bus.dispatch("component.move", MoveComponentPayload(id=part.id, anchor=HoleCoord(6, 3)))
+    _close(window)
+    assert not window._3d_refresh_timer.isActive(), "a redraw was left waiting on a closed window"
 
 
 def test_the_undo_button_keeps_its_one_word() -> None:

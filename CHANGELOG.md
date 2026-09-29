@@ -50,6 +50,15 @@ closed without a bump.
 
 ### Fixed
 
+- **Exporting the build guide or saving a project froze the window.** The 3D picture for
+  every step was drawn behind a wait cursor, on the belief that it took under a second;
+  `atmega328-relay`'s 83 steps take about forty, and Windows calls a window that has not
+  answered for five "Not Responding". A dialog now counts the pictures as they are drawn,
+  and *Skip the Pictures* writes the guide without them — never with only some.
+  Exporting the schematic, which takes seconds, shows a wait cursor instead of nothing,
+  and the 3D panel redraws after the last edit of a burst rather than after every one
+  (a third of a second each on `atmega328-relay`, so a held arrow key lagged behind).
+
 - **Pressing Board on the toolbar closed the board.** The Board, Schematic and 3D buttons,
   and Ctrl+1–4, were the panels' own open/close switches, lit while a panel was open
   rather than in front. The board and the sheet start stacked in one tab group, so both
