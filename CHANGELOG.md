@@ -31,6 +31,12 @@ closed without a bump.
 
 ### Fixed
 
+- **Copper on the far face was hard to follow in 2D.** On the component side -- the side
+  the editor opens on, and so most of the copper on most boards -- a run was drawn only as
+  thin hatch strokes over a busy grid of pads, and zoomed out it thinned to nothing. A faint
+  solid band now goes under the hatch, so the run reads as one length of copper while the
+  hatch still says "on the other side".
+
 - **The router could short two nets through a wire's soldered end.** An insulated wire is
   soldered down at both ends, but it does not block the copper plane, so nothing marked
   those holes as taken. Where two insulated hops met on an empty pad, the next net's solder

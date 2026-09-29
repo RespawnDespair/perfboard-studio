@@ -5319,6 +5319,42 @@ def test_a_hatched_conductor_still_marks_every_joint() -> None:
         assert len(item.contact_points()) == len(item.conductor.path)
 
 
+def test_far_side_copper_reads_as_a_band_not_just_hatch_strokes() -> None:
+    """Hatch alone is thin strokes over a busy grid of pads, and zoomed out -- where
+    somebody looks to see what joins what -- it thinned to nothing on the component side,
+    which is the side the editor opens on. A faint solid band goes under it: nearly every
+    pixel along the run is now tinted, where the strokes alone left most of them bare."""
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QColor, QImage, QPainter
+
+    from perfboard_studio.commands import DEFAULT_BOARD
+
+    wire = WireConductor(id="w", path=(HoleCoord(2, 3), HoleCoord(8, 3)), side="bottom")
+    item = ConductorItem(wire, DEFAULT_BOARD, "top")
+    assert item.is_far_side()
+
+    pitch = DEFAULT_BOARD.pitch
+    px_per_mm = 20
+    image = QImage(int(12 * pitch * px_per_mm), int(7 * pitch * px_per_mm), QImage.Format.Format_ARGB32)
+    image.fill(QColor("#2e6b3a"))
+    painter = QPainter(image)
+    painter.scale(px_per_mm, px_per_mm)
+    item.paint(painter, None)
+    painter.end()
+
+    start = view2d.hole_to_screen(HoleCoord(2, 3), DEFAULT_BOARD, "top")
+    end = view2d.hole_to_screen(HoleCoord(8, 3), DEFAULT_BOARD, "top")
+    samples = [
+        QPointF(start.x() + (end.x() - start.x()) * f / 100, start.y())
+        for f in range(15, 86)  # between the two end joints, along the centreline
+    ]
+    background = QColor("#2e6b3a").rgb()
+    tinted = sum(
+        image.pixel(int(p.x() * px_per_mm), int(p.y() * px_per_mm)) != background for p in samples
+    )
+    assert tinted / len(samples) > 0.95
+
+
 # ---------------------------------------------------------------------------
 # The schematic panel
 # ---------------------------------------------------------------------------

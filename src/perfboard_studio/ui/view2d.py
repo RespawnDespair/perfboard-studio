@@ -1556,6 +1556,14 @@ class ConductorItem(QGraphicsItem):
 
         faded = QColor(colour)
         faded.setAlphaF(0.75)
+        # A faint solid band under the hatch, so the run reads as one length of copper at
+        # every zoom. Hatch alone is thin strokes over a busy grid of pads, and zoomed out --
+        # where somebody looks to see what joins what -- it thins to nothing.
+        underlay = QColor(colour)
+        underlay.setAlphaF(0.3)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(underlay))
+        painter.drawPath(body)
         brush = QBrush(faded, Qt.BrushStyle.FDiagPattern)
         # Hatch patterns are defined in DEVICE pixels, so without this the hatch would hold
         # its screen size while the board zooms -- solid when zoomed in, gone when zoomed
