@@ -5242,6 +5242,42 @@ def test_the_examples_open_as_untitled_copies() -> None:
     _close(window)
 
 
+def test_a_toolbar_a_little_too_wide_loses_only_the_words_it_must() -> None:
+    """All the words or none was the old rule, and a Turkish toolbar is 90 px wider than
+    an English one: on a 1920 screen at 125 % it lost every word, and the four conductor
+    tools -- one drawing, differing only in what runs between the pads -- became four
+    identical pictures. Short by a pixel, only the first button in the shedding order
+    goes to its icon; the conductor tools are the last to."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+
+    window = _window_on(_load_dense())
+    try:
+        window.show()
+        QApplication.processEvents()
+        savings = window._toolbar_savings
+        assert savings is not None and window._toolbar_text_width is not None
+        first = next((i for i, (_b, saved) in enumerate(savings) if saved > 0), None)
+        if first is None:
+            pytest.skip("no text has any width on this platform")
+        window.resize(window._toolbar_text_width - 1, 900)
+        QApplication.processEvents()
+        icon_only = [
+            button.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
+            for button, _saved in savings
+        ]
+        assert icon_only == [i <= first for i in range(len(savings))]
+        assert savings[0][0] is window.toolbar.widgetForAction(window.act_save)
+        assert savings[-1][0] is window.toolbar.widgetForAction(
+            window.act_draw["solder-trace"]
+        )
+        # Every button on the bar is in the order, or one would never give its words up.
+        on_bar = [a for a in window.toolbar.actions() if not a.isSeparator()]
+        assert len(savings) == len(on_bar)
+    finally:
+        _close(window)
+
+
 def test_a_narrow_window_keeps_every_toolbar_button_on_screen() -> None:
     """With its words under the icons the toolbar is wider than a laptop screen, so at
     1280 px the view switches went behind the overflow arrow. Narrow, it drops the words
@@ -5253,12 +5289,14 @@ def test_a_narrow_window_keeps_every_toolbar_button_on_screen() -> None:
     window.show()
     window.resize(1100, 700)
     QApplication.processEvents()
-    assert window.toolbar.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
+    styles = {button.toolButtonStyle() for button, _saved in window._toolbar_savings}
+    assert styles == {Qt.ToolButtonStyle.ToolButtonIconOnly}
 
     assert window._toolbar_text_width is not None
     window.resize(window._toolbar_text_width + 40, 900)
     QApplication.processEvents()
-    assert window.toolbar.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonTextUnderIcon
+    styles = {button.toolButtonStyle() for button, _saved in window._toolbar_savings}
+    assert styles == {Qt.ToolButtonStyle.ToolButtonTextUnderIcon}
     # ...and the side panels keep room for the names they list.
     assert window.dock_nets.widget().minimumWidth() >= window.SIDE_PANEL_MIN_WIDTH
     assert window.dock_library.widget().minimumWidth() >= window.SIDE_PANEL_MIN_WIDTH

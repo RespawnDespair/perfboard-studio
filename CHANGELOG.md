@@ -144,6 +144,15 @@ closed without a bump.
   phrasings, and a test fails on a library part named in words it does not recognise.
   The filter finds a part by either name.
 
+- **A window a little too narrow for the toolbar lost every word on it.** The toolbar
+  needs 1536 px with its words in English and 1624 in Turkish, and the rule was all the
+  words or none — so on a 1920 screen at 125 % a Turkish window dropped them all to be 90
+  px short, and Trace, Spine, Bare and Insulated, which are one drawing differing only in
+  what runs between the pads, became four identical pictures. The words now go one button
+  at a time, the pictures everybody reads first (save, undo, delete), the views next to
+  last and the conductor tools last of all: at 1536 px only six buttons lose theirs, and
+  at 1280 px the four conductor tools still have their names.
+
 - **Ten explanations were English in the Turkish window.** The Draw menu's five tools and
   the five routing styles explain themselves on hover, and the tables they came from
   handed the text over as a variable, which the catalogue's check reads past. They are

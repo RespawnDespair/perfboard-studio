@@ -3366,33 +3366,87 @@ class MainWindow(QMainWindow):
     SIDE_PANEL_MIN_WIDTH = 240
 
     _toolbar_text_width: int | None
+    #: Each toolbar button in the order it gives up its words, with the pixels that saves.
+    #: Measured once, with every button showing its words; see ``_fit_toolbar``.
+    _toolbar_savings: list[tuple[QToolButton, int]] | None
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         self._fit_toolbar()
 
+    def _toolbar_shedding_order(self) -> tuple[QAction, ...]:
+        """The toolbar's buttons in the order they give up their words, first to last.
+
+        The pictures everybody already reads -- save, undo, delete -- go first. The four
+        conductor tools go LAST, because their icons deliberately share one drawing and
+        differ only in what runs between the two pads (see ``_build_toolbar``): without
+        their words, Trace, Spine, Bare and Insulated are four guesses. The views, whose
+        pictures are distinct, go just before them.
+        """
+        return (
+            self.act_save,
+            self.act_undo,
+            self.act_redo,
+            self.act_delete,
+            self.act_rotate_cw,
+            self.act_fit,
+            self.act_mirror,
+            self.act_flip,
+            self.act_ratsnest,
+            self.act_new_net,
+            self.act_connect,
+            self.act_autoplace,
+            self.act_autoroute,
+            self.act_show_3d,
+            self.act_show_schematic,
+            self.act_show_board,
+            self.act_draw["top-jumper"],
+            self.act_draw["insulated-wire"],
+            self.act_draw["bare-wire"],
+            self.act_draw["solder-trace-wired"],
+            self.act_draw["solder-trace"],
+        )
+
     def _fit_toolbar(self) -> None:
-        """Words under the icons while they fit, icons alone when they do not.
+        """Words under the icons while they fit -- and when they do not, one button at a
+        time gives its words up, the most familiar picture first.
 
         With its words the toolbar is wider than a laptop screen, so at 1280 px Ratsnest,
         Fit and the Board, Schematic and 3D buttons went behind the overflow arrow -- the
-        view switches, of all things. Every button keeps its name in its tooltip.
+        view switches, of all things. The answer then was all the words or none, and the
+        toolbar needs 1536 px with them in English and 1624 in Turkish: on a 1920 screen at
+        125 % a Turkish window lost every word to be 90 px short, and Trace, Spine, Bare and
+        Insulated became four identical pictures. Now it sheds only what it must, in
+        ``_toolbar_shedding_order``. Every button keeps its name in its tooltip.
         """
         bar = getattr(self, "toolbar", None)
         if bar is None or bar.isFloating() or bar.orientation() != Qt.Orientation.Horizontal:
             return
-        if self._toolbar_text_width is None:
-            if bar.toolButtonStyle() != Qt.ToolButtonStyle.ToolButtonTextUnderIcon:
+        with_words = Qt.ToolButtonStyle.ToolButtonTextUnderIcon
+        icon_only = Qt.ToolButtonStyle.ToolButtonIconOnly
+        if self._toolbar_savings is None:
+            if bar.toolButtonStyle() != with_words:
                 return
             self._toolbar_text_width = bar.sizeHint().width()
-        fits = self.width() >= self._toolbar_text_width
-        wanted = (
-            Qt.ToolButtonStyle.ToolButtonTextUnderIcon
-            if fits
-            else Qt.ToolButtonStyle.ToolButtonIconOnly
-        )
-        if bar.toolButtonStyle() != wanted:
-            bar.setToolButtonStyle(wanted)
+            savings: list[tuple[QToolButton, int]] = []
+            for action in self._toolbar_shedding_order():
+                button = bar.widgetForAction(action)
+                if not isinstance(button, QToolButton):
+                    continue
+                wide = button.sizeHint().width()
+                button.setToolButtonStyle(icon_only)
+                savings.append((button, max(0, wide - button.sizeHint().width())))
+                button.setToolButtonStyle(with_words)
+            self._toolbar_savings = savings
+        assert self._toolbar_text_width is not None
+        # Per button, never the bar's own style: setting that re-styles every button.
+        short_by = self._toolbar_text_width - self.width()
+        for button, saved in self._toolbar_savings:
+            wanted = icon_only if short_by > 0 else with_words
+            if button.toolButtonStyle() != wanted:
+                button.setToolButtonStyle(wanted)
+            if wanted == icon_only:
+                short_by -= saved
 
     def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
@@ -4584,6 +4638,7 @@ class MainWindow(QMainWindow):
         #: buttons to measure -- and only once, because the answer depends on the language
         #: and the font and neither changes while the window is up.
         self._toolbar_text_width = None
+        self._toolbar_savings = None
 
         # Short labels for the BUTTONS only. Qt draws an action's iconText on a toolbar and
         # its text in a menu, so "Autoroute All Nets" stays exact where there is room for
