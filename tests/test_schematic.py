@@ -416,12 +416,17 @@ def test_no_sheet_comes_out_taller_than_it_is_wide(path: Path) -> None:
     The bound has headroom on purpose. What it is here to catch is the 1.84, and a sheet
     that is a little taller than square is a fair drawing of a circuit that is genuinely
     deep rather than wide.
+
+    1.15 RATHER THAN 1.1 since every row carries a grid step above it for references and
+    one below it for values (``REF_BAND_MM``, ``VALUE_BAND_MM``) -- the room that keeps the
+    trunks out of the text. Two of the random fixtures are three short rows of resistors,
+    and ten millimetres more of height took them from 1.08 to 1.12. Nowhere near the 1.84.
     """
     drawing = drawing_for(path)
     if not drawing.symbols:
         return
     aspect = drawing.height / drawing.width
-    assert aspect <= 1.1, (
+    assert aspect <= 1.15, (
         f"{path.stem} is {drawing.width:.0f} x {drawing.height:.0f} mm, "
         f"{aspect:.2f} times taller than wide"
     )

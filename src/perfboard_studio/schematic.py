@@ -162,13 +162,15 @@ VALUE_LABEL_MM: Mm = 1.4
 #: and the first lane of the channel under it sat one grid step below that body -- which
 #: is where the value is printed, 1.0 to 2.5 mm down. On a 555 drawn from a netlist the
 #: trunks went through "NE555", "10nF" and "J1" in one sheet. A reference starts 3.6 mm
-#: over its body, so it gets a whole step and the last lane above is then at least 1.5 mm
-#: clear of it; a value needs only half a step to put the first lane 1.3 mm under it.
-#: Asymmetric because the two texts are: every row pays for the pair, and a full step
-#: under every row pushed two of the random fixtures past the aspect the sheet is held to.
+#: over its body, so a step above puts the last lane there at least 1.5 mm clear of it; a
+#: step below puts the first lane under a value 2.6 mm clear.
 #: ``test_no_trunk_runs_through_a_reference_or_a_value`` is the measurement.
+#:
+#: WHOLE GRID STEPS, BOTH OF THEM, and half a step under each row was tried: every row
+#: after the first then started half a step off the grid, and the first edit -- which
+#: freezes the sheet by snapping every symbol to the grid -- moved every one of them.
 REF_BAND_MM: Mm = GRID_MM
-VALUE_BAND_MM: Mm = GRID_MM / 2
+VALUE_BAND_MM: Mm = GRID_MM
 
 #: The height a pin number or pin name is drawn at, in millimetres of sheet.
 #:

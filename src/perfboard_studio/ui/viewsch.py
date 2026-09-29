@@ -26,10 +26,15 @@ Clicking a symbol selects that part on the board, clicking a net highlights it t
 a selection made on the board or in the Nets dock lights up here -- so the two views are
 two views of one thing rather than two applications in one window.
 
-Labels are drawn at a fixed PIXEL size through ``scenetext.draw_label``, the same as the
-board's reference designators and for the same reason: they are annotation, not artwork,
-and a reference that shrank to nothing when the sheet was fitted to the panel would make
-the fitted view -- the one people actually look at -- the one view that says nothing.
+Labels are drawn at the size the LAYOUT reserved room for, in millimetres of sheet, and
+never smaller than a floor in pixels (``label_px``). They used to hold a fixed pixel size,
+the board's reasoning for its reference designators -- but a sheet is not a board with
+annotation on it: every lane is placed to clear text of a measured height
+(``schematic.REF_BAND_MM`` and its neighbours), and text that did not shrink with the sheet
+was two to three times that height at the zoom the panel opens on, so the trunks the layout
+had kept out of "NE555" and "10nF" ran through them on screen and nowhere else. The floor
+is what the fixed size was protecting: a fitted view whose labels shrank to nothing would
+be the one view that says nothing.
 """
 
 from __future__ import annotations
@@ -68,6 +73,10 @@ from PySide6.QtWidgets import (
 from perfboard_studio.model import NetNode, Point2
 from perfboard_studio.schematic import (
     GRID_MM,
+    NET_LABEL_MM,
+    PIN_LABEL_MM,
+    REF_LABEL_MM,
+    VALUE_LABEL_MM,
     Annotation,
     Label,
     NoConnect,
@@ -136,10 +145,21 @@ HIGHLIGHT_MM = 0.85
 #: each holding a half-width that could drift wider than the clearance.
 DOT_MM = 0.75
 
-REF_PX = 11
-VALUE_PX = 10
-NET_PX = 9
-PIN_PX = 8
+#: The smallest each kind of text is drawn, in pixels, however far the sheet is zoomed out.
+#: Above it text is its sheet size -- the size the layout cleared room for.
+REF_PX = 9
+VALUE_PX = 8
+NET_PX = 8
+PIN_PX = 7
+
+#: The largest, so a sheet zoomed right in to one pin does not ask the font engine for
+#: glyphs a hundred pixels tall.
+MAX_LABEL_PX = 72
+
+
+def label_px(size_mm: float, floor_px: int, px_per_mm: float) -> int:
+    """How tall to draw text that is ``size_mm`` of sheet, at this zoom, in pixels."""
+    return max(floor_px, min(MAX_LABEL_PX, round(size_mm * px_per_mm)))
 
 #: Scene-space padding on the item's bounding rect. The labels do not shrink with the
 #: sheet, so the room they need GROWS as the view zooms out (``scenetext`` explains why).
@@ -482,15 +502,25 @@ class SheetItem(QGraphicsItem):
                 painter.drawRect(box)
 
     def _labels(self, painter: QPainter) -> None:
+        # Pixels per millimetre of sheet, from the painter rather than the view: the same
+        # item is painted into the panel and, through ``QGraphicsScene.render``, into a
+        # picture at another scale.
+        scale = math.hypot(painter.transform().m11(), painter.transform().m12())
+        sizes = {
+            "ref": label_px(REF_LABEL_MM, REF_PX, scale),
+            "value": label_px(VALUE_LABEL_MM, VALUE_PX, scale),
+            "net": label_px(NET_LABEL_MM, NET_PX, scale),
+            "pin": label_px(PIN_LABEL_MM, PIN_PX, scale),
+        }
         for label in self.drawing.labels:
             if label.kind == "ref":
-                colour, size, bold = INK, REF_PX, True
+                colour, size, bold = INK, sizes["ref"], True
             elif label.kind == "value":
-                colour, size, bold = INK_DIM, VALUE_PX, False
+                colour, size, bold = INK_DIM, sizes["value"], False
             elif label.kind in ("net", "rail"):
-                colour, size, bold = SIGNAL, NET_PX, False
+                colour, size, bold = SIGNAL, sizes["net"], False
             else:
-                colour, size, bold = INK_DIM, PIN_PX, False
+                colour, size, bold = INK_DIM, sizes["pin"], False
             painter.setPen(QPen(QColor(colour)))
             draw_label(painter, _point(label.at), label.text, size, label_alignment(label), bold=bold)
 
