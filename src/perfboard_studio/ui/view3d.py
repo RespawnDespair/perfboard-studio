@@ -2358,7 +2358,7 @@ def _model_pieces(
     model: PartModel,
     comp: Any,
     board: Board,
-    marking_rgb: str | None = None,
+    polarity_mark: tuple[ModelPiece, str] | None = None,
 ) -> list[_Piece]:
     """A borrowed package, placed on its holes.
 
@@ -2374,9 +2374,9 @@ def _model_pieces(
 
     The body piece is painted from ``bodies.BODY_STYLES`` rather than from the colour the
     model was drawn with -- see ``partmodels`` for why -- and every piece takes one of this
-    module's own materials. ``marking_rgb``, when given, paints what is printed on the case
-    too: a diode's band is the one marking our table has an opinion about, and the 2D view
-    draws it in the style's accent.
+    module's own materials. ``polarity_mark``, when given, is the one piece printed on the
+    case that our table has an opinion about -- a diode's band, an electrolytic's minus
+    stripe -- and the colour the 2D view draws it in (see ``_polarity_mark``).
     """
     x, y = _xy(board, comp.anchor)
     turn = (0.0, 0.0, -float(comp.rotation))
@@ -2389,8 +2389,8 @@ def _model_pieces(
     for piece in model.pieces:
         if piece.is_body:
             colour = body.style.fill
-        elif marking_rgb is not None and _is_marking(piece):
-            colour = marking_rgb
+        elif polarity_mark is not None and piece is polarity_mark[0]:
+            colour = polarity_mark[1]
         else:
             colour = piece.color
         pieces.append(
@@ -2406,8 +2406,8 @@ def _model_pieces(
     return pieces
 
 
-#: The materials a model's LEADS are made of. A piece that is neither the body nor one of
-#: these is something printed or moulded onto the case -- on a diode, its cathode band.
+#: The materials a model's LEADS and bare metal are made of. A piece that is neither the
+#: body nor one of these is something printed or moulded onto the case.
 _LEAD_MATERIALS = frozenset({"tinned", "steel", "plated"})
 
 
@@ -2415,8 +2415,21 @@ def _is_marking(piece: ModelPiece) -> bool:
     return not piece.is_body and piece.material not in _LEAD_MATERIALS
 
 
-def _has_marking(model: PartModel) -> bool:
-    return any(_is_marking(piece) for piece in model.pieces)
+def _polarity_mark(model: PartModel) -> ModelPiece | None:
+    """The biggest thing printed on the case, which on a polarised part is what says which
+    way round it goes: a diode's cathode band, an electrolytic's minus stripe.
+
+    The BIGGEST, because the stripe is not the only print on a can -- KiCad draws the minus
+    signs down it too, and painting those the stripe's colour would erase them. Measured
+    by the piece's own bounds.
+    """
+    marks = [piece for piece in model.pieces if _is_marking(piece) and len(piece.bounds) == 6]
+
+    def volume(piece: ModelPiece) -> float:
+        x0, y0, z0, x1, y1, z1 = piece.bounds
+        return (x1 - x0) * (y1 - y0) * (z1 - z0)
+
+    return max(marks, key=volume, default=None)
 
 
 def _header_model_pieces(body: _WorldBody, model: PartModel) -> list[_Piece]:
@@ -2543,16 +2556,20 @@ def _pieces_for(
             ]
     if model is not None:
         axial = footprint.body.archetype == "axial-cylinder"
-        # A borrowed diode already has its cathode band, where the real part has it; ours
-        # at the very end of the barrel made two. Its band is kept and painted in the
-        # style's accent, which is the colour the 2D view draws it in.
-        banded = axial and body.polarity is not None and _has_marking(model)
+        # A borrowed polarised part already carries its mark where the real part has it --
+        # a diode's band, a can's stripe -- so ours is not added (on a diode it made two
+        # bands) and the model's is painted in the style's accent, the colour 2D draws it.
+        mark = _polarity_mark(model) if body.polarity is not None else None
         markings = (
-            _axial_markings(body, _barrel_of(model), polarity_band=not banded) if axial else []
+            _axial_markings(body, _barrel_of(model), polarity_band=mark is None) if axial else []
         )
         return [
             *_model_pieces(
-                body, model, comp, board, marking_rgb=body.style.accent if banded else None
+                body,
+                model,
+                comp,
+                board,
+                polarity_mark=(mark, body.style.accent) if mark is not None else None,
             ),
             *markings,
             *_through_hole_pieces(body, 0.0),
@@ -3791,6 +3808,17 @@ def apply_contact_shadows(ren: vtk.vtkRenderer) -> bool:
     Returns False rather than raising if the driver cannot do it: this is the one piece of
     the render that is a luxury, and a machine whose OpenGL is too old for it should get a
     board that looks slightly flatter rather than no board at all.
+
+    THE SAME PASS CHAIN ENDS IN TONE MAPPING, because the room is brighter than a screen on
+    purpose (``_ENV_SKY`` runs past 1.0 so that a smooth surface has a lamp to pick out)
+    and nothing brought it back into range: a crystal can or a TO-220's tab seen from the
+    side clipped to a flat white slab -- 17 861 pixels of it in a 480 x 360 close-up of an
+    HC-49. An exponential curve at ``TONE_EXPOSURE`` takes that to none while moving the
+    whole board's mean colour by under two levels in 255; Reinhard and the filmic curves
+    were tried and darken the midtones -- the colours ``bodies.BODY_STYLES`` shares with
+    the 2D view -- by 6 to 10 per cent. It rides with the occlusion because it is the same
+    kind of luxury, a pass with its own framebuffer, and ``PERFBOARD_STUDIO_SIMPLE_3D``
+    turns both off together.
     """
     if not rich_shading_wanted():
         return False
@@ -3801,10 +3829,20 @@ def apply_contact_shadows(ren: vtk.vtkRenderer) -> bool:
         occlusion.SetBias(CONTACT_SHADOW_BIAS_MM)
         occlusion.SetKernelSize(CONTACT_SHADOW_SAMPLES)
         occlusion.BlurOn()
-        ren.SetPass(occlusion)
+        tone = vtk.vtkToneMappingPass()
+        tone.SetToneMappingType(vtk.vtkToneMappingPass.Exponential)
+        tone.SetExposure(TONE_EXPOSURE)
+        tone.SetDelegatePass(occlusion)
+        ren.SetPass(tone)
     except (AttributeError, TypeError):  # pragma: no cover - driver-dependent
         return False
     return True
+
+
+#: The exposure of the exponential tone curve -- see ``apply_contact_shadows``. Chosen so the
+#: board's mean colour lands where it was without tone mapping (atmega328-relay: 64/76/70
+#: before, 65/77/72 after), so what changes is the highlights and nothing else.
+TONE_EXPOSURE = 1.15
 
 
 def apply_default_lighting(ren: vtk.vtkRenderer) -> None:

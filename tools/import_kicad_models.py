@@ -204,7 +204,7 @@ MATERIALS: dict[str, str] = {
     "#a5a392": "steel",  # KiCad's metal grey: a tab, a can, a crimped rim
     "#050505": "moulded",  # black epoxy: an IC body, a sleeve, a diode
     "#04227c": "sleeve",  # an electrolytic's printed PVC
-    "#6f6651": "steel",  # the aluminium top a can's relief cross is pressed into
+    "#6f6651": "sleeve",  # an electrolytic's minus stripe, printed down its sleeve (the top is #a5a392)
     "#c07635": "ceramic",  # a resistor's body
     "#9e2705": "ceramic",  # a disc capacitor's dip coating
     "#186b2a": "gloss",  # a terminal block's nylon

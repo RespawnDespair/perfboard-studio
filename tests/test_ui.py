@@ -697,6 +697,12 @@ def test_contact_shadows_say_whether_they_took() -> None:
 
     assert view3d.apply_contact_shadows(renderer) is True
     assert renderer.GetPass() is not None
+    # ...ending in the tone curve that keeps bare metal from clipping to a white slab, with
+    # the occlusion under it.
+    chain = renderer.GetPass()
+    assert isinstance(chain, vtk.vtkToneMappingPass)
+    assert chain.GetToneMappingType() == vtk.vtkToneMappingPass.Exponential
+    assert isinstance(chain.GetDelegatePass(), vtk.vtkSSAOPass)
 
 
 def test_the_two_gpu_heavy_parts_can_be_turned_off(monkeypatch) -> None:
@@ -953,6 +959,30 @@ def test_a_borrowed_diode_has_one_cathode_band_in_the_colour_2d_draws(footprint_
     assert colours.count(view3d._rgb(body.style.accent)) == 1
     kicad_band = next(p.color for p in model.pieces if view3d._is_marking(p))
     assert view3d._rgb(kicad_band) not in colours
+
+
+def test_an_electrolytics_stripe_is_printed_in_the_colour_2d_draws_it_and_not_as_metal() -> None:
+    """KiCad's minus stripe was taken for the aluminium top and shaded as dull khaki steel.
+    It is print on the sleeve: sleeve material, the style's accent -- and the minus signs
+    KiCad draws down it keep their own colour, or painting the stripe would erase them."""
+    from perfboard_studio.commands import DEFAULT_BOARD
+    from perfboard_studio.ui import partmodels, view3d
+
+    lookup = footprint_lookup()
+    component = _placed("c-elec-d8-p3")
+    body = view3d._world_body(lookup, component, DEFAULT_BOARD)
+    footprint = lookup("c-elec-d8-p3")
+    model = partmodels.model_for("c-elec-d8-p3")
+    assert body is not None and footprint is not None and model is not None
+
+    stripe = view3d._polarity_mark(model)
+    assert stripe is not None and stripe.material == "sleeve"
+    pieces = view3d._pieces_for(body, footprint, component, DEFAULT_BOARD)
+
+    colours = [piece.rgb for piece in pieces]
+    assert colours.count(view3d._rgb(body.style.accent)) == 1
+    signs = [p for p in model.pieces if view3d._is_marking(p) and p is not stripe]
+    assert signs and all(view3d._rgb(p.color) in colours for p in signs)
 
 
 def test_a_header_pin_goes_through_the_board() -> None:

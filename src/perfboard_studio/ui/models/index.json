@@ -115,7 +115,7 @@
      10.0
     ],
     "color": "#6f6651",
-    "material": "steel",
+    "material": "sleeve",
     "mesh": "c-elec-d10-p3.1.ply"
    },
    {
@@ -186,7 +186,7 @@
      5.0
     ],
     "color": "#6f6651",
-    "material": "steel",
+    "material": "sleeve",
     "mesh": "c-elec-d5-p2.1.ply"
    },
    {
@@ -257,7 +257,7 @@
      6.3
     ],
     "color": "#6f6651",
-    "material": "steel",
+    "material": "sleeve",
     "mesh": "c-elec-d6.3-p2.1.ply"
    },
    {
@@ -328,7 +328,7 @@
      8.0
     ],
     "color": "#6f6651",
-    "material": "steel",
+    "material": "sleeve",
     "mesh": "c-elec-d8-p3.1.ply"
    },
    {

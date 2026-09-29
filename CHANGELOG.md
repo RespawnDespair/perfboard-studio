@@ -55,6 +55,17 @@ closed without a bump.
 
 ### Fixed
 
+- **An electrolytic's minus stripe was shaded as dull khaki metal in 3D**, because the
+  model converter took its colour for the can's aluminium top. It is print on the sleeve
+  now, in the colour the 2D view draws it; the minus signs KiCad prints down it keep
+  theirs. A polarised borrowed part's mark is its biggest printed piece — a diode's band,
+  a can's stripe — so the rule that fixed the diode's double band covers both.
+
+- **Bare metal clipped to a flat white slab in 3D** — a crystal can, a TO-220's tab —
+  seen from the side. The render now ends in an exponential tone curve, exposed so the
+  board's overall colour does not move; an HC-49 close-up went from 17 861 clipped
+  pixels to none.
+
 - **The window did not fit a laptop screen.** The status bar's labels each insisted on
   their full width, which made the window's minimum wider than 1280 px; the toolbar with
   its words is wider still, so the view switches went behind the overflow arrow; and the

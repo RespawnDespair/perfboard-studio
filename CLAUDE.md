@@ -656,6 +656,12 @@ Four things here were got wrong first, and each has a test:
   radius is in millimetres; it RETURNS whether it took, because it is the one piece of the
   render that is a luxury and a machine whose OpenGL is too old should get a flatter board
   rather than no board.
+- **The pass chain ends in an exponential tone curve** (`TONE_EXPOSURE`), because the room
+  is deliberately brighter than a screen and nothing brought it back into range: bare metal
+  seen from the side clipped to a flat white slab. The exposure is set so the board's mean
+  colour does not move; Reinhard and the filmic curves darken the midtones — the colours
+  `BODY_STYLES` shares with 2D — by 6–10 %, which is why they were not used. It rides with
+  the contact shadows, so `PERFBOARD_STUDIO_SIMPLE_3D` turns it off too.
 
 **Image-based lighting costs nothing per frame and a great deal per RENDERER.** Before a
 renderer's first frame VTK fills an irradiance map, a prefiltered map and a BRDF table, at
