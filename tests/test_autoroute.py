@@ -31,13 +31,15 @@ from pathlib import Path
 
 import pytest
 
-from perfboard_studio import persist
+from perfboard_studio import autoroute, persist
 from perfboard_studio.autoroute import (
     ALL_ROUTING_STYLES,
     DEFAULT_AUTOROUTE_OPTIONS,
     AutorouteOptions,
+    AutoroutePlan,
     VariantScore,
     _criticality_order,
+    _starting_orders,
     describe,
     describe_best,
     describe_reroute,
@@ -66,6 +68,7 @@ from perfboard_studio.model import (
     HoleCoord,
     Net,
     NetClass,
+    NetId,
     NetNode,
     PerfDocument,
     WireConductor,
@@ -1247,3 +1250,121 @@ def test_every_committed_style_still_routes_the_whole_board(style: str) -> None:
 
     assert plan.summary.links_unrouted == 0
     assert run_lvs(plan.document, LOOKUP_STD).summary.opens == 0
+
+
+# ---------------------------------------------------------------------------
+# Other starting orders -- a builder committed to solder
+# ---------------------------------------------------------------------------
+
+GOLDEN_NAMES = sorted(
+    path.stem
+    for path in (Path(__file__).resolve().parents[1] / "tools" / "diffcheck" / "golden").glob("*.perf")
+)
+
+#: What a builder committed to solder can ask for: the two styles, and no wire at all.
+SOLDER_COMMITMENTS = {
+    "solder": options_for_style("solder"),
+    "lead-bend": options_for_style("lead-bend"),
+    "no-wire": dataclasses.replace(DEFAULT_ROUTER_OPTIONS, crossing_policy="refuse"),
+}
+
+
+def _jumpers(plan: AutoroutePlan) -> int:
+    return sum(1 for c in plan.conductors if c.kind in ("bare-wire", "insulated-wire", "top-jumper"))
+
+
+def _wanted(doc: PerfDocument) -> tuple[NetId, ...]:
+    return tuple(net.id for net in doc.nets)
+
+
+def test_a_builder_committed_to_solder_is_not_walled_in_by_the_ground_rail() -> None:
+    """The case the other starting orders are for. Ground routed first is a solder rail
+    across the NE555, and a trace cannot cross a trace: six signals hopped it with a jumper
+    somebody who asked for solder did not want. Routed signals first, one does."""
+    doc = dataclasses.replace(_load_golden_document("ne555"), conductors=())
+    options = AutorouteOptions(router=options_for_style("solder"))
+
+    criticality_alone = plan_autoroute(doc, LOOKUP_STD, dataclasses.replace(options, max_passes=1))
+    plan = plan_autoroute(doc, LOOKUP_STD, options)
+
+    assert _jumpers(criticality_alone) == 6, "the fixture no longer shows the problem"
+    assert _jumpers(plan) == 1
+    assert plan.summary.links_unrouted == 0
+    report = run_lvs(plan.document, LOOKUP_STD).summary
+    assert report.opens == 0 and report.shorts == 0
+
+
+@pytest.mark.parametrize("style", ["balanced", "wire"])
+def test_a_builder_who_may_use_wire_starts_from_criticality_alone(style: RoutingStyle) -> None:
+    """For them a signal crosses a rail with a wire at the price of any other wire, and the
+    other orders were measured to find nothing. It is also what keeps the placer, which
+    prices every candidate placement through a balanced plan, from paying for three."""
+    doc = _load_golden_document("ne555")
+    options = AutorouteOptions(router=options_for_style(style))
+    assert _starting_orders(doc, LOOKUP_STD, _wanted(doc), options) == (
+        _criticality_order(doc, _wanted(doc)),
+    )
+
+
+@pytest.mark.parametrize("commitment", sorted(SOLDER_COMMITMENTS))
+def test_a_builder_committed_to_solder_starts_from_three_orders(commitment: str) -> None:
+    doc = _load_golden_document("ne555")
+    options = AutorouteOptions(router=SOLDER_COMMITMENTS[commitment])
+    critical = _criticality_order(doc, _wanted(doc))
+    orders = _starting_orders(doc, LOOKUP_STD, _wanted(doc), options)
+    assert orders[0] == critical, "criticality stays first, so a tie keeps today's plan"
+    assert orders[1] == critical[::-1]
+    assert len(orders) == 3 and len(set(orders)) == 3
+    assert all(sorted(order) == sorted(critical) for order in orders)
+
+
+@pytest.mark.parametrize("commitment", sorted(SOLDER_COMMITMENTS))
+@pytest.mark.parametrize("name", GOLDEN_NAMES)
+def test_the_other_orders_never_leave_a_board_worse(
+    name: str, commitment: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """They are tried AFTER the usual rip-up from criticality and replace its plan only when
+    it is cheaper to build, so no board may come back with more left unrouted or more work
+    in it than criticality alone gave -- measured as ``plan_best_autoroute`` measures."""
+    doc = dataclasses.replace(_load_golden_document(name), conductors=())
+    options = AutorouteOptions(router=SOLDER_COMMITMENTS[commitment])
+
+    plan = plan_autoroute(doc, LOOKUP_STD, options)
+    every_order = autoroute._starting_orders
+    monkeypatch.setattr(
+        autoroute, "_starting_orders", lambda *args: every_order(*args)[:1]
+    )
+    before = plan_autoroute(doc, LOOKUP_STD, options)
+
+    assert score_plan(plan, doc).key() <= score_plan(before, doc).key()
+
+
+def test_with_no_wire_allowed_fewer_connections_are_left_unrouted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``lpb1-booster`` with no wire at all: three connections left for the builder to work
+    out by hand from criticality and its rip-up; one, from the best of the three orders."""
+    path = Path(__file__).resolve().parents[1] / "examples" / "lpb1-booster.perf"
+    doc = persist.deserialize_document(path.read_text(encoding="utf-8")).document
+    doc = dataclasses.replace(doc, conductors=())
+    options = AutorouteOptions(router=SOLDER_COMMITMENTS["no-wire"])
+
+    plan = plan_autoroute(doc, LOOKUP_STD, options)
+    every_order = autoroute._starting_orders
+    monkeypatch.setattr(
+        autoroute, "_starting_orders", lambda *args: every_order(*args)[:1]
+    )
+    before = plan_autoroute(doc, LOOKUP_STD, options)
+
+    assert before.summary.links_unrouted == 3, "the example no longer shows the problem"
+    assert plan.summary.links_unrouted == 1
+    assert _jumpers(plan) == 0
+
+
+def test_a_first_pass_with_nothing_to_improve_is_not_routed_again() -> None:
+    """No wire and nothing unrouted is as good as another order can make it, so a small
+    board a builder committed to solder routes cleanly costs one pass, not three."""
+    doc = dataclasses.replace(_load_golden_document("random-03"), conductors=())
+    plan = plan_autoroute(doc, LOOKUP_STD, AutorouteOptions(router=options_for_style("solder")))
+    assert _jumpers(plan) == 0 and plan.summary.links_unrouted == 0
+    assert plan.summary.passes == 1

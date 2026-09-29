@@ -22,6 +22,12 @@ produces a different -- often much worse -- board. Two mechanisms address that:
   ordering-based rip-up: it never edits a plan in place, which keeps every pass
   independent and the result deterministic.
 
+  OTHER STARTING ORDERS, for a builder committed to solder. Ground first is the wrong
+  start for somebody who has no wire to cross it with: a trace cannot cross a trace, so
+  the rail laid first is a wall every later signal has to hop. Such a builder is also
+  offered the plans the reverse order and the shortest-nets-first order produce, and the
+  one cheapest to BUILD wins (see ``_starting_orders``).
+
 WHAT IT WILL NOT DO.
 
 It does not rip up conductors that were already in the document. A user's own routing,
@@ -67,6 +73,7 @@ from .router import (
     RouterOptions,
     RouteStrategy,
     RoutingStyle,
+    StrategyPreference,
     options_for_style,
     route_connection,
 )
@@ -90,12 +97,18 @@ FALLBACK_STRATEGIES: frozenset[RouteStrategy] = frozenset({"insulated-wire", "to
 #: touches only its two ends.
 RAIL_STRATEGIES: frozenset[RouteStrategy] = frozenset({"solder-trace", "solder-trace-wired"})
 
+#: The preferences that commit a builder to copper traces, for whom a wire is something
+#: that went wrong rather than a primitive with a price -- see ``_starting_orders``.
+SOLDER_PREFERENCES: frozenset[StrategyPreference] = frozenset({"solder", "lead-bend"})
+
 
 @dataclass(frozen=True, slots=True)
 class AutorouteOptions:
     router: RouterOptions = DEFAULT_ROUTER_OPTIONS
-    #: Ordering attempts, including the first. 1 disables rip-up entirely, which is what
-    #: a test wanting to observe a single pass in isolation should ask for.
+    #: Ordering attempts from the criticality order, including the first. 1 disables
+    #: rip-up entirely -- and the other starting orders a builder committed to solder is
+    #: given with it -- which is what a test wanting to observe a single pass in isolation
+    #: should ask for.
     max_passes: int = 3
     #: Charged once per separate conductor when comparing two ways to route one net
     #: (PLAN.md Sec 6.1: "a fixed penalty for every additional conductor"). Cost alone
@@ -220,7 +233,7 @@ def plan_autoroute(
     if not wanted:
         return _empty_plan(doc, only_net_ids)
 
-    order = _criticality_order(doc, wanted)
+    order, *other_starts = _starting_orders(doc, lookup, wanted, options)
     seen_orders: list[tuple[NetId, ...]] = []
     best: _Attempt | None = None
     passes_run = 0
@@ -244,6 +257,19 @@ def plan_autoroute(
         order = promoted
 
     assert best is not None  # The loop runs at least once, since max_passes >= 1.
+
+    # A builder committed to solder is also given the plans two other starting orders
+    # produce -- see _starting_orders. After the rip-up above rather than instead of it,
+    # so the plan can only get better than it was; and not at all when max_passes asks for
+    # a single pass, which is what a test observing one pass in isolation is promised.
+    for start in other_starts if options.max_passes > 1 else ():
+        if not _another_order_could_help(best):
+            break
+        passes_run += 1
+        attempt = _route_in_order(doc, lookup, start, options, passes_run)
+        if _build_key(attempt, doc) < _build_key(best, doc):
+            best = attempt
+
     return _to_plan(best, passes_run)
 
 
@@ -970,6 +996,71 @@ def _criticality_order(doc: PerfDocument, wanted: tuple[NetId, ...]) -> tuple[Ne
             ),
         )
     )
+
+
+def _committed_to_solder(options: AutorouteOptions) -> bool:
+    """Whether every connection has to be a trace, or wants to be one badly enough that a
+    wire is a failure rather than a price: a solder or lead-bend preference, or a crossing
+    policy that allows no wire at all."""
+    router = options.router
+    return router.prefer in SOLDER_PREFERENCES or router.crossing_policy == "refuse"
+
+
+def _starting_orders(
+    doc: PerfDocument,
+    lookup: FootprintLookup,
+    wanted: tuple[NetId, ...],
+    options: AutorouteOptions,
+) -> tuple[tuple[NetId, ...], ...]:
+    """The orders a plan starts from: criticality alone, unless the builder is committed
+    to solder, and then criticality, its reverse, and the shortest nets first.
+
+    Criticality puts ground and power down first, and for a builder who may use wire that
+    is right -- a signal that meets a rail crosses it with a wire at the price of any other
+    wire. A builder committed to solder has no such way across. A TRACE CANNOT CROSS A
+    TRACE, so a rail laid first is a wall: every signal on the far side of it either hops
+    it with a jumper they did not want, or, when no wire is allowed at all, is not routed.
+
+    No single order wins, so the plan is the best of them. Measured over the six examples
+    and fifteen fixtures in solder style: 79 jumpers where criticality alone was tried, 56
+    now -- ne555 goes from 6 to 1, lpb1-booster from 6 to 1, atmega328-relay from 29 to 23
+    -- and `dense` stays as it was, because criticality is the best order for it. With no
+    wire allowed at all, 41 connections left unrouted become 34. No board is worse on any
+    of the three counts, and it cannot be: the other orders are tried AFTER the usual
+    rip-up from criticality and replace its plan only when they beat it.
+
+    For "balanced" and "wire" the other two orders found nothing, and the placer prices
+    every candidate placement through a balanced plan, so they keep the one order they had
+    -- which is also what keeps every golden route and the guide's own golden where it is.
+    """
+    critical = _criticality_order(doc, wanted)
+    if not _committed_to_solder(options):
+        return (critical,)
+    position = {net_id: index for index, net_id in enumerate(critical)}
+    length = {entry.net_id: sum(link.length_mm for link in entry.links) for entry in ratsnest(doc, lookup)}
+    shortest = tuple(sorted(wanted, key=lambda net_id: (length.get(net_id, 0.0), position[net_id])))
+    return tuple(dict.fromkeys((critical, critical[::-1], shortest)))
+
+
+def _another_order_could_help(attempt: _Attempt) -> bool:
+    """Whether a plan leaves anything a different starting order could improve on: a
+    connection left unrouted, or a wire in a board meant to be built without one."""
+    return any(outcome.unrouted for outcome in attempt.outcomes) or any(
+        conductor.kind in _WIRE_KINDS for conductor in attempt.conductors
+    )
+
+
+def _build_key(attempt: _Attempt, doc: PerfDocument) -> tuple[int, float]:
+    """``VariantScore.key`` for an attempt: unrouted connections first, then what the board
+    costs a person to build.
+
+    Two starting orders are compared on this rather than on ``_rank``'s router cost for the
+    reason ``plan_best_autoroute`` compares styles on it. A style's cost table is a lever
+    that steers the search, and under the solder table two hops can come out cheaper than
+    one because the traces around them are shorter -- on ``dense`` the router's cost picks
+    the plan with two jumpers where the builder is better off with one.
+    """
+    return score_plan(_to_plan(attempt, attempt.pass_number), doc).key()
 
 
 def _nets_to_promote(attempt: _Attempt) -> tuple[NetId, ...]:

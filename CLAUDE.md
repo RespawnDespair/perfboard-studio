@@ -178,6 +178,11 @@ tests pass". Three things depend on it:
   `*.expected.json` arrays exactly.
 - `test_autoroute.py` — the golden routes reproduce only with the default cost table, so
   changing `DEFAULT_ROUTER_COSTS` is a deliberate act with fixture regeneration attached.
+  The planner's other starting orders (`autoroute._starting_orders`) go only to a builder
+  committed to solder — a solder or lead-bend style, or no wire at all — because a trace
+  cannot cross the ground rail laid first. A balanced plan starts from criticality alone,
+  which is why the goldens, the guide golden and the placer (which prices every candidate
+  placement through a balanced plan) did not move and did not slow down.
 
 **Three recorded divergences, none of them a hole in the proof.** The
 fixtures prove the port reproduces the original; that cannot also mean the port may never

@@ -310,13 +310,14 @@ DEFAULT_ROUTER_OPTIONS = RouterOptions()
 #:   "solder"      Solder wherever solder reaches. R5' still steers the search and still
 #:                 becomes a measurement in the build guide, but it no longer vetoes a
 #:                 trace; wire is dear, and a long run gets a spine rather than becoming
-#:                 a wire. NE555: all 14 connections are traces (7 plain, 6 hopped over a
-#:                 crossing, 1 spined) and not one is a wire.
+#:                 a wire. NE555: all 14 connections are traces (11 plain, 2 spined, 1
+#:                 hopped over a crossing) and not one is a wire -- the planner tries
+#:                 other net orders for this style, which is what took the hops from 6.
 #:   "wire"        For someone who would rather cut and dress wire than drag solder
 #:                 along a row of pads. Wire is cheap and traces are not. NE555: 14 wires.
 #:   "lead-bend"   Fold the component's own leg wherever it reaches, then solder, then
 #:                 wire. The cheapest primitive there is, and the only one the router
-#:                 never used to produce at all. NE555: 4 bends and 10 traces.
+#:                 never used to produce at all. NE555: 5 bends and 9 traces.
 #:
 #: THE COSTS ARE NOT WHAT MAKES THESE HOLD. Every style except "balanced" also sets
 #: ``RouterOptions.prefer``, and that is what turns each one from a tendency into a

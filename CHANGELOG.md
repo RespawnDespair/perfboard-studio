@@ -48,6 +48,15 @@ closed without a bump.
 
 ### Changed
 
+- **Solder-first routing lays far fewer jumpers.** The planner routed ground and power
+  first, and for a builder committed to solder that rail is a wall: a trace cannot cross a
+  trace, so every signal beyond it hopped over with a piece of wire. A builder who chose
+  the Solder or Lead-bend style — or allows no wire at all — is now also given the plans
+  two other net orders produce, and the one cheapest to build wins. Over the examples and
+  fixtures, 79 jumpers become 56 (NE555 6 → 1, lpb1-booster 6 → 1, atmega328-relay 29 →
+  23), and with no wire allowed 41 connections left for the builder become 34. No board
+  comes out worse; Balanced and Wire routing, and auto-place, are exactly as they were.
+
 - **Every export asks where it goes.** The build guide, the schematic, the 1:1 PDF and
   the 3D snapshot wrote fixed names beside the board — or into whatever folder the
   application started in, for a board never saved — and replaced what was there without
