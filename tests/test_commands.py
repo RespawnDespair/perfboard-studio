@@ -35,6 +35,7 @@ from perfboard_studio.commands import (
     AddCutPayload,
     AddNetPayload,
     AddPartPayload,
+    AddPartsPayload,
     ComponentPlacement,
     ConnectPinsPayload,
     DeleteComponentPayload,
@@ -1422,6 +1423,33 @@ def test_a_part_can_enter_the_design_without_a_place_on_the_board():
     assert len(bus.document.parts) == 1
     part = bus.document.parts[0]
     assert (part.ref, part.value, part.footprint_id) == ("R1", "10k", "r-axial-3")
+
+
+def test_a_netlists_parts_enter_the_design_as_one_step_or_not_at_all():
+    """What an import brings: thirty parts added one part.add at a time were thirty
+    presses of Ctrl+Z, each leaving a circuit part-imported. One part.addMany, one undo,
+    and a reference already taken refuses the lot rather than half of it."""
+    bus = new_bus()
+    parts = tuple(
+        AddPartPayload(ref=f"R{i}", footprint_id="r-axial-3", value="10k") for i in range(1, 4)
+    )
+
+    result = bus.dispatch("part.addMany", AddPartsPayload(parts=parts, label="Add 3 imported"))
+
+    assert result.ok, result.message
+    assert [p.ref for p in bus.document.parts] == ["R1", "R2", "R3"]
+    assert result.description == "Add 3 imported"
+    bus.undo()
+    assert bus.document.parts == ()
+
+    add_part(bus, ref="R2")
+    before = bus.document
+    refused = bus.dispatch("part.addMany", AddPartsPayload(parts=parts))
+    assert not refused.ok and refused.code == "duplicate-ref"
+    assert bus.document is before
+
+    empty = bus.dispatch("part.addMany", AddPartsPayload(parts=()))
+    assert not empty.ok and empty.code == "empty-batch"
 
 
 def test_a_reference_is_unique_across_the_board_and_the_design():
