@@ -121,6 +121,15 @@ closed without a bump.
   names are placed clear of each other and of the parts' text; every power glyph says which
   supply it is; and the panel draws text at the size the layout left room for.
 
+- **What just happened is said in the window's language.** A command describes itself in
+  English -- that sentence is the undo label, the journal line and what an agent reads -- so
+  a Turkish window's status bar said "Add J1 PWR to the schematic" and its Edit menu "Geri
+  Al Place and arrange 8 part(s)". Every sentence the commands, the planners and the
+  window's own labels produce is now recognised where it is shown and said in Turkish
+  ("Şemaya J1 PWR ekle", "7/7 nette 14 bağlantı yönlendirildi"), a conductor in the guide's
+  own words. A test runs a session of nearly every command and fails on any sentence that
+  comes back untranslated.
+
 - **Qt's own buttons speak the window's language**: OK, Cancel, Close, Yes and No are
   Tamam, İptal, Kapat, Evet and Hayır in Turkish.
 
@@ -204,6 +213,12 @@ closed without a bump.
   both.
 
 ### Fixed
+
+- **A reopened board no longer refuses its next part.** Ids were counted back out of a
+  loaded document for components, copper, cuts and nets only: a board saved with a part in
+  its design refused the next Add a Part as a duplicate of "part-1", and every new board --
+  which opens with its corner holes -- refused its first extra mounting hole. Every kind of
+  generated id is counted now.
 
 - **The build guide panel said where twice and showed neither.** Each step read "R1 240 —
   J21 → J18, 3 holes apart" beside a Where column saying "J21 → J18, 3 holes apart" again,

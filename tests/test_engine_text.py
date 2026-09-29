@@ -1,0 +1,315 @@
+"""Tests for the engine's sentences said in the window's language (ui/engine_text.py).
+
+The load-bearing test is the session: a real document, a real run of nearly every command
+and every planner, and every sentence they produced read back in Turkish. A ``describe``
+added without a template is exactly a sentence that comes back unchanged, so that is what
+fails -- the same drift ``test_i18n`` guards against for the interface's own strings.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import re
+from collections.abc import Iterator
+from pathlib import Path
+
+import pytest
+
+from perfboard_studio import persist
+from perfboard_studio.autoroute import describe as describe_route
+from perfboard_studio.autoroute import describe_reroute, plan_autoroute, plan_reroute
+from perfboard_studio.command import CommandBus, CommandContext
+from perfboard_studio.commands import (
+    AddBoardNotePayload,
+    AddConductorPayload,
+    AddEdgeConnectorPayload,
+    AddMountingHolePayload,
+    AddNetPayload,
+    AddPartPayload,
+    AddPartsPayload,
+    AddSheetNotePayload,
+    ApplyBoardPresetPayload,
+    AutoSymbolsPayload,
+    ConnectPinsPayload,
+    DeleteBoardNotesPayload,
+    DeleteConductorPayload,
+    DeleteConductorsPayload,
+    DeleteNetPayload,
+    DeletePartPayload,
+    DeleteSheetNotesPayload,
+    DeleteSheetWiresPayload,
+    DisconnectPinsPayload,
+    DrawSheetWirePayload,
+    ImportNetlistPayload,
+    MirrorComponentPayload,
+    MoveComponentPayload,
+    MoveSymbolsPayload,
+    PartPlacement,
+    PlacePartsPayload,
+    RenameDocumentPayload,
+    RotateComponentPayload,
+    SetBoardPayload,
+    SetHeightLimitPayload,
+    UnplaceComponentPayload,
+    UpdateComponentPayload,
+    UpdateNetPayload,
+    UpdatePartPayload,
+    create_document_id_generator,
+    create_standard_registry,
+)
+from perfboard_studio.footprints import footprint_lookup
+from perfboard_studio.geometry import STANDARD_PRESETS, board_from_preset
+from perfboard_studio.model import HoleCoord, NetNode, Point2, SheetWire, SymbolPlacement
+from perfboard_studio.placer import PlacementOptions, plan_placement
+from perfboard_studio.placer import describe as describe_placement
+from perfboard_studio.ui.engine_text import TEMPLATES, say
+from perfboard_studio.ui.i18n import TURKISH, language, set_language
+
+EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "ne555-astable.perf"
+LOOKUP = footprint_lookup()
+
+
+@pytest.fixture
+def turkish() -> Iterator[None]:
+    before = language()
+    set_language("tr")
+    try:
+        yield
+    finally:
+        set_language(before)
+
+
+def _fields(template: str) -> set[str]:
+    return set(re.findall(r"\{(\w+)\}", template))
+
+
+def test_every_template_is_in_the_catalogue_with_the_same_fields() -> None:
+    """A template without a translation is a sentence that stays English; one whose
+    translation dropped a field is a sentence that raises when it is shown."""
+    for template in TEMPLATES:
+        assert template in TURKISH, f"no Turkish for {template!r}"
+        assert _fields(TURKISH[template]) == _fields(template), template
+
+
+def test_no_two_templates_are_the_same() -> None:
+    assert len(set(TEMPLATES)) == len(TEMPLATES)
+
+
+def test_english_is_left_alone() -> None:
+    before = language()
+    set_language("en")
+    try:
+        assert say("Add R1 10k to the schematic") == "Add R1 10k to the schematic"
+    finally:
+        set_language(before)
+
+
+def test_a_field_is_only_what_it_may_be(turkish: None) -> None:
+    """"Add R1 10k to the schematic" is also "Add {kind} {start} to {end}" with a conductor
+    called R1 -- unless a kind can only be one of the six, which is what keeps them apart."""
+    assert say("Add R1 10k to the schematic") == "Şemaya R1 10k ekle"
+    assert say("Add R1 to the schematic") == "Şemaya R1 ekle"
+    assert say("Delete R1 and its 2 connection(s)") == "R1 parçasını ve 2 bağlantısını sil"
+    assert say("Delete R1") == "R1 parçasını sil"
+    assert say("Place R4 at C7") == "R4 parçasını C7 deliğine yerleştir"
+
+
+def test_a_sentence_starts_with_a_capital_whatever_field_it_starts_with(turkish: None) -> None:
+    """"sol kenara ..." opened a sentence in the undo menu. A clause inside a summary is
+    left as it is: it follows a comma."""
+    assert say("Add 4-finger edge connector on the left edge").startswith("Sol kenara")
+    assert say("3 part(s) placed, about the same connection length").endswith(
+        ", bağlantı uzunluğu hemen hemen aynı"
+    )
+
+
+def test_a_conductor_is_named_in_the_guides_own_words(turkish: None) -> None:
+    """One vocabulary: the guide calls a bare wire "çıplak tel", and so does the undo menu."""
+    from perfboard_studio.guide import conductor_word
+
+    said = say("Add bare-wire C7 to C11")
+    assert conductor_word("bare-wire", "tr") in said
+    assert "C7" in said and "C11" in said
+
+
+def test_a_summary_is_translated_clause_by_clause(turkish: None) -> None:
+    said = say("14 connection(s) routed across 7/7 nets, 2 needed an insulated wire or jumper")
+    assert said == "7/7 nette 14 bağlantı yönlendirildi, 2 tanesi izoleli tel ya da jumper istedi"
+    # ...and a clause nobody has a template for stays as it came, beside the ones that do.
+    assert say("3 part(s) placed, something new") == "3 parça yerleşti, something new"
+
+
+# ---------------------------------------------------------------------------
+# The session
+# ---------------------------------------------------------------------------
+
+
+def _session() -> list[str]:
+    """What a working session says, in the engine's own English, command by command."""
+    document = persist.deserialize_document(EXAMPLE.read_text(encoding="utf-8")).document
+    bus = CommandBus(
+        document,
+        create_standard_registry(),
+        CommandContext(next_id=create_document_id_generator(document)),
+    )
+    said: list[str] = []
+
+    def run(kind: str, payload: object) -> None:
+        result = bus.dispatch(kind, payload)
+        assert result.ok, (kind, result.code, result.message)
+        said.append(result.description)
+
+    def component(ref: str):
+        return next(c for c in bus.document.components if c.ref == ref)
+
+    def part(ref: str):
+        return next(p for p in bus.document.parts if p.ref == ref)
+
+    def net(name: str):
+        return next(n for n in bus.document.nets if n.name == name)
+
+    # Copper, planned and committed the way the window does it.
+    conductors = bus.document.conductors
+    run("conductor.delete", DeleteConductorPayload(id=conductors[0].id))
+    run(
+        "conductor.deleteMany",
+        DeleteConductorsPayload(ids=tuple(c.id for c in bus.document.conductors)),
+    )
+    routed = plan_autoroute(bus.document, LOOKUP)
+    said.append(describe_route(routed))
+    first = routed.conductors[0]
+    run("conductor.add", AddConductorPayload(conductor=first))
+    run("conductor.delete", DeleteConductorPayload(id=bus.document.conductors[-1].id))
+    run("conductor.addMany", routed.payload())
+    rerouted = plan_reroute(bus.document, LOOKUP)
+    said.append(describe_reroute(rerouted))
+    run("conductor.replace", rerouted.payload())
+    placed = plan_placement(bus.document, LOOKUP, PlacementOptions(seed=0, iterations=200, restarts=1))
+    said.append(describe_placement(placed))
+
+    # Parts on the board.
+    r1 = component("R1")
+    run("component.move", MoveComponentPayload(id=r1.id, anchor=HoleCoord(1, 15)))
+    run("component.rotate", RotateComponentPayload(id=r1.id, rotation=90))
+    run("component.mirror", MirrorComponentPayload(id=r1.id, mirrored=True))
+    run("component.mirror", MirrorComponentPayload(id=r1.id, mirrored=False))
+    run("component.update", UpdateComponentPayload(id=r1.id, value="22k"))
+    run("component.unplace", UnplaceComponentPayload(id=r1.id))
+    run(
+        "part.place",
+        PlacePartsPayload(placements=(PartPlacement(id=r1.id, anchor=HoleCoord(1, 15), rotation=0),)),
+    )
+
+    # The design.
+    run("part.add", AddPartPayload(ref="R9", footprint_id="r-axial-3", value="1k"))
+    run("part.add", AddPartPayload(ref="R10", footprint_id="r-axial-3"))
+    run(
+        "part.addMany",
+        AddPartsPayload(
+            parts=(
+                AddPartPayload(ref="R11", footprint_id="r-axial-3"),
+                AddPartPayload(ref="R12", footprint_id="r-axial-3"),
+            )
+        ),
+    )
+    run("part.update", UpdatePartPayload(id=part("R9").id, value="2k"))
+    run(
+        "net.add",
+        AddNetPayload(
+            name="SENSE",
+            nodes=(NetNode(component_ref="R9", pin="1"), NetNode(component_ref="R10", pin="1")),
+        ),
+    )
+    run("net.add", AddNetPayload(name="SPARE"))
+    run("net.connect", ConnectPinsPayload(id=net("SENSE").id, nodes=(NetNode("R11", "1"),)))
+    run(
+        "net.connect",
+        ConnectPinsPayload(id=net("SENSE").id, nodes=(NetNode("R11", "2"), NetNode("R12", "1"))),
+    )
+    run("net.disconnect", DisconnectPinsPayload(id=net("SENSE").id, nodes=(NetNode("R11", "2"),)))
+    run(
+        "net.disconnect",
+        DisconnectPinsPayload(
+            id=net("SENSE").id, nodes=(NetNode("R10", "1"), NetNode("R11", "1"))
+        ),
+    )
+    run("net.update", UpdateNetPayload(id=net("SENSE").id, name="SENSE2"))
+    run("net.update", UpdateNetPayload(id=net("SENSE2").id, net_class="power"))
+    run("net.delete", DeleteNetPayload(id=net("SPARE").id))
+    run("part.delete", DeletePartPayload(id=part("R12").id))
+    run("part.delete", DeletePartPayload(id=part("R10").id))
+    run(
+        "symbol.move",
+        MoveSymbolsPayload(
+            placements=(
+                SymbolPlacement(id=part("R9").id, at=Point2(10.16, 10.16)),
+                SymbolPlacement(id=part("R11").id, at=Point2(40.64, 10.16)),
+            )
+        ),
+    )
+    run(
+        "symbol.move",
+        MoveSymbolsPayload(placements=(SymbolPlacement(id=part("R9").id, at=Point2(12.7, 10.16)),)),
+    )
+    wire = SheetWire(
+        a=NetNode("R9", "2"),
+        b=NetNode("R11", "2"),
+        path=(Point2(30.48, 15.24), Point2(40.64, 15.24)),
+    )
+    run("sheet.wire", DrawSheetWirePayload(wire=wire))
+    run("sheet.wire.delete", DeleteSheetWiresPayload(wires=bus.document.sheet_wires))
+    run("symbol.auto", AutoSymbolsPayload(ids=(part("R9").id,)))
+    run("symbol.auto", AutoSymbolsPayload())
+    run(
+        "sheet.note.add",
+        AddSheetNotePayload(kind="rectangle", at=Point2(0.0, 0.0), to=Point2(10.0, 10.0)),
+    )
+    run(
+        "sheet.note.add",
+        AddSheetNotePayload(kind="text", at=Point2(0.0, 0.0), to=Point2(0.0, 0.0), text="Input"),
+    )
+    run(
+        "sheet.note.delete",
+        DeleteSheetNotesPayload(ids=tuple(n.id for n in bus.document.sheet_notes)),
+    )
+
+    # The board itself.
+    run("board.note.add", AddBoardNotePayload(text="IN", at=HoleCoord(1, 1)))
+    run("board.note.delete", DeleteBoardNotesPayload(ids=tuple(n.id for n in bus.document.board_notes)))
+    run("mounting-hole.add", AddMountingHolePayload(at=HoleCoord(6, 18)))
+    run("height-limit.set", SetHeightLimitPayload(height_limit_mm=20.0))
+    run("height-limit.set", SetHeightLimitPayload(height_limit_mm=None))
+    run("document.rename", RenameDocumentPayload(name="Blinker"))
+    board = bus.document.board
+    run("board.set", SetBoardPayload(board=dataclasses.replace(board, material="FR2")))
+    preset = next(p for p in STANDARD_PRESETS if p.cols >= board.cols and p.rows >= board.rows)
+    run(
+        "board.applyPreset",
+        ApplyBoardPresetPayload(board=board_from_preset(preset, board)),
+    )
+    run(
+        "edge-connector.add",
+        AddEdgeConnectorPayload(edge="left", start=2, count=4),
+    )
+    run("netlist.import", ImportNetlistPayload(nets=bus.document.nets))
+    return said
+
+
+def test_everything_a_session_says_comes_out_in_turkish(turkish: None) -> None:
+    said = _session()
+    assert len(said) >= 40, "the session stopped short of what it is here to exercise"
+    untranslated = [
+        sentence
+        for sentence in said
+        if any(say(clause) == clause for clause in sentence.split(", ")) and say(sentence) == sentence
+    ]
+    assert untranslated == [], untranslated
+    # ...and clause by clause, for the planners' summaries.
+    leftover = [
+        (sentence, clause)
+        for sentence in said
+        if say(sentence) != sentence
+        for clause in say(sentence).split(", ")
+        if clause in sentence.split(", ")
+    ]
+    assert leftover == [], leftover

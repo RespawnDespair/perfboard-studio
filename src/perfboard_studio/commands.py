@@ -2110,7 +2110,14 @@ class _MoveSymbols:
         if p.label:
             return p.label
         if len(p.placements) == 1:
-            return f"Move {p.placements[0].id} on the sheet"
+            # By its reference, which is what the sheet shows: "Move part-7" named a
+            # symbol by an id nobody on the screen could see.
+            moved = p.placements[0].id
+            refs = {part.id: part.ref for part in doc.parts} | {
+                component.id: component.ref for component in doc.components
+            }
+            named = refs.get(moved, moved)
+            return f"Move {named} on the sheet"
         return f"Move {len(p.placements)} symbol(s) on the sheet"
 
 

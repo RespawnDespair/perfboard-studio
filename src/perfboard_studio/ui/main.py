@@ -284,6 +284,7 @@ from .boardcolors import choose as choose_board_colour
 from .boardcolors import chosen_key as chosen_board_colour
 from .boardpreview import render_board, with_arrangement, with_board
 from .clipboard import block_from_json, block_to_json, paste_payload, paste_position
+from .engine_text import net_class_word, say
 from .export_pdf import export_pdf
 from .export_schematic import SchematicRenderError, svg_to_pdf, svg_to_png
 from .i18n import language as current_language
@@ -2663,14 +2664,6 @@ def _shortcut_rows(actions: Any) -> list[tuple[str, str]]:
         for action in actions
         if not action.isSeparator() and not action.shortcut().isEmpty()
     ]
-
-
-def net_class_word(net_class: str) -> str:
-    """A net's class as the window's language says it -- the Nets panel's column showed
-    the engine's own id, "ground", in a Turkish window."""
-    return {"signal": t("signal"), "ground": t("ground"), "power": t("power")}.get(
-        net_class, net_class
-    )
 
 
 def _plain(label: str) -> str:
@@ -5689,7 +5682,7 @@ class MainWindow(QMainWindow):
             else:
                 note = ""
             self.statusBar().showMessage(
-                f"{result.description}{note} — {t('Esc to stop placing.')}", 6000
+                f"{say(result.description)}{note} — {t('Esc to stop placing.')}", 6000
             )
             self._on_placement_armed(self.scene.armed_footprint_id or "")
             self._remember_a_part_was_placed()
@@ -6344,7 +6337,7 @@ class MainWindow(QMainWindow):
         if not result.ok:
             self.statusBar().showMessage(f"[{result.code}] {result.message}", 8000)
             return
-        self.statusBar().showMessage(result.description, 6000)
+        self.statusBar().showMessage(say(result.description), 6000)
 
     def _on_sheet_tee_started(self, wire: str) -> None:
         self.statusBar().showMessage(
@@ -6379,7 +6372,7 @@ class MainWindow(QMainWindow):
         if not result.ok:
             self.statusBar().showMessage(f"[{result.code}] {result.message}", 8000)
             return
-        self.statusBar().showMessage(result.description, 6000)
+        self.statusBar().showMessage(say(result.description), 6000)
 
     def on_sheet_label(self, ref: str, pin: str) -> None:
         """Join a pin to a net by NAME rather than by drawing a line to it.
@@ -6429,7 +6422,7 @@ class MainWindow(QMainWindow):
         if not result.ok:
             self.statusBar().showMessage(f"[{result.code}] {result.message}", 8000)
             return
-        self.statusBar().showMessage(result.description, 6000)
+        self.statusBar().showMessage(say(result.description), 6000)
 
     def on_sheet_note_drawn(
         self, kind: str, x0: float, y0: float, x1: float, y1: float
@@ -6458,7 +6451,7 @@ class MainWindow(QMainWindow):
         if not result.ok:
             self.statusBar().showMessage(f"[{result.code}] {result.message}", 8000)
             return
-        self.statusBar().showMessage(result.description, 6000)
+        self.statusBar().showMessage(say(result.description), 6000)
         self.schematic_view.set_tool("select")
         if hasattr(self, "act_sheet_tool"):
             self.act_sheet_tool["select"].setChecked(True)
@@ -6502,7 +6495,7 @@ class MainWindow(QMainWindow):
                 t("Nothing on this sheet has been moved by hand."), 6000
             )
             return
-        self.statusBar().showMessage(result.description, 6000)
+        self.statusBar().showMessage(say(result.description), 6000)
 
     def _on_part_dropped(self, ref: str, hole: object) -> None:
         """A symbol was dragged off the sheet and dropped on a hole.
@@ -6538,7 +6531,7 @@ class MainWindow(QMainWindow):
         if not result.ok:
             self.statusBar().showMessage(f"[{result.code}] {result.message}", 8000)
             return
-        self.statusBar().showMessage(result.description, 6000)
+        self.statusBar().showMessage(say(result.description), 6000)
         self._sync_schematic_highlight()
 
     def _on_footprint_dropped(self, footprint_id: str, hole: object) -> None:
@@ -6606,7 +6599,7 @@ class MainWindow(QMainWindow):
             return
         self._schematic_ref = ref
         self._sync_schematic_highlight()
-        self.statusBar().showMessage(result.description, 6000)
+        self.statusBar().showMessage(say(result.description), 6000)
 
     def on_schematic_part_properties(self, part_id: str) -> None:
         """The same fields ``AddPartDialog`` asks for, on a part that exists."""
@@ -6723,7 +6716,7 @@ class MainWindow(QMainWindow):
             {ref: Point2(x=x, y=y)}, f"Add {ref} to the sheet at ({x:.0f}, {y:.0f})"
         )
         self._sync_schematic_highlight()
-        self.statusBar().showMessage(result.description, 6000)
+        self.statusBar().showMessage(say(result.description), 6000)
 
     def _on_schematic_pin_clicked(self, ref: str, pin: str) -> None:
         """Say what the half-made pair is waiting for, and nothing else.
@@ -6781,7 +6774,7 @@ class MainWindow(QMainWindow):
         if component is None:
             self._schematic_ref = None
         self._sync_schematic_highlight()
-        self.statusBar().showMessage(result.description, 6000)
+        self.statusBar().showMessage(say(result.description), 6000)
 
     # -- editing the circuit from the sheet ------------------------------------
     #
@@ -6827,7 +6820,7 @@ class MainWindow(QMainWindow):
             return
         self._schematic_ref = chosen
         self._sync_schematic_highlight()
-        self.statusBar().showMessage(result.description, 6000)
+        self.statusBar().showMessage(say(result.description), 6000)
 
     def _duplicate_symbol(self, ref: str) -> None:
         """Another part of the same kind and value, with the next free designator.
@@ -6862,7 +6855,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"[{result.code}] {result.message}", 8000)
             return
         self._sync_schematic_highlight()
-        self.statusBar().showMessage(result.description, 6000)
+        self.statusBar().showMessage(say(result.description), 6000)
 
     def _auto_one_symbol(self, part_id: str) -> None:
         """Give one symbol back to the layout, leaving the rest where they were put.
@@ -6873,7 +6866,7 @@ class MainWindow(QMainWindow):
         """
         result = self.bus.dispatch("symbol.auto", AutoSymbolsPayload(ids=(part_id,)))
         self.statusBar().showMessage(
-            result.description if result.ok else f"[{result.code}] {result.message}", 6000
+            say(result.description) if result.ok else f"[{result.code}] {result.message}", 6000
         )
 
     def _disconnect_one_pin(self, net_id: NetId, node: NetNode) -> None:
@@ -6886,7 +6879,7 @@ class MainWindow(QMainWindow):
             "net.disconnect", DisconnectPinsPayload(id=net_id, nodes=(node,))
         )
         self.statusBar().showMessage(
-            result.description if result.ok else f"[{result.code}] {result.message}", 6000
+            say(result.description) if result.ok else f"[{result.code}] {result.message}", 6000
         )
 
     def _rename_net(self, net_id: NetId) -> None:
@@ -6913,7 +6906,7 @@ class MainWindow(QMainWindow):
         if not result.ok:
             self.statusBar().showMessage(f"[{result.code}] {result.message}", 8000)
             return
-        self.statusBar().showMessage(result.description, 6000)
+        self.statusBar().showMessage(say(result.description), 6000)
 
     def _set_net_class(self, net_id: NetId, net_class: NetClass) -> None:
         """Signal, ground or power -- which is not a label on this sheet.
@@ -6929,7 +6922,7 @@ class MainWindow(QMainWindow):
             "net.update", UpdateNetPayload(id=net_id, net_class=net_class)
         )
         self.statusBar().showMessage(
-            result.description if result.ok else f"[{result.code}] {result.message}", 6000
+            say(result.description) if result.ok else f"[{result.code}] {result.message}", 6000
         )
 
     def on_schematic_place_all(self) -> None:
@@ -7001,7 +6994,7 @@ class MainWindow(QMainWindow):
             return
         note = "; " + t("{count} would not fit").format(count=unplaced) if unplaced else ""
         self.statusBar().showMessage(
-            f"{result.description}{note}. "
+            f"{say(result.description)}{note}. "
             + t("Ctrl+R routes it; Ctrl+Shift+A arranges it again from a different seed."),
             12000,
         )
@@ -7607,7 +7600,7 @@ class MainWindow(QMainWindow):
         if not result.ok:
             self.statusBar().showMessage(f"[{result.code}] {result.message}", 8000)
             return
-        self.statusBar().showMessage(result.description, 6000)
+        self.statusBar().showMessage(say(result.description), 6000)
 
     def _add_net_entries(self, menu: QMenu, net_id: str) -> None:
         """What can be done to the net a wire draws.
@@ -7773,7 +7766,7 @@ class MainWindow(QMainWindow):
         # document to work that out -- so placing R4 has to move the banner on to R5.
         self._refresh_mode_banner()
         if entry is not None:
-            self.statusBar().showMessage(entry.description, 6000)
+            self.statusBar().showMessage(say(entry.description), 6000)
 
     #: Commands after which a net's existing copper describes a board that no longer
     #: exists. Not a guess: the bus says exactly which command ran.
@@ -8452,7 +8445,7 @@ class MainWindow(QMainWindow):
             # of work, and one that vanished while somebody looked back at the board read
             # exactly like the button doing nothing.
             self.statusBar().showMessage(
-                f"{describe_placement(plan)} ({elapsed:.0f} ms). "
+                f"{say(describe_placement(plan))} ({elapsed:.0f} ms). "
                 + t("Pressing Auto-place again searches from another seed."),
                 0,
             )
@@ -8470,7 +8463,7 @@ class MainWindow(QMainWindow):
 
         stale = len(stale_conductor_ids(self.bus.document, self.lookup))
         note = f"  ·  {stale} conductor(s) are now stale; Ctrl+R clears and re-routes" if stale else ""
-        self.statusBar().showMessage(f"{describe_placement(plan)}{note}", 0)
+        self.statusBar().showMessage(f"{say(describe_placement(plan))}{note}", 0)
 
     def _confirm_placement(self, plan: PlacementPlan, elapsed_ms: float) -> bool:
         moving = t("{moved} of {movable} movable part(s) move").format(
@@ -8513,7 +8506,7 @@ class MainWindow(QMainWindow):
 
         box = QMessageBox(self)
         box.setWindowTitle(t("Apply this placement?"))
-        box.setText(f"<b>{describe_placement(plan)}</b>  <span>({elapsed_ms:.0f} ms)</span>")
+        box.setText(f"<b>{say(describe_placement(plan))}</b>  <span>({elapsed_ms:.0f} ms)</span>")
         box.setInformativeText("\n".join(detail))
         box.setStandardButtons(QMessageBox.StandardButton.Apply | QMessageBox.StandardButton.Cancel)
         box.setDefaultButton(QMessageBox.StandardButton.Apply)
@@ -8669,7 +8662,7 @@ class MainWindow(QMainWindow):
             # twice over, since the stale-nets question below lands here on Yes as well.
             body = (
                 (f"<p>{why}</p>" if why else "")
-                + f"<b>{describe_reroute(plan)}</b><p>"
+                + f"<b>{say(describe_reroute(plan))}</b><p>"
                 + t(
                     "{removed} existing conductor(s) will be removed and {planned} planned "
                     "in their place. Copper with no net assigned is left alone."
@@ -8690,7 +8683,7 @@ class MainWindow(QMainWindow):
 
         rerouted = set(only_net_ids) if only_net_ids else {n.id for n in self.bus.document.nets}
         self._nets_from_old_layout -= rerouted
-        self.statusBar().showMessage(f"{describe_reroute(plan)}  ({elapsed:.0f} ms)", 0)
+        self.statusBar().showMessage(f"{say(describe_reroute(plan))}  ({elapsed:.0f} ms)", 0)
         self._report_unrouted_items(
             [item for outcome in plan.nets for item in outcome.unrouted]
         )
@@ -8823,7 +8816,7 @@ class MainWindow(QMainWindow):
                 )
                 return
             self.statusBar().showMessage(
-                f"{t('Nothing to route:')} {describe_plan(plan)}{cleared_note} ({elapsed:.0f} ms)",
+                f"{t('Nothing to route:')} {say(describe_plan(plan))}{cleared_note} ({elapsed:.0f} ms)",
                 8000,
             )
             return
@@ -8847,7 +8840,7 @@ class MainWindow(QMainWindow):
         # miss (PLAN.md Sec 13), so they go in the status line and, if there are any, into a
         # dialog that names each one.
         self.statusBar().showMessage(
-            f"{describe_plan(plan)}{cleared_note}{style_note}  ({elapsed:.0f} ms)", 0
+            f"{say(describe_plan(plan))}{cleared_note}{style_note}  ({elapsed:.0f} ms)", 0
         )
         self._report_unrouted(plan)
 
@@ -8870,7 +8863,7 @@ class MainWindow(QMainWindow):
 
         if plan.is_empty:
             self.statusBar().showMessage(
-                f"{describe_strip_plan(plan)} ({elapsed:.0f} ms)", 8000
+                f"{say(describe_strip_plan(plan))} ({elapsed:.0f} ms)", 8000
             )
             self._report_strip_problems(plan)
             return
@@ -8881,7 +8874,7 @@ class MainWindow(QMainWindow):
             return
 
         self.statusBar().showMessage(
-            f"{describe_strip_plan(plan)}  ({elapsed:.0f} ms)", 0
+            f"{say(describe_strip_plan(plan))}  ({elapsed:.0f} ms)", 0
         )
         self._report_strip_problems(plan)
 
@@ -8943,8 +8936,10 @@ class MainWindow(QMainWindow):
         ahead_of_us = self.bus.redo_history()
         self.act_undo.setEnabled(self.bus.can_undo())
         self.act_redo.setEnabled(self.bus.can_redo())
-        last = history[-1] if history and self.bus.can_undo() else ""
-        next_up = ahead_of_us[-1] if ahead_of_us else ""
+        # In the window's language: the bus keeps each command's own English description
+        # (``engine_text``), and "Geri Al Place R4" was half a sentence in each.
+        last = say(history[-1]) if history and self.bus.can_undo() else ""
+        next_up = say(ahead_of_us[-1]) if ahead_of_us else ""
         # The menu text as well as the tooltip: the docstring promised "Undo Place R4" and
         # the menu said "Undo", with the answer one hover away. Ampersands in a command's
         # description would read as accelerators, so they are doubled.
@@ -9164,7 +9159,7 @@ class MainWindow(QMainWindow):
     def _on_cut_made(self, result: Any) -> None:
         if result is None:
             return
-        message = result.description if result.ok else f"[{result.code}] {result.message}"
+        message = say(result.description) if result.ok else f"[{result.code}] {result.message}"
         self.statusBar().showMessage(message, 6000)
 
     def on_measure_mode(self, checked: bool) -> None:
@@ -9578,7 +9573,7 @@ class MainWindow(QMainWindow):
         if not result.ok:
             self.statusBar().showMessage(f"[{result.code}] {result.message}", 8000)
             return
-        self.statusBar().showMessage(result.description, 6000)
+        self.statusBar().showMessage(say(result.description), 6000)
 
     def on_board_features(self) -> None:
         """Mounting holes and edge connectors.
@@ -10151,7 +10146,7 @@ class MainWindow(QMainWindow):
     def _on_pins_connected(self, result: Any) -> None:
         if result is None:
             return
-        message = result.description if result.ok else f"[{result.code}] {result.message}"
+        message = say(result.description) if result.ok else f"[{result.code}] {result.message}"
         self.statusBar().showMessage(message, 6000)
 
     def on_add_pins_to_net(self) -> None:
@@ -10289,7 +10284,7 @@ class MainWindow(QMainWindow):
         if result is None:
             return
         message = (
-            result.description if result.ok else f"[{result.code}] {result.message}"
+            say(result.description) if result.ok else f"[{result.code}] {result.message}"
         )
         self.statusBar().showMessage(message, 8000)
 

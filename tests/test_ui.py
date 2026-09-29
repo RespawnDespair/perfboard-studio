@@ -2110,6 +2110,27 @@ def test_in_turkish_qt_says_its_own_buttons_in_turkish() -> None:
         set_language(before)
 
 
+def test_in_turkish_the_undo_menu_says_what_it_undoes_in_turkish() -> None:
+    """"Geri Al Place and arrange 8 part(s) from the schematic": the one sentence saying
+    what just happened was the one sentence left in English. Descriptions are said in the
+    window's language where they are shown (ui/engine_text.py)."""
+    from perfboard_studio.ui.i18n import language, set_language
+
+    before = language()
+    set_language("tr")
+    try:
+        window = _blank_window()
+        try:
+            _add(window, "R1", "r-axial-3", "10k")
+            assert "Şemaya R1 10k ekle" in window.act_undo.text()
+            assert "schematic" not in window.act_undo.text()
+            assert window.statusBar().currentMessage() in ("", "Şemaya R1 10k ekle")
+        finally:
+            _close(window)
+    finally:
+        set_language(before)
+
+
 def test_in_turkish_the_guide_panel_is_in_turkish() -> None:
     """The panel is interface, even though the guide it lists is written by the engine.
     Phase headings and the summary were English in an otherwise Turkish window."""
