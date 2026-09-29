@@ -35,7 +35,9 @@ closed without a bump.
   keeps wires from lying on top of one another. On the shipped examples, stripped and
   routed again: no diagonal wire, nothing unrouted, no short, no DRC error, for about a
   fifth more wire. The engine's default stays straight, so every golden route is
-  unchanged; `RouterOptions.wire_path` chooses.
+  unchanged; `RouterOptions.wire_path` chooses. The MCP server's `autoroute` and `reroute`
+  take the same choice as `wires` and default to the grid too, so an agent's board comes
+  out like a person's.
 
 - **DRC: `wire-over-joint`.** A bare wire or a bent lead lying across a pin of another net,
   or across the soldered end of an insulated wire, is a short at the bench that neither the

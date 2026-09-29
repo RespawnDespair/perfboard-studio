@@ -183,6 +183,10 @@ DEFAULT_ROUTER_COSTS = RouterCosts()
 #:               the board can be read.
 type WirePath = Literal["straight", "grid"]
 
+#: Every :data:`WirePath`, for a caller that has to check a name it was handed. Spelled out
+#: rather than read with ``get_args``, which answers an empty tuple for a ``type`` alias.
+WIRE_PATHS: tuple[WirePath, ...] = ("straight", "grid")
+
 
 #: What the router may do when a connection cannot be made without crossing something that
 #: must not be crossed. This is a judgement about the builder, not about the board, so it is

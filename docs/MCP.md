@@ -231,6 +231,13 @@ snapshotted as `before-restore` first, so the way back is another restore.
 removed. A conductor is stale when the island it sits in no longer holds two pins of the
 net it claims — which is the shape of what a moved part leaves behind.
 
+**Wires are laid along the grid unless an agent asks otherwise.** `autoroute` and
+`reroute` take `wires`: `"grid"` (the default, as in the window) runs each wire square to
+the rows and columns of holes with as few bends as the board allows; `"straight"` is one
+run at whatever angle, which is what the engine does by default and what every golden
+route records. A straight bare wire can pass a fraction of a millimetre from another net's
+pad, and a board of them crosses itself everywhere.
+
 **Unrouted connections are never summarised away.** PLAN.md §13 names "it routed most of
 it and left four connections" as the trap every previous perfboard autorouter fell into.
 `autoroute` returns each failure with the router's own reason. Usually the answer is

@@ -29,13 +29,14 @@ corrupts the stdio protocol and produces a baffling, unrelated error at the clie
 from __future__ import annotations
 
 import dataclasses
+import itertools
 import json
 from pathlib import Path
 
 import pytest
 
 from perfboard_studio.mcp.session import BoardSession, SessionError, new_board
-from perfboard_studio.model import ComponentInstance, HoleCoord
+from perfboard_studio.model import ComponentInstance, HoleCoord, WireConductor
 
 from .test_gl import requires_offscreen_gl
 
@@ -921,6 +922,32 @@ def test_the_routing_style_changes_which_primitive_is_used(loaded: BoardSession)
     assert not any(c.kind.startswith("solder-trace") for c in wire.document.conductors)
 
     del loaded
+
+
+def test_an_agent_gets_wires_laid_along_the_grid_unless_it_asks_otherwise() -> None:
+    """The window lays wires square to the grid, and an agent's board should come out the
+    same as a person's. ``wires="straight"`` is the engine's own default, still reachable."""
+
+    def wires_of(**kwargs: str) -> list[WireConductor]:
+        board = BoardSession()
+        board.open_document(str(GOLDEN))
+        board.autoroute(style="wire", **kwargs)
+        return [c for c in board.document.conductors if isinstance(c, WireConductor)]
+
+    def square(conductor: WireConductor) -> bool:
+        return all(a.col == b.col or a.row == b.row for a, b in itertools.pairwise(conductor.path))
+
+    grid = wires_of()
+    assert grid and all(square(c) for c in grid)
+    straight = wires_of(wires="straight")
+    assert any(not square(c) for c in straight)
+
+
+def test_an_unknown_way_to_lay_wire_lists_the_real_ones(session: BoardSession) -> None:
+    session.import_netlist(str(NETLIST))
+    with pytest.raises(SessionError) as err:
+        session.autoroute(wires="curvy")
+    assert "grid" in str(err.value) and "straight" in str(err.value)
 
 
 def test_an_unknown_routing_style_lists_the_real_ones(session: BoardSession) -> None:

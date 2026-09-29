@@ -130,7 +130,7 @@ from perfboard_studio.model import (
 from perfboard_studio.placer import PlacementOptions, plan_placement
 from perfboard_studio.placer import describe as describe_placement
 from perfboard_studio.ratsnest import ratsnest, summarize
-from perfboard_studio.router import RoutingStyle, options_for_style
+from perfboard_studio.router import WIRE_PATHS, RouterOptions, RoutingStyle, options_for_style
 from perfboard_studio.stripboard import is_stripboard
 from perfboard_studio.striproute import describe_plan as describe_strip_plan
 from perfboard_studio.striproute import plan_stripboard
@@ -1258,7 +1258,9 @@ class BoardSession:
 
     # -- the planners ------------------------------------------------------
 
-    def autoroute(self, nets: list[str] | None = None, style: str = "balanced") -> dict[str, Any]:
+    def autoroute(
+        self, nets: list[str] | None = None, style: str = "balanced", wires: str = "grid"
+    ) -> dict[str, Any]:
         """Plan and commit the routing, as one undoable command."""
         if not self.document.nets:
             return _refused("no-netlist", "Nothing to route: no netlist has been imported.")
@@ -1281,7 +1283,7 @@ class BoardSession:
         if cleared:
             self.remove_stale_conductors()
 
-        options = _route_options(style)
+        options = _route_options(style, wires)
         # Every variant's measurements travel with the result, not just the winner's. An
         # agent that is told only "solder won" cannot judge whether to accept it, and the
         # trade it was decided on -- wires against bridging risk -- is exactly the kind a
@@ -1399,7 +1401,9 @@ class BoardSession:
         )
         return result
 
-    def reroute(self, nets: list[str] | None = None, style: str = "balanced") -> dict[str, Any]:
+    def reroute(
+        self, nets: list[str] | None = None, style: str = "balanced", wires: str = "grid"
+    ) -> dict[str, Any]:
         """Rip up the existing routing and plan it again, as one undoable command.
 
         Different from ``autoroute``, which only ADDS: after a part moves, the copper
@@ -1414,7 +1418,7 @@ class BoardSession:
         only = tuple(self._net_id_strict(name) for name in nets) if nets else None
 
         plan = plan_reroute(
-            self.document, self.lookup, only_net_ids=only, options=_route_options(style)
+            self.document, self.lookup, only_net_ids=only, options=_route_options(style, wires)
         )
         if plan.is_empty:
             return _ok(committed=False, summary=describe_reroute(plan))
@@ -1826,8 +1830,12 @@ def _route_styles() -> str:
     return ", ".join((*get_args(RoutingStyle), BEST_STYLE))
 
 
-def _route_options(style: str) -> AutorouteOptions:
+def _route_options(style: str, wires: str = "grid") -> AutorouteOptions:
     """Turn a style name into router options, or say what the names are.
+
+    ``wires`` is how a wire is laid (``router.WirePath``), and it is ``"grid"`` here as it is
+    in the window: square to the rows and columns, the way anybody builds a board. The
+    engine's own default stays straight, because that is what every golden route records.
 
     The style is a judgement about the builder rather than about the board -- which
     primitive they would rather use -- so it is per call, not a session setting: an agent
@@ -1836,11 +1844,16 @@ def _route_options(style: str) -> AutorouteOptions:
     ``"best"`` returns the UNSTYLED defaults: the sweep applies each style itself, and
     priming it with one style's cost table would bias every variant.
     """
+    if wires not in WIRE_PATHS:
+        raise SessionError(
+            f"{wires!r} is not a way to lay wire. Use one of: {', '.join(WIRE_PATHS)}."
+        )
+    base = RouterOptions(wire_path=wires)
     if style == BEST_STYLE:
-        return AutorouteOptions()
+        return AutorouteOptions(router=base)
     if style not in get_args(RoutingStyle):
         raise SessionError(f"{style!r} is not a routing style. Use one of: {_route_styles()}.")
-    return AutorouteOptions(router=options_for_style(cast(RoutingStyle, style)))
+    return AutorouteOptions(router=options_for_style(cast(RoutingStyle, style), base))
 
 
 def _catalog_summary(part: CatalogPart) -> dict[str, Any]:

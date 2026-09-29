@@ -588,7 +588,9 @@ def remove_stale_conductors() -> dict[str, Any]:
 
 
 @mcp.tool()
-def autoroute(nets: list[str] | None = None, style: str = "balanced") -> dict[str, Any]:
+def autoroute(
+    nets: list[str] | None = None, style: str = "balanced", wires: str = "grid"
+) -> dict[str, Any]:
     """Route the board, or just the named nets, and commit it as one undoable step.
 
     `style` chooses which primitive to reach for first, which is a judgement about the
@@ -603,6 +605,10 @@ def autoroute(nets: list[str] | None = None, style: str = "balanced") -> dict[st
     On the NE555 fixture "balanced" gives 4 traces and 10 wires; "solder" gives 17 traces
     and 6 wires but 27 holes at bridging risk.
 
+    `wires` is how each wire is laid: "grid" (the default) runs it square along the rows
+    and columns of holes with as few bends as it can, the way wire is dressed on perfboard;
+    "straight" is one run at whatever angle, shorter and crossing everything near it.
+
     Under "best" the result carries `comparison`: every style's traces, wires, wire length,
     risk holes and effort score, cheapest first. Report that trade rather than only the
     winner -- fewer wires against more bridging risk is the user's call to overrule.
@@ -612,19 +618,22 @@ def autoroute(nets: list[str] | None = None, style: str = "balanced") -> dict[st
     are in the wrong places, and optimize_placement is the answer rather than more
     routing.
     """
-    return session.autoroute(nets, style)
+    return session.autoroute(nets, style, wires)
 
 
 @mcp.tool()
-def reroute(nets: list[str] | None = None, style: str = "balanced") -> dict[str, Any]:
+def reroute(
+    nets: list[str] | None = None, style: str = "balanced", wires: str = "grid"
+) -> dict[str, Any]:
     """Rip up the existing routing and plan it again from nothing.
 
     Use this after moving parts. `autoroute` only ADDS: the copper laid out for a part's
     old position still joins the right pins, so nothing flags it, and routing again just
     puts more copper beside it — the board grows every time. This throws that away and
-    re-plans. Conductors with no net assigned are left alone.
+    re-plans. Conductors with no net assigned are left alone. `style` and `wires` mean
+    what they mean for autoroute.
     """
-    return session.reroute(nets, style)
+    return session.reroute(nets, style, wires)
 
 
 @mcp.tool()
