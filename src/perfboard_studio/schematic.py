@@ -2134,25 +2134,47 @@ def _net_label_at(
     thing tried and, on the fixtures here, where 29 of 41 of them stay. The rest slide
     RIGHT ALONG THE SAME RUN in half-grid steps until the band above the wire is clear --
     never to another wire, never off the run, so the name is still unambiguously attached
-    to the thing it names. Failing that it goes back to the left end: a label that has to
-    overlap something should overlap where a reader looks for it.
+    to the thing it names.
 
-    Deterministic by construction. The candidates are generated left to right and the
-    first clear one wins, so the same document gives the same sheet -- which is what the
+    THEN BELOW THE WIRE, THEN WHEREVER FEWEST WIRES CROSS IT. It used to go straight back
+    to the left-hand end when the band above was busy all the way along, and the left-hand
+    end of a trunk is where the branches down to its pins leave it -- the busiest place on
+    the run -- so eleven names on the fixtures sat with a wire through them. Below the wire
+    is taken only with a clearance's worth of nothing under the text as well: a name with
+    another net's run just beneath it reads as that run's name, and one sitting on a rail
+    glyph's bar reads as underlined -- both were what the first version of this did. If
+    neither band has room, the name stays ABOVE its wire where the fewest wires cross it,
+    the left-most among equals.
+
+    Deterministic by construction. The candidates are generated in one fixed order and the
+    first best one wins, so the same document gives the same sheet -- which is what the
     golden dumps need and what stops the sheet rearranging itself between runs.
     """
     left, right = span
-    baseline = wire_y - NET_LABEL_CLEARANCE_MM
+    above = wire_y - NET_LABEL_CLEARANCE_MM
+    below = wire_y + NET_LABEL_CLEARANCE_MM + NET_LABEL_MM
     start = left + NET_LABEL_INSET_MM
     width = len(text) * NET_LABEL_MM * NET_LABEL_ADVANCE
     step = GRID_MM / 2
-    x = start
-    while True:
-        if _box_is_clear(_label_box(text, x, baseline), obstacles):
-            return Point2(x=x, y=baseline)
-        x += step
-        if x + width > right:
-            return Point2(x=start, y=baseline)
+    positions = [start]
+    while positions[-1] + step + width <= right:
+        positions.append(positions[-1] + step)
+    for x in positions:
+        if _box_is_clear(_label_box(text, x, above), obstacles):
+            return Point2(x=x, y=above)
+    for x in positions:
+        x0, y0, x1, y1 = _label_box(text, x, below)
+        if _box_is_clear((x0, y0, x1, y1 + NET_LABEL_CLEARANCE_MM), obstacles):
+            return Point2(x=x, y=below)
+    best = min(positions, key=lambda x: _crossings(_label_box(text, x, above), obstacles))
+    return Point2(x=best, y=above)
+
+
+def _crossings(
+    box: tuple[Mm, Mm, Mm, Mm], obstacles: Sequence[tuple[Point2, Point2]]
+) -> int:
+    """How many of ``obstacles`` pass through ``box`` -- see ``_box_is_clear``."""
+    return sum(1 for segment in obstacles if not _box_is_clear(box, (segment,)))
 
 
 def build_schematic(

@@ -267,6 +267,72 @@ def test_a_net_name_is_almost_never_crossed_by_another_net() -> None:
     )
 
 
+def _own_run_beside(label: Label, drawing: SchematicDrawing, baseline_to_wire: float) -> bool:
+    """Whether a horizontal run of the label's own net lies ``baseline_to_wire`` below its
+    baseline (negative: above it) where the text starts. Where it starts, not all along
+    it: a name is longer than a short trunk, and ne555's CTRL runs past the end of its own."""
+    x0 = label.at.x
+    wire_y = label.at.y + baseline_to_wire
+    return any(
+        what.endswith(f" {label.text}")
+        and abs(start.y - wire_y) < 1e-6
+        and abs(end.y - wire_y) < 1e-6
+        and min(start.x, end.x) <= x0 <= max(start.x, end.x)
+        for start, end, what in segments(drawing)
+    )
+
+
+@pytest.mark.parametrize("path", ALL_BOARDS, ids=lambda path: path.stem)
+def test_a_net_name_below_its_wire_has_room_under_it(path: Path) -> None:
+    """A name goes UNDER its run only when the band above is busy all along it, and only
+    with a clearance's worth of nothing beneath the text too.
+
+    The left-hand end of a trunk is where its branches drop to the pins, so when no step
+    along the run cleared the band above, going back there put a wire through the name --
+    eleven names on these boards. Below the run fixes two of them (nano-relay's BASE and
+    LED_ON) and the rest have no room either side.
+
+    The clearance is the half of this that is easy to lose. The first version put names
+    below the run with nothing but the text box checked, and a name with another net's run
+    just beneath it read as THAT run's name, while one sitting on a rail glyph's bar read
+    as underlined.
+    """
+    drawing = drawing_for(path)
+    for label in drawing.labels:
+        if label.kind != "net":
+            continue
+        if _own_run_beside(label, drawing, NET_LABEL_CLEARANCE_MM):
+            continue
+        assert _own_run_beside(label, drawing, -(NET_LABEL_CLEARANCE_MM + NET_LABEL_MM)), (
+            f"{path.stem}: {label.text} is neither above nor below a run of its own net"
+        )
+        x0, y0, x1, y1 = net_label_box(label)
+        padded = (x0, y0, x1, y1 + NET_LABEL_CLEARANCE_MM)
+        for start, end, what in segments(drawing):
+            assert not box_meets_segment(padded, start, end), (
+                f"{path.stem}: {label.text}, below its wire, has {what} under it"
+            )
+
+
+def test_a_name_with_no_room_above_its_wire_goes_under_it() -> None:
+    """The two names on the repository's boards the rule moves, named, so that a change
+    which quietly stops taking the band below fails here rather than nowhere."""
+    drawing = drawing_for(EXAMPLES_DIR / "nano-relay.perf")
+    moved = {
+        label.text
+        for label in drawing.labels
+        if label.kind == "net"
+        and _own_run_beside(label, drawing, -(NET_LABEL_CLEARANCE_MM + NET_LABEL_MM))
+    }
+    assert {"BASE", "LED_ON"} <= moved
+    for label in drawing.labels:
+        if label.text in {"BASE", "LED_ON"}:
+            box = net_label_box(label)
+            assert not any(
+                box_meets_segment(box, start, end) for start, end, _what in segments(drawing)
+            ), f"{label.text} still has a wire through it"
+
+
 @pytest.mark.parametrize("path", ALL_BOARDS, ids=lambda path: path.stem)
 def test_no_sheet_comes_out_taller_than_it_is_wide(path: Path) -> None:
     """A layer is a hint about distance, not a constraint, and it used to be treated as one.

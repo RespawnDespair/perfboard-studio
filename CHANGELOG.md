@@ -79,6 +79,14 @@ closed without a bump.
 
 ### Fixed
 
+- **A net name with no room above its wire went back to where the wire branches.** When
+  no step along a run cleared the band above it, the name returned to the run's left-hand
+  end — where the branches drop to the pins — with a wire through it. It now tries the
+  band below the run, taken only with a clearance's worth of nothing under the text as
+  well (so it cannot read as another run's name, or sit underlined on a rail glyph), and
+  failing that stays above where the fewest wires cross it. On `nano-relay` BASE and
+  LED_ON come clear; nothing else on the shipped boards moves.
+
 - **The HC-49 crystal's footprint was a third of its length.** It had the can as
   4.65 × 3.5 mm — its thickness along the leads and a height across them — where an
   HC-49/U is 11.05 × 4.65 mm on the board, so on `atmega328-relay` the crystal stood on
