@@ -29,6 +29,15 @@ closed without a bump.
   an error. Six of the fifteen golden fixtures carry one, which the original engine never
   checked, so the rule joins `PYTHON_ONLY_RULES` and is pinned there.
 
+### Changed
+
+- **The Turkish interface has one word for routing.** "Route" and "Trace" were both
+  "Yol" — a menu and a drawing tool named alike — the Autoroute button read "Oto-yol"
+  (a motorway), and the rest said "route et" half in English. Routing is now
+  "yönlendirmek" and a trace a "lehim yolu" throughout, and the Turkish menu bar has a
+  letter each: three menus shared Alt+Y and two shared Alt+Z. `tests/test_i18n.py` holds
+  both.
+
 ### Fixed
 
 - **Pressing Board on the toolbar closed the board.** The Board, Schematic and 3D buttons,

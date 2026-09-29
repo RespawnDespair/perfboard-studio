@@ -233,6 +233,13 @@ def test_no_two_entries_in_a_menu_claim_the_same_accelerator() -> None:
     from collections import Counter
 
     groups = {
+        # The menu bar itself. Turkish had three menus on Y (Yerleştir, Yol, Yardım) and
+        # two on Z (Düzen, Çiz), so Alt+Y reached one of three at random.
+        "menu bar": ["&File", "&Edit", "&Draw", "&Place", "&Net", "&Route", "&View",
+                     "&Help"],
+        "route": ["&Autoroute All Nets", "Route Nets of &Selection", "&Preferred Connection",
+                  "Re-route &Everything", "Re-route Nets of Se&lection",
+                  "Remove S&tale Conductors"],
         "file": ["&New Board…", "&Open…", "Open &Recent", "&Save", "Save &As…",
                  "Re&load from Disk", "&Board Setup…", "Board &Features…", "Rena&me Board…",
                  "&Import KiCad Netlist…", "Export &Build Guide…",
@@ -294,6 +301,15 @@ def test_english_is_the_source_language_and_needs_no_catalogue() -> None:
     set_language("en")
     assert t("&File") == "&File"
     assert "en" not in CATALOGUES
+
+
+def test_the_turkish_interface_has_one_word_for_each_thing() -> None:
+    """Route and Trace were both "Yol" -- a menu and a drawing tool named alike -- the
+    Autoroute button read "Oto-yol", which is a motorway, and the rest said "route et" half
+    in English. Routing is "yönlendirmek" and a trace is a "lehim yolu", everywhere."""
+    assert [value for value in TURKISH.values() if "route" in value.lower()] == []
+    assert TURKISH["&Route"].replace("&", "") != TURKISH["Trace"]
+    assert "Yönlendir" in TURKISH["Autoroute"]
 
 
 def test_turkish_translates() -> None:

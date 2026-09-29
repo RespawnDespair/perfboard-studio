@@ -38,11 +38,11 @@ TURKISH: Mapping[str, str] = {
     # -- menus ---------------------------------------------------------------
     "&File": "&Dosya",
     "&Edit": "Dü&zen",
-    "&Draw": "Çi&z",
+    "&Draw": "&Çiz",
     "&Place": "&Yerleştir",
-    "&Route": "&Yol",
+    "&Route": "Yön&lendir",
     "&View": "&Görünüm",
-    "&Help": "&Yardım",
+    "&Help": "Y&ardım",
     # -- file ----------------------------------------------------------------
     "&New Board…": "&Yeni Kart…",
     "&Open…": "&Aç…",
@@ -109,8 +109,8 @@ TURKISH: Mapping[str, str] = {
     "Name": "Ad",
     "Class": "Sınıf",
     "Signal": "Sinyal",
-    "Ground — routed first, and wants a rail": "Toprak — önce route edilir, ray ister",
-    "Power — routed after ground, same reason": "Güç — topraktan sonra route edilir, aynı sebeple",
+    "Ground — routed first, and wants a rail": "Toprak — önce yönlendirilir, ray ister",
+    "Power — routed after ground, same reason": "Güç — topraktan sonra yönlendirilir, aynı sebeple",
     "Current": "Akım",
     "Voltage": "Gerilim",
     "not stated": "belirtilmedi",
@@ -118,10 +118,10 @@ TURKISH: Mapping[str, str] = {
     # -- place and route -----------------------------------------------------
     "&Auto-place Board": "&Otomatik Yerleştir",
     "&Try Another Arrangement": "&Başka Bir Yerleşim Dene",
-    "&Autoroute All Nets": "Tüm Netleri &Otomatik Route Et",
-    "Route Nets of &Selection": "&Seçimin Netlerini Route Et",
-    "Re-route &Everything": "Her Şeyi &Yeniden Route Et",
-    "Re-route Nets of Se&lection": "Seçimin Netlerini Yeniden Route &Et",
+    "&Autoroute All Nets": "Tüm Netleri &Otomatik Yönlendir",
+    "Route Nets of &Selection": "&Seçimin Netlerini Yönlendir",
+    "Re-route &Everything": "Her Şeyi &Yeniden Yönlendir",
+    "Re-route Nets of Se&lection": "Seçimin Netlerini Yeniden Yönl&endir",
     "Remove S&tale Conductors": "&Artık İletkenleri Kaldır",
     "&Preferred Connection": "&Tercih Edilen Bağlantı",
     "&Try each and keep the best": "&Hepsini dene, en iyisini tut",
@@ -130,7 +130,7 @@ TURKISH: Mapping[str, str] = {
     "&Wire where possible": "Mümkün olan her yerde &kablo",
     "Bend component &legs where possible": "Mümkün olan her yerde &bacak bük",
     "Preferred connection": "Tercih edilen bağlantı",
-    "applies to the next route": "bir sonraki route'ta geçerli olur",
+    "applies to the next route": "bir sonraki yönlendirmede geçerli olur",
     # -- view ----------------------------------------------------------------
     "Flip Board (component / solder side)": "Kartı Çevir (komponent / lehim yüzü)",
     "&Fit Board": "Karta &Sığdır",
@@ -262,13 +262,13 @@ TURKISH: Mapping[str, str] = {
     # Short labels for the buttons; the menus keep the full wording. Qt draws an action's
     # iconText on a toolbar and its text in a menu, so these are the only place they differ.
     "Connect": "Bağla",
-    "Trace": "Yol",
+    "Trace": "Lehim Yolu",
     "Spine": "Omurga",
     "Bare": "Çıplak",
     "Insulated": "İzoleli",
     "Jumper": "Üst Jumper",
     "Auto-place": "Oto-yerleşim",
-    "Autoroute": "Oto-yol",
+    "Autoroute": "Oto Yönlendir",
     "Rotate": "Döndür",
     "Mirror": "Aynala",
     "Delete": "Sil",
@@ -379,8 +379,8 @@ TURKISH: Mapping[str, str] = {
     "Delete parts": "Parçaları sil",
     "Delete conductors": "İletkenleri sil",
     "Apply this placement?": "Bu yerleşim uygulansın mı?",
-    "Re-route?": "Yeniden route edilsin mi?",
-    "Re-route": "Yeniden Route Et",
+    "Re-route?": "Yeniden yönlendirilsin mi?",
+    "Re-route": "Yeniden Yönlendir",
     "{removed} existing conductor(s) will be removed and {planned} planned "
     "in their place. Copper with no net assigned is left alone.": (
         "Mevcut {removed} iletken kaldırılacak ve yerlerine {planned} iletken "
@@ -388,8 +388,8 @@ TURKISH: Mapping[str, str] = {
     ),
     "One Ctrl+Z puts it all back.": "Tek bir Ctrl+Z hepsini geri getirir.",
     "Placement refused": "Yerleşim reddedildi",
-    "Routing refused": "Route reddedildi",
-    "Re-route refused": "Yeniden route reddedildi",
+    "Routing refused": "Yönlendirme reddedildi",
+    "Re-route refused": "Yeniden yönlendirme reddedildi",
     "Board not changed": "Kart değiştirilmedi",
     "The guide has gaps": "Rehberde eksikler var",
     "About Perfboard Studio": "Perfboard Studio Hakkında",
@@ -983,13 +983,13 @@ TURKISH: Mapping[str, str] = {
     "Forget what the net was for. Copper already laid for it stays on the board, "
     "and stops being anything re-route or the stale sweep will touch.": (
         "Netin ne için olduğunu unutur. Onun için döşenmiş bakır kartta kalır ve artık ne "
-        "yeniden route'un ne de artık temizliğinin dokunacağı bir şey olur."
+        "yeniden yönlendirmenin ne de artık temizliğinin dokunacağı bir şey olur."
     ),
     "Rip up the existing routing and plan it again from nothing. Use this after "
     "moving parts: autoroute only adds, so it leaves the copper laid out for "
     "where things used to be. Hand-drawn copper with no net is never touched.": (
-        "Mevcut route'u söküp sıfırdan yeniden planlar. Parçaları taşıdıktan sonra bunu "
-        "kullan: otomatik route yalnızca ekler, dolayısıyla eski konumlar için döşenmiş "
+        "Mevcut yönlendirmeyi söküp sıfırdan yeniden planlar. Parçaları taşıdıktan sonra bunu "
+        "kullan: otomatik yönlendirme yalnızca ekler, dolayısıyla eski konumlar için döşenmiş "
         "bakırı yerinde bırakır. Neti olmayan elle çizilmiş bakıra asla dokunulmaz."
     ),
     "Draw conductors on the face you are NOT looking at as hatched, the way a part "
@@ -1045,13 +1045,13 @@ TURKISH: Mapping[str, str] = {
     # -- the status bar's fixed sentences --------------------------------------
     "Nothing to place: the board is empty.": "Yerleştirilecek bir şey yok: kart boş.",
     "Select a net in the Nets panel, or a part on the board, then route.": (
-        "Netler panelinden bir net ya da kart üzerinden bir parça seç, sonra route et."
+        "Netler panelinden bir net ya da kart üzerinden bir parça seç, sonra yönlendir."
     ),
     "Select a net in the Nets panel, or a part on the board, then re-route.": (
-        "Netler panelinden bir net ya da kart üzerinden bir parça seç, sonra yeniden route et."
+        "Netler panelinden bir net ya da kart üzerinden bir parça seç, sonra yeniden yönlendir."
     ),
     "No netlist imported, so there is nothing to route.": (
-        "İçe aktarılmış netlist yok, dolayısıyla route edilecek bir şey de yok."
+        "İçe aktarılmış netlist yok, dolayısıyla yönlendirilecek bir şey de yok."
     ),
     "No stale conductors: every one still connects the net it claims.": (
         "Artık iletken yok: her biri hâlâ iddia ettiği neti bağlıyor."
@@ -1090,18 +1090,18 @@ TURKISH: Mapping[str, str] = {
     ),
     # -- dialog titles ---------------------------------------------------------
     "Re-route the nets whose parts moved?": (
-        "Parçaları taşınan netler yeniden route edilsin mi?"
+        "Parçaları taşınan netler yeniden yönlendirilsin mi?"
     ),
     "<b>{names}</b> still carry the copper laid out before a part moved."
     "<p>Autoroute only adds, so routing now leaves that copper in place "
     "and puts more beside it. Re-routing them rips it up and plans "
     "again.</p>": (
         "<b>{names}</b> hâlâ bir parça taşınmadan önce döşenen bakırı taşıyor."
-        "<p>Otomatik route yalnızca ekler; şimdi route etmek o bakırı yerinde bırakıp "
-        "yanına yenisini koyar. Yeniden route etmek onu söküp yeniden planlar.</p>"
+        "<p>Otomatik yönlendirme yalnızca ekler; şimdi yönlendirmek o bakırı yerinde bırakıp "
+        "yanına yenisini koyar. Yeniden yönlendirmek onu söküp yeniden planlar.</p>"
     ),
     "Some connections could not be made": "Bazı bağlantılar yapılamadı",
-    "Some connections could not be routed": "Bazı bağlantılar route edilemedi",
+    "Some connections could not be routed": "Bazı bağlantılar yönlendirilemedi",
     "Imported with warnings": "Uyarılarla içe aktarıldı",
     "Place the missing parts?": "Eksik parçalar yerleştirilsin mi?",
     "Imported {count} net(s) from {name}": "{name} dosyasından {count} net içe aktarıldı",
@@ -1129,7 +1129,7 @@ TURKISH: Mapping[str, str] = {
     "LVS {matched}/{total} · {opens} open · {shorts} short": (
         "LVS {matched}/{total} · {opens} açık · {shorts} kısa"
     ),
-    "{count} to route · {length:.0f} mm": "{count} route edilecek · {length:.0f} mm",
+    "{count} to route · {length:.0f} mm": "{count} yönlendirilecek · {length:.0f} mm",
     "no netlist": "netlist yok",
     "done": "bitti",
     "Not on the board: {pins}": "Kartta değil: {pins}",
@@ -1176,12 +1176,12 @@ TURKISH: Mapping[str, str] = {
     ),
     "Other wires and traces are left in place -- DRC and LVS will point at "
     "anything left dangling.": (
-        "Diğer teller ve yollar yerinde kalır -- boşta kalan ne varsa DRC ve LVS gösterir."
+        "Diğer teller ve lehim yolları yerinde kalır -- boşta kalan ne varsa DRC ve LVS gösterir."
     ),
     "Delete net {name}?": "{name} neti silinsin mi?",
     "{count} conductor(s) already laid for it stay on the board, and stop "
     "being anything re-route or the stale sweep will touch.": (
-        "Onun için döşenmiş {count} iletken kartta kalır ve artık ne yeniden route'un "
+        "Onun için döşenmiş {count} iletken kartta kalır ve artık ne yeniden yönlendirmenin "
         "ne de bayat temizliğinin dokunacağı bir şey olur."
     ),
     "{name} has changes that are not saved.": "{name} üzerinde kaydedilmemiş değişiklikler var.",
@@ -1221,11 +1221,11 @@ TURKISH: Mapping[str, str] = {
     ),
     # -- the progress dialog --------------------------------------------------------------
     "Trying arrangements, and routing each one to compare them…": (
-        "Yerleşimler deneniyor, karşılaştırmak için her biri route ediliyor…"
+        "Yerleşimler deneniyor, karşılaştırmak için her biri yönlendiriliyor…"
     ),
-    "Ripping up and routing again…": "Sökülüp yeniden route ediliyor…",
-    "Routing every style…": "Her tarz route ediliyor…",
-    "Routing…": "Route ediliyor…",
+    "Ripping up and routing again…": "Sökülüp yeniden yönlendiriliyor…",
+    "Routing every style…": "Her tarz yönlendiriliyor…",
+    "Routing…": "Yönlendiriliyor…",
     "Planning cuts and links…": "Kesikler ve bağlantılar planlanıyor…",
     "Stopping, and keeping the best found so far…": (
         "Durduruluyor; şimdiye kadar bulunan en iyisi tutuluyor…"
@@ -1259,7 +1259,7 @@ TURKISH: Mapping[str, str] = {
     "{hole} — the same hole.": "{hole} — aynı delik.",
     "holes": "delik",
     "{mm:.2f} mm apart": "{mm:.2f} mm arayla",
-    "{steps} step(s) by trace": "yolla {steps} adım",
+    "{steps} step(s) by trace": "lehim yoluyla {steps} adım",
     "Click the first hole.": "İlk deliğe tıkla.",
     "From {hole} — click the second hole.": "{hole} deliğinden — ikinci deliğe tıkla.",
     "No component pin at {hole}.": "{hole} deliğinde parça pini yok.",

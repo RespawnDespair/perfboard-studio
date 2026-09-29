@@ -34,7 +34,7 @@
   &nbsp;·&nbsp; <a href="./README.md">English</a>
 </p>
 
-![NE555 astable devresi yerleştirilmiş ve route edilmiş hâliyle 2D editör](./docs/images/editor-component-side.png)
+![NE555 astable devresi yerleştirilmiş ve yönlendirilmiş hâliyle 2D editör](./docs/images/editor-component-side.png)
 
 <p align="center">
   İddianın tamamı durum çubuğunda: yedi net üzerinde on dört bağlantı, dördü tel<br>
@@ -243,7 +243,7 @@ sürükleyin, istediğiniz yere taşıyıp döndürün, **Bağla** ile pinden pi
 bir telin üstüne tel çekin — ya da bir pini **Etiket** ile adına göre bir nete bağlayın —
 sonra **Kart Üzerine Yerleştir**.
 Oradan **Yerleştir →
-Otomatik Yerleştir** (`Ctrl+Shift+A`), route için **`Ctrl+R`**, ardından **Dosya → Montaj
+Otomatik Yerleştir** (`Ctrl+Shift+A`), yönlendirme için **`Ctrl+R`**, ardından **Dosya → Montaj
 Rehberini Dışa Aktar** (`Ctrl+B`). Bu akışın hiçbir yerinde KiCad yok.
 
 Devre zaten varsa ilk üç adım yerine `examples/ne555-astable.net` üzerinde **Dosya → KiCad
@@ -268,7 +268,7 @@ perfboard-studio examples/lm317-supply.perf
 | `atmega328-relay` | ölçek: yirmi dört parça, ve bütün kurallar bir arada |
 | `nano-relay` | KiCad netlist'inden gerçek parçalar — başlıklarındaki bir Nano, katalogdan BC547 ve 7805, pinlerde adlar, kartta etiketler |
 
-Altısı da eksiksiz route ediliyor, LVS'te şemalarıyla örtüşüyor ve hiçbir DRC hatası
+Altısı da eksiksiz yönlendiriliyor, LVS'te şemalarıyla örtüşüyor ve hiçbir DRC hatası
 taşımıyor — `tests/test_examples.py` bunu her commit'te doğruluyor.
 
 ### Bir ajandan
