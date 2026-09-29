@@ -78,6 +78,8 @@ class StepState:
     status: StepStatus
     #: One short line under the step's name: what this document has for it.
     summary: str
+    #: What the Next button says when this is the step it does: a verb, not the step.
+    action: str
 
 
 def step_title(key: StepKey) -> str:
@@ -92,8 +94,15 @@ def step_title(key: StepKey) -> str:
     }[key]
 
 
-def step_action(key: StepKey) -> str:
-    """What the Next button says when this step is the next one: a verb, not the step."""
+def step_action(key: StepKey, facts: WorkflowFacts | None = None) -> str:
+    """What the Next button says when this step is the next one: a verb, not the step.
+
+    The circuit's depends on what it has: with no parts the next thing is a part, and with
+    parts and nothing joining them it is joining them -- "Add a Part" over eight parts and
+    no nets sent people back to the one thing they had already done.
+    """
+    if key == "circuit" and facts is not None and facts.parts_off_board + facts.parts_on_board:
+        return t("Connect the Pins")
     return {
         "circuit": t("Add a Part…"),
         "board": t("Choose a Board…"),
@@ -188,7 +197,11 @@ def workflow_steps(facts: WorkflowFacts) -> tuple[StepState, ...]:
             status = "current"
         else:
             status = "todo"
-        steps.append(StepState(key=key, status=status, summary=summaries[key]))
+        steps.append(
+            StepState(
+                key=key, status=status, summary=summaries[key], action=step_action(key, facts)
+            )
+        )
     return tuple(steps)
 
 
@@ -350,7 +363,7 @@ class WorkflowBar(QWidget):
             )
             button.setProperty("status", step.status)
         self._next = next_step(steps)
-        label = step_action(self._next)
+        label = next(step.action for step in steps if step.key == self._next)
         problem = any(step.status == "problem" for step in steps)
         self.next_button.setText(("⚠ " if problem else "") + label + "  →")
         self.next_button.setStyleSheet(

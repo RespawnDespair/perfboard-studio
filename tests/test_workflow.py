@@ -47,9 +47,13 @@ def test_the_steps_are_in_the_order_a_board_is_built() -> None:
 
 
 def test_parts_without_a_single_join_are_not_a_circuit_yet() -> None:
-    """Eight parts and no nets is a parts list: routing it would do nothing."""
+    """Eight parts and no nets is a parts list: routing it would do nothing. And the next
+    thing to do is to join them, not to add a ninth."""
     facts = dataclasses.replace(EMPTY, parts_off_board=8)
     assert statuses(facts)["circuit"] == "current"
+    circuit = workflow_steps(facts)[0]
+    assert circuit.action == "Connect the Pins"
+    assert workflow_steps(EMPTY)[0].action == "Add a Part…"
 
 
 def test_a_drawn_circuit_moves_on_to_choosing_its_board() -> None:

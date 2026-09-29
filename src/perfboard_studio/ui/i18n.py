@@ -1794,6 +1794,7 @@ TURKISH: Mapping[str, str] = {
     "Steps": "Adımlar",
     "Add a Part…": "Parça Ekle…",
     "Choose a Board…": "Kart Seç…",
+    "Connect the Pins": "Pinleri Bağla",
     "See the Findings": "Bulguları Gör",
     "Open the Build Guide": "Montaj Rehberini Aç",
     "no parts yet": "henüz parça yok",

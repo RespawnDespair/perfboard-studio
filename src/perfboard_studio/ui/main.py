@@ -3325,7 +3325,13 @@ class MainWindow(QMainWindow):
         step = cast(StepKey, key)
         if step == "circuit":
             self.show_schematic()
-            self.on_schematic_add_part()
+            document = self.bus.document
+            if document.parts or document.components:
+                # Parts and nothing joining them: the sheet's wire tool, armed -- the Next
+                # button is then one drag from a pin to a pin away from a circuit.
+                self.on_sheet_tool("wire")
+            else:
+                self.on_schematic_add_part()
         elif step == "board":
             self.on_choose_board()
         elif step == "place":
