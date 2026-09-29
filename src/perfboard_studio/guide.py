@@ -83,6 +83,7 @@ from .model import (
     Rotation,
     SolderTraceConductor,
     WireConductor,
+    contacts_every_path_hole,
     declared_pin_name,
     pin_name_of,
 )
@@ -369,7 +370,9 @@ class ConductorStep:
     net_class: NetClass
     #: "B12 -> K12, 10 pads" for a trace; "B3 -> P9" for a wire.
     span: str
+    #: Every hole a trace crosses; a wire's two ends and the corners it bends round.
     path: tuple[HoleCoord, ...]
+    #: The pads it is soldered to: every one along a trace, the two ends of a wire.
     pads: int
     length_mm: Mm
     #: Traces only: the electrical summary quoted back as an expectation.
@@ -1049,7 +1052,11 @@ def _conductor_step(
     say: Phrasebook,
 ) -> ConductorStep:
     path = conductor.path
-    pads = len(path)
+    # The pads it is SOLDERED to. A trace is joined at every hole it crosses; a wire only at
+    # its two ends, and the points between are where it bends. Counting those as pads told
+    # the builder a wire laid along the grid had "3 pads" or "4 pads" -- joints nobody
+    # should make, on a wire that would then short whatever it lay across.
+    pads = len(path) if contacts_every_path_hole(conductor) else min(len(path), 2)
     length_mm = path_length_mm(path, board)
     notes: list[str] = []
 

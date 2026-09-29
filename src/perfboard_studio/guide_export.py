@@ -615,7 +615,9 @@ def _html_conductor_step(
         )
         + "</div>",
     ]
-    if step.pads > 2 and step.path:
+    # The path's own length, not its pad count: a wire's corners are where to bend it, and
+    # they are exactly what a wire laid along the grid most needs to say.
+    if len(step.path) > 2:
         bits.append(
             '<div class="meta">'
             + say("Path: {holes}", holes=" → ".join(_hole(at) for at in step.path))

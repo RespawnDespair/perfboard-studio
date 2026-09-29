@@ -1044,3 +1044,30 @@ def test_the_picture_is_labelled_with_what_to_do_not_with_what_it_is() -> None:
     html = guide_to_html(guide, {step_focus(first): b"\x89PNG fake"})
 
     assert f'alt="{escape(first.title)}"' in html
+
+
+def test_a_wire_laid_along_the_grid_is_soldered_at_its_two_ends() -> None:
+    """A wire's path records its ends AND the corners it bends round, and the guide counted
+    every point as a pad: a grid wire with two bends said "4 pads" on the step card. A wire
+    is soldered at its ends and nowhere else -- a joint at a corner would short whatever the
+    wire is lying across -- so it has two, however many times it turns."""
+    from perfboard_studio.guide import ConductorStep, all_steps
+
+    path = Path(__file__).resolve().parents[1] / "examples" / "atmega328-relay.perf"
+    doc = persist.deserialize_document(path.read_text(encoding="utf-8")).document
+    guide = build_guide(doc, footprint_lookup())
+
+    wires = [
+        step for step in all_steps(guide)
+        if isinstance(step, ConductorStep)
+        and step.conductor_kind in ("bare-wire", "insulated-wire", "top-jumper")
+    ]
+    bent = [step for step in wires if len(step.path) > 2]
+    assert bent, "the example no longer has a wire laid along the grid"
+    assert {step.pads for step in wires} == {2}
+    # ...and its card says so: the corners are the Path, never a pad count.
+    from perfboard_studio.guide_export import _html_conductor_step
+
+    for step in bent:
+        card = _html_conductor_step(step, "s1")
+        assert " pads" not in card and "Path:" in card, card

@@ -167,6 +167,12 @@ closed without a bump.
   phrasings, and a test fails on a library part named in words it does not recognise.
   The filter finds a part by either name.
 
+- **The build guide counted a wire's corners as pads.** A wire laid along the grid keeps its
+  bends in its path, and the step card called each one a pad — "bare wire · 25.4 mm · 4
+  pads" for a wire soldered at two ends, which reads as two more joints to make on a wire
+  that would short whatever it lay across there. A wire now has two pads however often it
+  turns, and its corners are listed as its Path, which is what they are.
+
 - **A ground symbol could be drawn inside a power symbol on the schematic.** Where a
   ground rail from the row above and a power rail from the row below met at one point of a
   channel, the lane above went to whichever net's id sorted first — ground, usually — and
