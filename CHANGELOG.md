@@ -56,6 +56,17 @@ closed without a bump.
 
 ### Changed
 
+- **The example boards are routed the way Ctrl+R routes, and the README shows the
+  application as it is.** `tools/build_examples.py` routed with the engine's default, which
+  lays each wire as one straight run because that is what every golden route records — so
+  the first boards a stranger opened from File ▸ Open Example were the cat's cradle of
+  diagonal wire the window itself stopped producing when wires were laid along the grid.
+  All six are rebuilt with the window's settings and the current router: no diagonal wire,
+  every net closed, no DRC error, LVS clean. Three carry one R5' warning each, a trace laid
+  beside another net's pin, which the guide turns into a check. The README's pictures and
+  the assembly animation are regenerated from them, so they show wires along the grid and
+  solder drawn as solder.
+
 - **The potentiometer and the relay look like the parts in the bag** in 3D. Neither has a
   borrowed model, and the generated bodies were a blue disc with a peg on it and a plain
   box. The potentiometer now has its steel cover crimped over the housing, a threaded
