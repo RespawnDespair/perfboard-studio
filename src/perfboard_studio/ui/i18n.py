@@ -1762,6 +1762,8 @@ TURKISH: Mapping[str, str] = {
     "Add a Part…": "Parça Ekle…",
     "Choose a Board…": "Kart Seç…",
     "Connect the Pins": "Pinleri Bağla",
+    "Connect {pin} to {net}": "{pin} pinini {net} netine bağla",
+    "Connect {pin} to a Net by Name…": "{pin} pinini adıyla bir nete bağla…",
     # -- the empty board --------------------------------------------------------------
     "{count} part(s) in the design, none on the board yet.": (
         "Tasarımda {count} parça var, kartta henüz hiçbiri yok."

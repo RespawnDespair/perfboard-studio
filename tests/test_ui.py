@@ -8166,6 +8166,42 @@ def test_a_pin_on_no_net_is_offered_no_way_off_one() -> None:
     _close(window)
 
 
+def test_a_free_pin_goes_to_ground_or_a_supply_in_one_click() -> None:
+    """Ground and power had no door on the sheet: a rail glyph is drawn from a net named
+    GND, and making one meant the Label tool and typing it. A pin on nothing now offers the
+    document's own rails by name, and GND and +5V when it has none of that kind -- and a net
+    made that way is classed by its name, so it IS a rail."""
+    window = _blank_window()
+    try:
+        _add(window, "R1", "r-axial-3")
+        _add(window, "R2", "r-axial-3")
+
+        def menu_at(ref: str, number: str):
+            symbol = next(s for s in window.schematic_view.item.drawing.symbols if s.ref == ref)
+            pin = next(p for p in symbol.pins if p.number == number)
+            return window.sheet_menu(
+                _sheet_at(window, symbol.at.x + pin.at.x, symbol.at.y + pin.at.y)
+            )
+
+        menu = menu_at("R1", "1")
+        labels = _labels(menu)
+        assert "Connect R1.1 to GND" in labels
+        assert "Connect R1.1 to +5V" in labels
+        _entry(menu, "to GND").trigger()
+        gnd = next(n for n in window.bus.document.nets if n.name == "GND")
+        assert gnd.net_class == "ground"
+
+        # The rail that now exists is offered by name, and no second default is invented.
+        labels = _labels(menu_at("R2", "2"))
+        assert labels.count("Connect R2.2 to GND") == 1
+        _entry(menu_at("R2", "2"), "to GND").trigger()
+        gnd = next(n for n in window.bus.document.nets if n.name == "GND")
+        assert {node.component_ref for node in gnd.nodes} == {"R1", "R2"}
+        assert any(rail.net_name == "GND" for rail in window.schematic_view.item.drawing.rails)
+    finally:
+        _close(window)
+
+
 def test_a_right_click_while_wiring_cancels_the_pair_instead_of_opening_a_menu() -> None:
     """The board's rule about a mode owning the click. A menu here would open over the pin
     somebody was aiming at and leave the pending pin armed underneath it."""

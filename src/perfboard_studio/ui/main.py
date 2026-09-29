@@ -6394,7 +6394,12 @@ class MainWindow(QMainWindow):
         )
         if not ok or not name.strip():
             return
-        name = name.strip()
+        self.join_pin_to_net_named(ref, pin, name.strip())
+
+    def join_pin_to_net_named(self, ref: str, pin: str, name: str) -> None:
+        """Put one pin on the net called ``name``, making the net if there is none --
+        classed by its name, so GND is a ground net and +5V a power one."""
+        document = self.bus.document
         node = NetNode(component_ref=ref, pin=pin)
         net = next((n for n in document.nets if n.name == name), None)
         if net is None:
@@ -7441,12 +7446,45 @@ class MainWindow(QMainWindow):
             None,
         )
         if net is None:
+            self._add_rail_entries(menu, ref, number)
             return
         node = NetNode(component_ref=ref, pin=number)
         action = menu.addAction(
             t("&Disconnect {pin} from {net}").format(pin=f"{ref}.{number}", net=net.name)
         )
         action.triggered.connect(lambda _checked=False, n=net.id: self._disconnect_one_pin(n, node))
+        menu.addSeparator()
+
+    #: Offered on a pin with nothing on it when the document has no rail of that kind
+    #: yet: the ground every circuit has, and the supply most perfboard runs on.
+    DEFAULT_RAILS: tuple[str, ...] = ("GND", "+5V")
+
+    def _add_rail_entries(self, menu: QMenu, ref: str, number: str) -> None:
+        """A pin on nothing: put it on a ground or a supply in one click.
+
+        GROUND AND POWER HAD NO DOOR ON THE SHEET. Every schematic editor has a ground
+        symbol to drop on a pin; here a rail glyph is DRAWN from a net named GND, and the
+        way to make one was the Label tool and typing the three letters -- for the pin that
+        half the parts on any sheet need. The rails the document already has are offered by
+        name, ground first, then GND and +5V if it has neither, then any other name.
+        """
+        pin_text = f"{ref}.{number}"
+        rails = sorted(
+            (n for n in self.bus.document.nets if n.net_class in ("ground", "power")),
+            key=lambda n: (n.net_class != "ground", n.name),
+        )
+        names = [n.name for n in rails]
+        for default in self.DEFAULT_RAILS:
+            implied = infer_net_class(default)
+            if not any(n.net_class == implied for n in rails):
+                names.append(default)
+        for name in names:
+            action = menu.addAction(t("Connect {pin} to {net}").format(pin=pin_text, net=name))
+            action.triggered.connect(
+                lambda _checked=False, chosen=name: self.join_pin_to_net_named(ref, number, chosen)
+            )
+        other = menu.addAction(t("Connect {pin} to a Net by Name…").format(pin=pin_text))
+        other.triggered.connect(lambda _checked=False: self.on_sheet_label(ref, number))
         menu.addSeparator()
 
     def _add_symbol_entries(self, menu: QMenu, ref: str) -> None:
