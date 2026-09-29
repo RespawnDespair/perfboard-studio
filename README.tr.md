@@ -240,10 +240,16 @@ ek değil, uygulamanın dayandığı bir kontrol aracı.
 
 ### Sıfırdan bir kart
 
+Araç çubuğunun altındaki şerit bu yolu adım adım yürür — **Devre, Kart, Yerleşim,
+Yönlendirme, Kontrol, Montaj** —, kartın her adımda nerede durduğunu söyler ve **Sonraki**
+düğmesi sıradaki adımı yapar. Elle yapıldığında akış şöyle:
+
 Şema panelini açın (`Ctrl+2`) ve devreyi çizin: parçaları Parçalar panelinden sayfaya
 sürükleyin, istediğiniz yere taşıyıp döndürün, **Bağla** ile pinden pine ya da çizilmiş
-bir telin üstüne tel çekin — ya da bir pini **Etiket** ile adına göre bir nete bağlayın —
-sonra **Kart Üzerine Yerleştir**.
+bir telin üstüne tel çekin (iki ucuna tıklayarak ya da sürükleyerek) — ya da bir pini
+**Etiket** ile adına göre bir nete bağlayın, ya da sağ tıklayıp GND ve +5V'ye bağlayın —
+sonra **Kart Üzerine Yerleştir**; önce hangi hazır kartın kullanılacağını, her birini
+devreniz üzerine yerleştirilmiş hâliyle göstererek sorar.
 Oradan **Yerleştir →
 Otomatik Yerleştir** (`Ctrl+Shift+A`), yönlendirme için **`Ctrl+R`**, ardından **Dosya → Montaj
 Rehberini Dışa Aktar** (`Ctrl+B`). Bu akışın hiçbir yerinde KiCad yok.

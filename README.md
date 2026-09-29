@@ -238,10 +238,15 @@ checking tool the application depends on rather than an optional extra.
 
 ### A board from nothing
 
+The bar under the toolbar walks through it — **Circuit, Board, Placement, Wiring, Check,
+Build** — says where the board stands on each step, and its **Next** button does whichever
+comes next. By hand, it goes like this.
+
 Open the schematic panel (`Ctrl+2`) and draw the circuit: drag parts onto the sheet out
 of the Parts panel, move and turn them where you want them, **Wire** from pin to pin or
-onto a wire already drawn — or **Label** a pin to join it to a net by name — then **Place
-on the Board**. From there
+onto a wire already drawn (click both ends, or drag) — or **Label** a pin to join it to a
+net by name, or right-click it for GND and +5V — then **Place on the Board**, which first
+asks which stock board to use, each shown with your circuit laid out on it. From there
 **Place → Auto-place Board** (`Ctrl+Shift+A`), **`Ctrl+R`** to route, and
 **File → Export Build Guide** (`Ctrl+B`). No KiCad anywhere in that.
 
