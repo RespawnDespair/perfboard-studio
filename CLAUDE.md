@@ -742,6 +742,10 @@ What keeps everything D6 was protecting:
   radius and length from the mesh, because a footprint describes a package family and a
   model is one part in it: printing at the footprint's size puts the bands inside the body,
   where they simply vanish.
+  The two parts with no mesh print too: a relay's case and a potentiometer's cover carry the
+  part's VALUE (`view3d.PRINTED_ARCHETYPES`, `_marking`), the one line of a real part's
+  print the document knows. ASCII only, because `vtkVectorText` drops every other letter,
+  and "Röle" printed as "Rle" is a wrong label rather than a short one.
 
 Three things about the mapping:
 

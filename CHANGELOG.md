@@ -56,6 +56,13 @@ closed without a bump.
 
 ### Changed
 
+- **The potentiometer and the relay look like the parts in the bag** in 3D. Neither has a
+  borrowed model, and the generated bodies were a blue disc with a peg on it and a plain
+  box. The potentiometer now has its steel cover crimped over the housing, a threaded
+  bushing and a knurled shaft with a screwdriver slot; the relay a case with rounded
+  corners standing on its feet. Both carry their value in print, as the real ones do —
+  across the relay's top, stamped into the potentiometer's cover.
+
 - **Solder-first routing lays far fewer jumpers.** The planner routed ground and power
   first, and for a builder committed to solder that rail is a wall: a trace cannot cross a
   trace, so every signal beyond it hopped over with a piece of wire. A builder who chose

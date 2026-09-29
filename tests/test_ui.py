@@ -8682,6 +8682,125 @@ def test_taking_a_rectangle_out_of_another_leaves_the_rest_of_it() -> None:
     assert area == pytest.approx(100.0 - 4.0)
 
 
+def _generated_body(footprint_id: str, value: str, rotation: int = 0):
+    """A part's body in world space, on the dense board, as the 3D view builds it."""
+    from perfboard_studio.model import ComponentInstance
+    from perfboard_studio.ui import view3d
+
+    comp = ComponentInstance(
+        id="c1",
+        ref="X1",
+        value=value,
+        footprint_id=footprint_id,
+        anchor=HoleCoord(8, 8),
+        rotation=rotation,
+    )
+    body = view3d._world_body(footprint_lookup(), comp, _load_dense().board)
+    assert body is not None
+    return body
+
+
+def _piece_bounds(piece) -> tuple[float, ...]:
+    from perfboard_studio.ui import view3d
+
+    actor = view3d._actor_for(piece)
+    actor.GetMapper().Update()
+    return tuple(actor.GetBounds())
+
+
+@pytest.mark.parametrize(
+    ("footprint_id", "value", "printed"),
+    [
+        ("relay-spdt", "SRD-12VDC-SL-C", "SRD-12VDC-SL-C"),
+        ("pot-3", " 10k ", "10k"),
+        # vtkVectorText has ASCII and nothing else: this would print "Rle 12V".
+        ("relay-spdt", "R\u00f6le 12V", ""),
+        ("pot-3", "", ""),
+        # A DIP's print is its manufacturer's, and nothing the document knows.
+        ("dip-8", "NE555", ""),
+    ],
+)
+def test_a_relay_and_a_potentiometer_carry_their_value_in_print(
+    footprint_id: str, value: str, printed: str
+) -> None:
+    assert _generated_body(footprint_id, value).marking == printed
+
+
+@pytest.mark.parametrize("rotation", [0, 90])
+def test_a_relay_is_printed_along_its_long_side_on_top_of_its_case(rotation: int) -> None:
+    from perfboard_studio.ui import view3d
+
+    body = _generated_body("relay-spdt", "SRD-12VDC-SL-C", rotation)
+    pieces = view3d._relay_pieces(body)
+    ink = [piece for piece in pieces if piece.material == view3d.INK]
+    assert len(ink) == 1, "one line of print"
+    x0, x1, y0, y1, z0, _z1 = _piece_bounds(ink[0])
+    across_x, across_y = x1 - x0, y1 - y0
+    assert (across_x > across_y) == (body.axis == "x"), "the print runs along the long side"
+    assert max(across_x, across_y) <= body.along, "and fits on it"
+    assert z0 == pytest.approx(body.height + view3d._LIFT, abs=0.05), "on the top face"
+
+    blank = view3d._relay_pieces(_generated_body("relay-spdt", ""))
+    assert not [piece for piece in blank if piece.material == view3d.INK]
+
+
+def test_a_relay_case_stands_on_its_feet_off_the_board() -> None:
+    """The dark line under the case is what says it is standing on something."""
+    from perfboard_studio.ui import view3d
+
+    body = _generated_body("relay-spdt", "")
+    case = view3d._relay_pieces(body)[0]
+    assert _piece_bounds(case)[4] == pytest.approx(
+        view3d._LIFT + view3d.RELAY_STANDOFF_MM, abs=1e-6
+    )
+
+
+def test_a_potentiometer_keeps_to_its_own_footprint() -> None:
+    """The bushing, the shaft and the tabs are detail on the part, not more part: nothing
+    reaches past the body a hair more than the tabs' own thickness, and the shaft stands on
+    the centre, where the knob goes."""
+    from perfboard_studio.ui import view3d
+
+    body = _generated_body("pot-3", "10k")
+    radius = min(body.size_x, body.size_y) / 2
+    solids = [piece for piece in view3d._pot_pieces(body) if not piece.instances]
+    assert len(solids) >= 5, "housing, cover, bushing, shaft, slot"
+    for piece in solids:
+        x0, x1, y0, y1, _z0, _z1 = _piece_bounds(piece)
+        for corner_x in (x0, x1):
+            for corner_y in (y0, y1):
+                assert abs(corner_x - body.x) <= radius + 0.45
+                assert abs(corner_y - body.y) <= radius + 0.45
+    shaft = max(solids, key=lambda piece: _piece_bounds(piece)[5])
+    x0, x1, y0, y1, _z0, z1 = _piece_bounds(shaft)
+    assert (x0 + x1) / 2 == pytest.approx(body.x, abs=0.05)
+    assert (y0 + y1) / 2 == pytest.approx(body.y, abs=0.05)
+    assert z1 == pytest.approx(body.height + view3d._LIFT, abs=0.05)
+
+
+def test_a_turned_part_is_closed_at_both_ends() -> None:
+    """A profile that stops short of the axis sweeps into a tube with no top, which draws
+    the inside of a bushing where its end should be."""
+    import vtkmodules.all as vtk
+
+    from perfboard_studio.ui import view3d
+
+    # Welded first: the normals split the surface at every crease and the sweep does not
+    # join its last column of points to its first, and neither of those is a hole.
+    welded = vtk.vtkCleanPolyData()
+    welded.SetInputData(view3d._lathe(view3d._threaded_profile(3.5, 2.2), resolution=24))
+    welded.ToleranceIsAbsoluteOn()
+    welded.SetAbsoluteTolerance(1e-6)
+    edges = vtk.vtkFeatureEdges()
+    edges.SetInputConnection(welded.GetOutputPort())
+    edges.BoundaryEdgesOn()
+    edges.FeatureEdgesOff()
+    edges.NonManifoldEdgesOff()
+    edges.ManifoldEdgesOff()
+    edges.Update()
+    assert edges.GetOutput().GetNumberOfCells() == 0
+
+
 def test_every_part_stands_exactly_as_tall_as_its_footprint_says() -> None:
     """VTK scales BEFORE it orients, and that turn maps a source's own z onto world y.
 

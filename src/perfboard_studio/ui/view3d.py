@@ -53,6 +53,7 @@ from perfboard_studio.model import (
     Board,
     BoardSide,
     Conductor,
+    Footprint,
     HoleCoord,
     NetClass,
     PerfDocument,
@@ -1354,6 +1355,137 @@ def _d_prism(radius: float, flat: float, height: float, resolution: int = 22) ->
     return mesh.data()
 
 
+def _lathe(profile: list[tuple[float, float]], resolution: int = 48) -> vtk.vtkPolyData:
+    """A turned part, from its ``(radius, z)`` profile read bottom to top and swept about Z.
+
+    That is how a turned part is drawn on its own datasheet, and it is the only way to get a
+    thread or a chamfer onto a round part: a stack of cylinders meets itself in flat rings
+    that catch no light. The profile starts and ends on the axis, so the sweep closes itself.
+    Corners sharper than the feature angle stay creases -- a thread's crest, a shaft's
+    shoulder -- and everything else is shaded round.
+    """
+    points = vtk.vtkPoints()
+    line = vtk.vtkCellArray()
+    line.InsertNextCell(len(profile))
+    for index, (radius, z) in enumerate(profile):
+        points.InsertNextPoint(radius, 0.0, z)
+        line.InsertCellPoint(index)
+    outline = vtk.vtkPolyData()
+    outline.SetPoints(points)
+    outline.SetLines(line)
+    sweep = vtk.vtkRotationalExtrusionFilter()
+    sweep.SetInputData(outline)
+    sweep.SetResolution(resolution)
+    sweep.SetAngle(360.0)
+    sweep.CappingOff()
+    normals = vtk.vtkPolyDataNormals()
+    normals.SetInputConnection(sweep.GetOutputPort())
+    normals.SetFeatureAngle(50.0)
+    normals.SplittingOn()
+    normals.ConsistencyOn()
+    normals.AutoOrientNormalsOn()
+    normals.Update()
+    result: vtk.vtkPolyData = normals.GetOutput()
+    return result
+
+
+def _rounded_case(x: float, y: float, z: float, corner: float) -> vtk.vtkPolyData:
+    """``_moulded_box`` with its four vertical edges rounded to ``corner``: a sealed case.
+
+    A DIP's corners are sharp enough that nobody sees them, which is why ``_moulded_box``
+    does not spend geometry on them. A relay is a 15 mm cube standing over everything round
+    it, and a cube with knife-edge corners at that size is the look of a placeholder; the
+    radius is what a moulded cover of that size has, and the highlight down each corner is
+    what reads as one.
+    """
+    chamfer = min(CHAMFER_MM, x / 4, y / 4, z / 3)
+    corner = min(corner, x / 2 - chamfer, y / 2 - chamfer)
+    steps = 6
+
+    def ring(width: float, depth: float, height: float) -> list[tuple[float, float, float]]:
+        points = []
+        for cx, cy, start in (
+            (width / 2 - corner, depth / 2 - corner, 0.0),
+            (-width / 2 + corner, depth / 2 - corner, 90.0),
+            (-width / 2 + corner, -depth / 2 + corner, 180.0),
+            (width / 2 - corner, -depth / 2 + corner, 270.0),
+        ):
+            for step in range(steps + 1):
+                angle = math.radians(start + 90.0 * step / steps)
+                points.append((cx + corner * math.cos(angle), cy + corner * math.sin(angle), height))
+        return points
+
+    rings = [
+        ring(x - 2 * chamfer, y - 2 * chamfer, -z / 2),
+        ring(x, y, -z / 2 + chamfer),
+        ring(x, y, z / 2 - chamfer),
+        ring(x - 2 * chamfer, y - 2 * chamfer, z / 2),
+    ]
+    mesh = _Mesh()
+    for low, high in pairwise(rings):
+        for index in range(len(low)):
+            nxt = (index + 1) % len(low)
+            mesh.polygon([low[index], low[nxt], high[nxt], high[index]])
+    mesh.polygon(list(reversed(rings[0])))
+    mesh.polygon(rings[-1])
+    normals = vtk.vtkPolyDataNormals()
+    normals.SetInputData(mesh.data())
+    normals.SetFeatureAngle(30.0)
+    normals.ConsistencyOn()
+    normals.AutoOrientNormalsOn()
+    normals.SplittingOn()
+    normals.Update()
+    result: vtk.vtkPolyData = normals.GetOutput()
+    return result
+
+
+def _knurled_prism(radius: float, height: float, teeth: int = 18) -> vtk.vtkPolyData:
+    """A knurled shaft, standing along Z from 0 to ``height``: ``teeth`` straight ridges.
+
+    A plain cylinder is a peg; the ridges are what say "turn me" -- a potentiometer's shaft
+    is knurled so a push-on knob grips it, eighteen teeth being the usual count. Faceted on
+    purpose: the flat faces between ridges are what catch the light as a knurl does. Capped
+    as a fan from the axis, because the star is not convex and a polygon that is not convex
+    is drawn wrong.
+    """
+    ring = [
+        (
+            (radius if index % 2 == 0 else radius * 0.88) * math.cos(math.pi * index / teeth),
+            (radius if index % 2 == 0 else radius * 0.88) * math.sin(math.pi * index / teeth),
+        )
+        for index in range(2 * teeth)
+    ]
+    mesh = _Mesh()
+    for index in range(len(ring)):
+        (ax, ay), (bx, by) = ring[index], ring[(index + 1) % len(ring)]
+        mesh.polygon([(0.0, 0.0, height), (ax, ay, height), (bx, by, height)])
+        mesh.polygon([(0.0, 0.0, 0.0), (bx, by, 0.0), (ax, ay, 0.0)])
+        mesh.polygon([(ax, ay, 0.0), (bx, by, 0.0), (bx, by, height), (ax, ay, height)])
+    return mesh.data()
+
+
+def _printed(text: str, height_mm: float, max_width_mm: float) -> vtk.vtkPolyData | None:
+    """``text`` as flat glyphs ``height_mm`` tall, centred on the origin and narrowed to fit
+    ``max_width_mm``: the ink printed on a part. ``None`` when nothing would be printed."""
+    vector = vtk.vtkVectorText()
+    vector.SetText(text)
+    vector.Update()
+    x0, x1, y0, y1, _z0, _z1 = vector.GetOutput().GetBounds()
+    if x1 <= x0:
+        return None
+    # vtkVectorText is about one unit tall, as the legend already relies on.
+    scale = min(height_mm, max_width_mm / (x1 - x0))
+    transform = vtk.vtkTransform()
+    transform.Scale(scale, scale, 1.0)
+    transform.Translate(-(x0 + x1) / 2, -(y0 + y1) / 2, 0.0)
+    placed = vtk.vtkTransformPolyDataFilter()
+    placed.SetTransform(transform)
+    placed.SetInputData(vector.GetOutput())
+    placed.Update()
+    result: vtk.vtkPolyData = placed.GetOutput()
+    return result
+
+
 def _sphere(radius: float, resolution: int = 28) -> Any:
     sphere = vtk.vtkSphereSource()
     sphere.SetRadius(radius)
@@ -1386,6 +1518,8 @@ class _WorldBody:
     #: Which way the wire entries face, as a world direction, for a part that has them
     #: (``footprints.wire_entry``). The generated terminal draws its openings on that face.
     entry: tuple[float, float] | None = None
+    #: What is printed on the part, for a package that carries print -- see ``_marking``.
+    marking: str = ""
 
     @property
     def along(self) -> float:
@@ -1459,7 +1593,27 @@ def _world_body(lookup: FootprintLookup, comp: Any, board: Board) -> _WorldBody 
         # From the document's own value, so the bands cannot disagree with the netlist.
         bands=resistor_bands(fp, comp.value) or (),
         entry=entry,
+        marking=_marking(fp, comp.value),
     )
+
+
+#: Packages whose real parts carry their value in print: a relay's part number across its
+#: top, a potentiometer's value stamped into its cover. Nothing else is printed, because
+#: nothing else says anything the document knows -- a DIP's print is its manufacturer's.
+PRINTED_ARCHETYPES = frozenset({"relay-box", "potentiometer"})
+
+
+def _marking(fp: Footprint, value: str) -> str:
+    """The print on a part: its value, from the document, as a real one carries it.
+
+    Only a value ``vtkVectorText`` can print whole. It has ASCII and nothing else, so
+    "Röle 12V" would come out "Rle 12V" -- a wrong label, which is worse than none, and the
+    board and the parts list still say what it is.
+    """
+    text = value.strip()
+    if fp.body.archetype not in PRINTED_ARCHETYPES or not text:
+        return ""
+    return text if all(" " <= char <= "~" for char in text) else ""
 
 
 def _through_hole_pieces(
@@ -2178,27 +2332,124 @@ def _vertical_terminal_pieces(body: _WorldBody) -> list[_Piece]:
 
 
 def _pot_pieces(body: _WorldBody) -> list[_Piece]:
-    """A round body with the adjustment shaft on top, which is what has to stay reachable."""
+    """A rotary potentiometer as it comes for a board: the moulded housing, the steel cover
+    crimped over it, the threaded bushing, and the knurled shaft with its screwdriver slot.
+
+    It was a disc with a peg on it. What says "potentiometer" is the top half -- a thread
+    somebody puts a panel nut on and a knurl somebody puts a knob on -- so that half gets
+    the detail, in the proportions of the common 16 mm part: an M7 bushing and a 6 mm shaft,
+    scaled from the footprint's own diameter so a smaller pot keeps its shape. The four
+    tabs down the side are how the cover is held on, and the one feature of the silhouette
+    that is not round.
+    """
     radius = min(body.size_x, body.size_y) / 2
-    body_h = body.height * 0.72
-    shaft_h = body.height - body_h
-    return [
+    height = body.height
+    housing = height * 0.40
+    cover = max(0.3, height * 0.04)
+    bushing = height * 0.22
+    shaft = height - housing - cover - bushing
+    bushing_r = radius * 0.44
+    shaft_r = radius * 0.375
+    housing_top = _LIFT + housing
+    cover_top = housing_top + cover
+    shaft_base = cover_top + bushing
+    metal = _rgb(body.style.accent)
+
+    pieces = [
         _Piece(
-            source=_cylinder(radius, body_h, resolution=48),
+            source=_lathe(
+                [
+                    (0.0, 0.0),
+                    (radius - 0.3, 0.0),
+                    (radius, 0.3),
+                    (radius, housing),
+                    (0.0, housing),
+                ],
+                resolution=64,
+            ),
             rgb=_rgb(body.style.fill),
-            position=(body.x, body.y, body_h / 2 + _LIFT),
-            orientation=_ALONG_Z,
-            material=GLOSS,
+            position=(body.x, body.y, _LIFT),
+            material=_material_of(body.surface),
         ),
         _Piece(
-            source=_cylinder(radius * 0.28, shaft_h, resolution=28),
-            rgb=_rgb(body.style.accent),
-            position=(body.x, body.y, body_h + shaft_h / 2 + _LIFT),
-            orientation=_ALONG_Z,
+            source=_lathe(
+                [
+                    (0.0, 0.0),
+                    (radius * 0.985, 0.0),
+                    (radius * 0.985, cover * 0.6),
+                    (radius * 0.94, cover),
+                    (0.0, cover),
+                ],
+                resolution=64,
+            ),
+            rgb=metal,
+            position=(body.x, body.y, housing_top),
             material=STEEL,
         ),
-        *_through_hole_pieces(body, _LIFT + 0.15),
+        # The thread: a crest every 0.75 mm, which is an M7's fine pitch, ending in a
+        # chamfer where a nut starts on.
+        _Piece(
+            source=_lathe(_threaded_profile(bushing_r, bushing), resolution=40),
+            rgb=metal,
+            position=(body.x, body.y, cover_top),
+            material=STEEL,
+        ),
+        _Piece(
+            source=_knurled_prism(shaft_r, shaft),
+            rgb=metal,
+            position=(body.x, body.y, shaft_base),
+            material=STEEL,
+        ),
+        # The slot across the end of the shaft, which reads on its sides as well as on top.
+        _Piece(
+            source=_box(shaft_r * 2 + 0.04, shaft_r * 0.26, shaft * 0.3),
+            rgb=_lit(body.style.accent, 0.3),
+            position=(body.x, body.y, shaft_base + shaft * 0.85 + 0.01),
+            material=STEEL,
+        ),
     ]
+    # The crimp tabs, one to each quarter: bent down over the housing from the cover.
+    for quarter in range(4):
+        angle = math.pi / 4 + quarter * math.pi / 2
+        pieces.append(
+            _Piece(
+                source=_box(1.2, 0.3, housing * 0.8),
+                rgb=metal,
+                position=(
+                    body.x + (radius + 0.12) * math.cos(angle),
+                    body.y + (radius + 0.12) * math.sin(angle),
+                    housing_top - housing * 0.4 + 0.02,
+                ),
+                orientation=(0.0, 0.0, math.degrees(angle) + 90.0),
+                material=STEEL,
+            )
+        )
+    printed = _printed(body.marking, radius * 0.17, (radius - bushing_r) * 1.7)
+    if printed is not None:
+        # Stamped into the cover in front of the bushing, where the default view reads it.
+        pieces.append(
+            _Piece(
+                source=printed,
+                rgb=_lit(body.style.accent, 0.35),
+                position=(body.x, body.y - (bushing_r + radius) / 2, cover_top + 0.01),
+                material=INK,
+            )
+        )
+    pieces.extend(_through_hole_pieces(body, _LIFT + 0.15))
+    return pieces
+
+
+def _threaded_profile(radius: float, height: float) -> list[tuple[float, float]]:
+    """A bushing's ``(radius, z)`` profile: a thread of 0.75 mm pitch, chamfered at the top."""
+    root = radius * 0.9
+    chamfer = min(0.35, height * 0.2)
+    profile = [(0.0, 0.0), (radius, 0.0)]
+    z = 0.375
+    while z < height - chamfer - 0.2:
+        profile += [(root, z), (radius, z + 0.375)]
+        z += 0.75
+    profile += [(radius, height - chamfer), (radius - chamfer, height), (0.0, height)]
+    return profile
 
 
 def _switch_pieces(body: _WorldBody) -> list[_Piece]:
@@ -2285,6 +2536,62 @@ def _box_pieces(body: _WorldBody) -> list[_Piece]:
     ]
 
 
+#: How far a relay's case stands off the board on its moulded feet. Enough to show as the
+#: dark line under the case that says it is standing on something.
+RELAY_STANDOFF_MM = 0.5
+#: The radius of a relay case's vertical edges -- see ``_rounded_case``.
+RELAY_CORNER_MM = 1.0
+
+
+def _relay_pieces(body: _WorldBody) -> list[_Piece]:
+    """A sealed relay: a moulded case standing on four feet, with its part number printed
+    across the top.
+
+    It was the plain box a film capacitor gets. The print is most of what a relay is to
+    look at -- every one carries its coil voltage and its contact rating where a person
+    reads them -- and the document knows the one line of it that matters, the value.
+    Printed along the case's long side, reading from the front as the parts on a board do.
+    """
+    standoff = min(RELAY_STANDOFF_MM, body.height * 0.05)
+    case = body.height - standoff
+    pieces = [
+        _Piece(
+            source=_rounded_case(body.size_x, body.size_y, case, RELAY_CORNER_MM),
+            rgb=_rgb(body.style.fill),
+            position=(body.x, body.y, _LIFT + standoff + case / 2),
+            material=_material_of(body.surface),
+        )
+    ]
+    foot = min(1.2, body.size_x / 6, body.size_y / 6)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            pieces.append(
+                _Piece(
+                    source=_box(foot, foot, standoff + 0.02),
+                    rgb=_lit(body.style.fill, 0.5),
+                    position=(
+                        body.x + sx * (body.size_x / 2 - foot),
+                        body.y + sy * (body.size_y / 2 - foot),
+                        _LIFT + standoff / 2,
+                    ),
+                    material=MOULDED,
+                )
+            )
+    printed = _printed(body.marking, min(body.size_x, body.size_y) * 0.11, body.along * 0.8)
+    if printed is not None:
+        pieces.append(
+            _Piece(
+                source=printed,
+                rgb=LEGEND_RGB,
+                position=(body.x, body.y, _LIFT + body.height + 0.01),
+                orientation=(0.0, 0.0, 0.0 if body.axis == "x" else 90.0),
+                material=INK,
+            )
+        )
+    pieces.extend(_through_hole_pieces(body, _LIFT + standoff + 0.15))
+    return pieces
+
+
 _BUILDERS: dict[str, Any] = {
     "axial-cylinder": _axial_pieces,
     "radial-electrolytic": _can_pieces,
@@ -2299,7 +2606,7 @@ _BUILDERS: dict[str, Any] = {
     "potentiometer": _pot_pieces,
     "tactile-switch": _switch_pieces,
     "crystal-hc49": _crystal_pieces,
-    "relay-box": _box_pieces,
+    "relay-box": _relay_pieces,
     "generic-box": _box_pieces,
     "box-header": _box_header_pieces,
     "screw-terminal-vertical": _vertical_terminal_pieces,
