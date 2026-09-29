@@ -987,8 +987,8 @@ class UpdateNetPayload:
     id: NetId
     name: str | None = None
     net_class: NetClass | None = None
-    current_a: float | None | _Keep = KEEP
-    voltage_v: float | None | _Keep = KEEP
+    current_a: float | _Keep | None = KEEP
+    voltage_v: float | _Keep | None = KEEP
 
 
 @dataclass(frozen=True, slots=True)
