@@ -8197,6 +8197,42 @@ def test_renaming_a_net_from_the_sheet_keeps_its_pins(monkeypatch) -> None:
     _close(window)
 
 
+def test_a_fitted_sheet_stays_fitted_while_the_panel_finds_its_size() -> None:
+    """The first fit happened while the panel was small, and nothing fitted it again: the
+    555 opened at under 3 px/mm in a panel with room for 5, all its text at the pixel floor
+    and bigger than the room the layout had cleared. Until somebody zooms, a new size is a
+    new fit; after they have, their view is theirs."""
+    from PySide6.QtWidgets import QApplication
+
+    from perfboard_studio.schematic import build_schematic
+    from perfboard_studio.ui.viewsch import SchematicView
+
+    view = SchematicView()
+    try:
+        view.resize(300, 200)
+        view.show()
+        QApplication.processEvents()
+        view.set_drawing(build_schematic(_load_dense(), footprint_lookup()))
+        small = view.current_scale()
+        view.resize(1200, 800)
+        QApplication.processEvents()
+        assert view.current_scale() > small * 2
+
+        view.zoom_by(1.5)
+        chosen = view.current_scale()
+        view.resize(600, 400)
+        QApplication.processEvents()
+        assert view.current_scale() == chosen
+
+        view.fit()
+        view.resize(1200, 800)
+        QApplication.processEvents()
+        assert view.current_scale() != chosen
+    finally:
+        view.close()
+        view.deleteLater()
+
+
 def test_a_pin_on_a_net_can_be_taken_off_it_from_the_sheet() -> None:
     """The one entry with no other door on this sheet, and the one you ask for while
     looking at the pin that is wired to the wrong thing."""

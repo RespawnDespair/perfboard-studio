@@ -120,7 +120,9 @@ closed without a bump.
 - **The schematic keeps its lanes out of the text.** Every row has room above for its
   references and below for its values, so no trunk runs through "NE555" or "10nF"; net
   names are placed clear of each other and of the parts' text; every power glyph says which
-  supply it is; and the panel draws text at the size the layout left room for.
+  supply it is; and the panel draws text at the size the layout left room for, re-fitting
+  the sheet as the panel finds its size until somebody zooms (it used to fit once, while
+  the panel was still small, and stay there).
 
 - **What just happened is said in the window's language.** A command describes itself in
   English -- that sentence is the undo label, the journal line and what an agent reads -- so

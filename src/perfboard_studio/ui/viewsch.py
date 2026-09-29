@@ -59,6 +59,7 @@ from PySide6.QtGui import (
     QPen,
     QPixmap,
     QPolygonF,
+    QResizeEvent,
     QWheelEvent,
 )
 from PySide6.QtWidgets import (
@@ -147,10 +148,13 @@ DOT_MM = 0.75
 
 #: The smallest each kind of text is drawn, in pixels, however far the sheet is zoomed out.
 #: Above it text is its sheet size -- the size the layout cleared room for.
-REF_PX = 9
-VALUE_PX = 8
-NET_PX = 8
-PIN_PX = 7
+#: A step under the sizes the text is drawn at when a typical sheet is fitted to a
+#: typical panel (about 5 px/mm), so a fitted sheet draws its text at its own size and the
+#: floor is only reached zoomed further out than that.
+REF_PX = 8
+VALUE_PX = 7
+NET_PX = 7
+PIN_PX = 6
 
 #: The largest, so a sheet zoomed right in to one pin does not ask the font engine for
 #: glyphs a hundred pixels tall.
@@ -635,6 +639,9 @@ class SchematicView(QGraphicsView):
         self.setScene(self._scene)
         self.item: SheetItem | None = None
         self._fitted = False
+        #: Whether somebody has chosen the view -- zoomed or panned -- since it was last
+        #: fitted. Until they have, the sheet is re-fitted whenever the panel changes size.
+        self._user_framed = False
         #: Which tool has the left button. "select" is the one every other tool returns to,
         #: which is why it is a tool at all rather than the absence of one -- an editor with
         #: no way back to plain selecting is an editor you get stuck in.
@@ -854,6 +861,21 @@ class SchematicView(QGraphicsView):
             return
         self.fitInView(sheet, Qt.AspectRatioMode.KeepAspectRatio)
         self._fitted = True
+        # Fit hands the view back to the sheet: the next resize fits it again.
+        self._user_framed = False
+
+    def resizeEvent(self, event: QResizeEvent) -> None:
+        """Keep a fitted sheet fitted while the panel finds its size.
+
+        THE FIRST FIT HAPPENED WHILE THE PANEL WAS SMALL. A sheet is fitted the first time
+        it has something on it, and in a window being built that is before the dock has its
+        real size -- so the 555 opened at under 3 px/mm in a panel with room for 5, every
+        piece of text at the pixel floor (``label_px``) and bigger than the room the layout
+        had cleared for it. Until somebody zooms or pans, a new size is a new fit.
+        """
+        super().resizeEvent(event)
+        if self._fitted and not self._user_framed:
+            self.fit()
 
     # -- picking -------------------------------------------------------------
 
@@ -909,6 +931,7 @@ class SchematicView(QGraphicsView):
         if factor != 1.0:
             self.scale(factor, factor)
         self._fitted = True
+        self._user_framed = True
         event.accept()
 
     def zoom_by(self, factor: float) -> None:
@@ -921,6 +944,7 @@ class SchematicView(QGraphicsView):
         self.scale(factor, factor)
         self.setTransformationAnchor(anchor)
         self._fitted = True
+        self._user_framed = True
 
     #: Every tool that draws a note by dragging a box out.
     SHAPE_TOOLS: tuple[str, ...] = ("line", "rectangle", "circle")
@@ -1308,6 +1332,7 @@ class SchematicView(QGraphicsView):
 
     def _start_pan(self, event: QMouseEvent) -> None:
         self._panning = True
+        self._user_framed = True
         self._pan_origin = event.position()
         self.setCursor(Qt.CursorShape.ClosedHandCursor)
 
