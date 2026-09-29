@@ -66,7 +66,7 @@ from perfboard_studio.commands import (
     UpdateBoardNotePayload,
     next_net_name,
 )
-from perfboard_studio.connectivity import FootprintLookup
+from perfboard_studio.connectivity import FootprintLookup, PhysicalNet, extract_physical_nets
 from perfboard_studio.drc import DrcViolation
 from perfboard_studio.footprints import wire_entry
 from perfboard_studio.geometry import (
@@ -1449,6 +1449,8 @@ class ConductorItem(QGraphicsItem):
         self.signal_index = signal_index
         self.hatch_far_side = hatch_far_side
         self.stack = stack
+        #: On the net selected in the Nets panel -- see BoardScene.set_highlighted_nets.
+        self.net_lit = False
         # Selectable, so a single bad route can be deleted instead of the whole autoroute
         # being undone or the entire board re-routed -- which were the only two options.
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
@@ -1504,6 +1506,11 @@ class ConductorItem(QGraphicsItem):
     @property
     def conductor_id(self) -> str:
         return self.conductor.id
+
+    def set_net_lit(self, lit: bool) -> None:
+        if lit != self.net_lit:
+            self.net_lit = lit
+            self.update()
 
     def shape(self) -> QPainterPath:
         """A clickable band along the path, so a conductor can be picked.
@@ -1591,6 +1598,17 @@ class ConductorItem(QGraphicsItem):
         path = QPainterPath(pts[0])
         for p in pts[1:]:
             path.lineTo(p)
+
+        # The selected net's copper glows in the colour its ratsnest lights in, under
+        # everything else, on either face: which net this is does not depend on the side it
+        # is seen from, and the glow is what somebody scanning the board looks for.
+        if self.net_lit:
+            glow = QPen(RATSNEST_HIGHLIGHT, width + 0.9)
+            glow.setCapStyle(Qt.PenCapStyle.RoundCap)
+            glow.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(glow)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawPath(path)
 
         if self.hatch_far_side and self.is_far_side():
             self._paint_through_the_board(painter, path, width, colour)
@@ -2441,6 +2459,10 @@ class BoardScene(QGraphicsScene):
         self.show_ratsnest = show_ratsnest
         self.show_rulers = show_rulers
         self.highlighted_nets: tuple[str, ...] = ()
+        #: The conductors on the board, by id, so lighting a net touches only them.
+        self.conductor_items: dict[str, ConductorItem] = {}
+        #: The physical nets of the document last asked about -- see _conductors_on.
+        self._physical_nets: tuple[PerfDocument, list[PhysicalNet]] | None = None
         self._risk_item: RiskRingsItem | None = None
         self._ratsnest_item: RatsnestItem | None = None
         self._ratsnest_links: tuple[RatsnestLink, ...] = ()
@@ -2570,11 +2592,50 @@ class BoardScene(QGraphicsScene):
         return labels is not None and labels.face in ("both", self.side)
 
     def set_highlighted_nets(self, net_ids: Sequence[str]) -> None:
-        """Light up the given schematic nets' remaining connections."""
+        """Light up the given schematic nets: what is left to route, and the copper laid.
+
+        The copper half is new. Selecting a net used to light only its ratsnest, so on a
+        finished board -- no ratsnest left -- choosing GND in the Nets panel changed nothing
+        anyone could see, and the one question it exists to answer, "where does this net
+        go", had no answer on the board.
+        """
         wanted = tuple(net_ids)
         if wanted != self.highlighted_nets:
             self.highlighted_nets = wanted
             self._rebuild_ratsnest()
+            self._light_net_copper()
+
+    def _light_net_copper(self) -> None:
+        lit = self._conductors_on(self.highlighted_nets)
+        for conductor_id, item in self.conductor_items.items():
+            item.set_net_lit(conductor_id in lit)
+
+    def _conductors_on(self, net_ids: Sequence[str]) -> set[str]:
+        """Every conductor electrically on one of these schematic nets.
+
+        Judged by the PHYSICAL net -- what the copper actually joins, from connectivity --
+        rather than by ``net_id``: a hand-drawn wire carries no net id, and it is exactly
+        the copper somebody selecting a net wants to find. A conductor that names the net
+        but touches none of its pins is lit as well, since that is what it claims to be.
+        """
+        if not net_ids:
+            return set()
+        wanted = set(net_ids)
+        nodes = {
+            (node.component_ref, node.pin)
+            for net in self.document.nets
+            if net.id in wanted
+            for node in net.nodes
+        }
+        if self._physical_nets is None or self._physical_nets[0] is not self.document:
+            self._physical_nets = (self.document, extract_physical_nets(self.document, self.lookup))
+        lit = {
+            conductor.id for conductor in self.document.conductors if conductor.net_id in wanted
+        }
+        for physical in self._physical_nets[1]:
+            if any((pin.component_ref, pin.pin) in nodes for pin in physical.pins):
+                lit.update(physical.conductor_ids)
+        return lit
 
     def _build(self) -> None:
         # Selection survives a rebuild. Every command triggers one, so without this a part
@@ -2592,6 +2653,7 @@ class BoardScene(QGraphicsScene):
         # wrappers whose C++ object is gone and raises "Internal C++ object already deleted".
         # Emptying first means the handler sees an empty selection, which is the truth.
         self.component_items = {}
+        self.conductor_items = {}
         previously_selected_notes = {
             note_id for note_id, note_item in self.board_note_items.items() if note_item.isSelected()
         }
@@ -2710,8 +2772,10 @@ class BoardScene(QGraphicsScene):
                 net_name=net_name_by_id.get(conductor.net_id or ""),
             )
             self.addItem(conductor_item)
+            self.conductor_items[conductor.id] = conductor_item
             if conductor.id in previously_selected_conductors:
                 conductor_item.setSelected(True)
+        self._light_net_copper()
 
         # Laid out for the whole board at once: where one part's names go depends on what
         # stands beside it. See bodies.lay_out_pin_names.

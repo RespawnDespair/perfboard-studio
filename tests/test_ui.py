@@ -5427,6 +5427,48 @@ def test_a_hatched_conductor_still_marks_every_joint() -> None:
         assert len(item.contact_points()) == len(item.conductor.path)
 
 
+def test_selecting_a_net_lights_its_copper_not_only_its_ratsnest() -> None:
+    """On a finished board there is no ratsnest left, so choosing GND in the Nets panel
+    changed nothing anybody could see. Judged by what the copper actually joins: a wire
+    drawn by hand carries no net id, and it is lit if it lands on the net's pins."""
+    from perfboard_studio.commands import AddConductorPayload, NewWireConductor
+    from perfboard_studio.geometry import all_pin_holes
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    document = persist.parse_document_or_throw(
+        (root / "examples" / "ne555-astable.perf").read_text(encoding="utf-8")
+    )
+    window = _window_on(document)
+    gnd = next(net for net in document.nets if net.name == "GND")
+    node = gnd.nodes[0]
+    part = next(c for c in document.components if c.ref == node.component_ref)
+    footprint = footprint_lookup()(part.footprint_id)
+    assert footprint is not None
+    pin_hole = next(
+        hole for pin, hole in all_pin_holes(part, footprint) if pin.number == node.pin
+    )
+    free = HoleCoord(pin_hole.col, document.board.rows - 1)
+    assert window.bus.dispatch(
+        "conductor.add",
+        AddConductorPayload(conductor=NewWireConductor(path=(pin_hole, free), net_id=None)),
+    ).ok
+    drawn = window.bus.document.conductors[-1]
+    assert drawn.net_id is None
+
+    window.scene.set_highlighted_nets([gnd.id])
+
+    lit = {cid for cid, item in window.scene.conductor_items.items() if item.net_lit}
+    assert drawn.id in lit
+    assert {c.id for c in window.bus.document.conductors if c.net_id == gnd.id} <= lit
+    assert lit != set(window.scene.conductor_items), "every net lit up, not one"
+    # A rebuild keeps it lit; clearing the selection puts it out.
+    window.scene.set_document(window.bus.document)
+    assert window.scene.conductor_items[drawn.id].net_lit
+    window.scene.set_highlighted_nets([])
+    assert not any(item.net_lit for item in window.scene.conductor_items.values())
+    _close(window)
+
+
 def test_far_side_copper_reads_as_a_band_not_just_hatch_strokes() -> None:
     """Hatch alone is thin strokes over a busy grid of pads, and zoomed out -- where
     somebody looks to see what joins what -- it thinned to nothing on the component side,

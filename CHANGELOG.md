@@ -50,6 +50,12 @@ closed without a bump.
 
 ### Fixed
 
+- **Selecting a net lit its ratsnest and nothing else.** On a finished board there is
+  no ratsnest left, so choosing GND in the Nets panel changed nothing anybody could see.
+  The net's copper now glows in the ratsnest's highlight colour, on either face, judged by
+  what the copper actually joins — a wire drawn by hand carries no net, and it lights up
+  if it lands on the net's pins.
+
 - **Exporting the build guide or saving a project froze the window.** The 3D picture for
   every step was drawn behind a wait cursor, on the belief that it took under a second;
   `atmega328-relay`'s 83 steps take about forty, and Windows calls a window that has not
