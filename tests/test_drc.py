@@ -288,6 +288,11 @@ def _violation_to_jsonable(v: DrcViolation) -> dict[str, Any]:
 #: terminal's wire entry, which the original could not see because it did not know which
 #: face the wires go in by. No fixture carries a screw terminal, so none can fire it --
 #: pinned by test_the_entry_rule_fires_on_no_golden_fixture in test_terminal_entry.py.
+#:
+#: ``wire-over-joint`` is a bare wire or bent lead lying across another net's pin, or across
+#: the soldered end of an insulated wire. The original judged a wire by its two ends, as the
+#: netlist does, so six fixtures that carry exactly that came back clean -- pinned by
+#: test_the_wire_over_joint_rule_fires_where_typescript_was_blind.
 PYTHON_ONLY_RULES = frozenset(
     {
         "conductor-crossing",
@@ -298,6 +303,7 @@ PYTHON_ONLY_RULES = frozenset(
         "wire-too-thick-for-hole",
         "terminal-entry-blocked",
         "terminal-entry-faces-in",
+        "wire-over-joint",
     }
 )
 
@@ -1512,6 +1518,32 @@ def test_the_python_only_jumper_rule_fires_where_typescript_had_no_rule_at_all()
     }
 
 
+def test_the_wire_over_joint_rule_fires_where_typescript_was_blind() -> None:
+    """Six fixtures carry a bare wire laid straight across a pin of another net -- random
+    wiring on boards that are deliberately awful in other ways too. The original judged a
+    wire by its two ends only, as the netlist does, so it reported every one of them clean.
+
+    Each one was checked against the geometry rather than taken on trust: sparse's cond-2
+    runs O3 to C2 and passes 0.84 mm from the centre of K3, whose pad has a 0.95 mm radius,
+    so the wire is lying on X1's pin 4. Whichever way this fails is something to look at.
+    """
+    fired: dict[str, int] = {}
+    for case_name in GOLDEN_CASE_NAMES:
+        doc, _expected = _load_golden(case_name)
+        count = sum(1 for v in run_drc(doc, _FOOTPRINT_LOOKUP) if v.rule == "wire-over-joint")
+        if count:
+            fired[case_name] = count
+
+    assert fired == {
+        "dense": 3,
+        "sparse": 1,
+        "random-05": 3,
+        "random-06": 1,
+        "random-10": 1,
+        "random-12": 1,
+    }
+
+
 def test_the_sharper_overlap_rule_clears_a_pair_typescript_could_not() -> None:
     """Pins the body-overlap entry in DIVERGES_FROM_TYPESCRIPT, from both ends.
 
@@ -1662,6 +1694,73 @@ def test_conductors_on_opposite_faces_do_not_cross() -> None:
     )
 
     assert by_rule(run_drc(doc, _FOOTPRINT_LOOKUP), "conductor-crossing") == []
+
+
+def test_a_bare_wire_lying_across_a_pin_of_another_net_is_an_error() -> None:
+    """The netlist joins a wire at its two ends, so neither connectivity nor LVS can see the
+    pin under the middle of this one. The bench can."""
+    doc = make_doc(
+        components=(make_component("r1", "R1", "r-axial-3", hole(5, 3)),),
+        conductors=(bare_wire("w1", (hole(5, 1), hole(5, 6))),),
+    )
+
+    violations = by_rule(run_drc(doc, _FOOTPRINT_LOOKUP), "wire-over-joint")
+
+    assert len(violations) == 1
+    assert violations[0].severity == "error"
+    assert violations[0].holes == (hole(5, 3),)
+    assert "R1 pin 1" in violations[0].message
+
+
+def test_a_bare_wire_across_an_insulated_wires_soldered_end_is_an_error() -> None:
+    """Insulation stops at the ends: each is a bare joint, like a pin, and one the
+    conductor-to-conductor rules skip because an insulated wire may cross anything."""
+    insulated = WireConductor(
+        id="w-ins", path=(hole(10, 1), hole(10, 4)), kind="insulated-wire", side="bottom"
+    )
+    doc = make_doc(conductors=(insulated, bare_wire("w1", (hole(8, 4), hole(12, 4)))))
+
+    violations = by_rule(run_drc(doc, _FOOTPRINT_LOOKUP), "wire-over-joint")
+
+    assert [v.holes for v in violations] == [(hole(10, 4),)]
+
+
+def test_a_bent_lead_across_a_foreign_pin_is_the_same_error() -> None:
+    doc = make_doc(
+        components=(make_component("r1", "R1", "r-axial-3", hole(5, 3)),),
+        conductors=(lead_bend("lb", (hole(3, 3), hole(7, 3))),),
+    )
+
+    assert len(by_rule(run_drc(doc, _FOOTPRINT_LOOKUP), "wire-over-joint")) == 1
+
+
+def test_a_bare_wire_over_a_pin_of_its_own_net_is_not_reported() -> None:
+    """Touching a joint that is already on the wire's net joins nothing new."""
+    doc = make_doc(
+        components=(make_component("r1", "R1", "r-axial-3", hole(5, 3)),),
+        conductors=(
+            bare_wire("w1", (hole(5, 1), hole(5, 6))),
+            # R1 pin 1 at F4, joined to the wire's end at F7 round the side.
+            solder_trace(
+                "t1",
+                (hole(5, 3), hole(4, 3), hole(4, 4), hole(4, 5), hole(4, 6), hole(5, 6)),
+            ),
+        ),
+    )
+
+    assert by_rule(run_drc(doc, _FOOTPRINT_LOOKUP), "wire-over-joint") == []
+
+
+def test_an_insulated_wire_over_a_pin_is_not_reported() -> None:
+    insulated = WireConductor(
+        id="w1", path=(hole(5, 1), hole(5, 6)), kind="insulated-wire", side="bottom"
+    )
+    doc = make_doc(
+        components=(make_component("r1", "R1", "r-axial-3", hole(5, 3)),),
+        conductors=(insulated,),
+    )
+
+    assert by_rule(run_drc(doc, _FOOTPRINT_LOOKUP), "wire-over-joint") == []
 
 
 def test_two_conductors_meeting_at_a_pad_are_a_junction_not_a_crossing() -> None:

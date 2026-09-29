@@ -20,6 +20,26 @@ closed without a bump.
 
 ## [Unreleased]
 
+### Added
+
+- **DRC: `wire-over-joint`.** A bare wire or a bent lead lying across a pin of another net,
+  or across the soldered end of an insulated wire, is a short at the bench that neither the
+  netlist nor LVS can see, because a wire is joined only at its two ends. The router already
+  refused to lay one; a wire drawn by hand, or a part moved under an existing one, now gets
+  an error. Six of the fifteen golden fixtures carry one, which the original engine never
+  checked, so the rule joins `PYTHON_ONLY_RULES` and is pinned there.
+
+### Fixed
+
+- **The router could short two nets through a wire's soldered end.** An insulated wire is
+  soldered down at both ends, but it does not block the copper plane, so nothing marked
+  those holes as taken. Where two insulated hops met on an empty pad, the next net's solder
+  trace ran straight through it: routing `atmega328-relay` solder-first tied +5V to XTAL1 at
+  L19. LVS reported the short and DRC did not. The router now treats every wire end like a
+  pin — a trace may not run through one and a bare wire or a bent lead may not lie across
+  one — and no golden route moves. The random-netlist property test, which only ever asked
+  the default style (the one that never hops), now runs all four.
+
 ## [0.13.0] - 2026-09-26
 
 ### Added

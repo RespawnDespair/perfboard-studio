@@ -188,7 +188,7 @@ the next regeneration silently disagree), and pinned by its own test:
 - `PYTHON_ONLY_RULES` — rules the original never had (`conductor-crossing`,
   `jumper-under-body`, `conductor-off-board`, `unknown-footprint`,
   `component-overhangs-edge`, `wire-too-thick-for-hole`, `terminal-entry-blocked`,
-  `terminal-entry-faces-in`), so
+  `terminal-entry-faces-in`, `wire-over-joint`), so
   there is nothing for a fixture to record.
   `unknown-footprint` fires on eight of the fifteen fixtures, every time
   on the id `c-disc-1`, which exists in neither engine: the fixtures are dumps of the

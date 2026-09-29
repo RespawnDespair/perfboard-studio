@@ -1023,6 +1023,94 @@ def _check_conductor_geometry_crossings(
 
 
 # ---------------------------------------------------------------------------
+# Rule 4'' -- bare copper lying across another net's solder joint (error)
+# ---------------------------------------------------------------------------
+
+
+def _check_wire_over_joint(
+    doc: PerfDocument,
+    lookup: FootprintLookup,
+    node_index: Mapping[str, PhysicalNet],
+    conductor_net_index: Mapping[ConductorId, str],
+) -> list[DrcViolation]:
+    """A bare wire or a bent lead lying across a hole where something else is soldered.
+
+    Connectivity joins a wire at its two ends only (``model.contacts_every_path_hole``),
+    which is right for the netlist and is exactly why nothing else sees this: bare copper
+    resting on a solder joint on the way to somewhere else is a short at the bench while the
+    netlist, and therefore LVS, says nothing is joined. Rules 4 and 4' compare conductors
+    with conductors; this compares one with the JOINTS it passes over -- a part's pin, or
+    the soldered end of an insulated wire or a top jumper, the two kinds those rules skip.
+
+    The router refuses to lay such a wire (``router._straight_wire_candidate`` asks the same
+    ``holes_under_line``), so a routed board never contains one. Drawing one by hand, or
+    moving a part under an existing wire, does.
+
+    A joint on the wire's own physical net is left alone: touching it joins nothing that
+    was not already joined.
+    """
+    lying = [
+        c
+        for c in doc.conductors
+        if c.kind in ("bare-wire", "lead-bend") and c.side == "bottom" and len(c.path) >= 2
+    ]
+    if not lying:
+        return []
+
+    #: Hole key -> what is soldered there, in the words the message uses.
+    joints: dict[str, str] = {}
+    for component in doc.components:
+        footprint = lookup(component.footprint_id)
+        if footprint is None:
+            continue
+        for pin, hole in all_pin_holes(component, footprint):
+            joints.setdefault(hole_key(hole), f"{component.ref} pin {pin.number}")
+    for conductor in doc.conductors:
+        if is_crossing_blocked(conductor) or len(conductor.path) < 2:
+            continue
+        label = f"the end of {conductor.kind.replace('-', ' ')} {conductor.id}"
+        for end in (conductor.path[0], conductor.path[-1]):
+            joints.setdefault(hole_key(end), label)
+
+    violations: list[DrcViolation] = []
+    for conductor in lying:
+        path = conductor.path
+        ends = {hole_key(path[0]), hole_key(path[-1])}
+        own_net = conductor_net_index.get(conductor.id)
+        reported: set[str] = set()
+        for from_, to in itertools.pairwise(path):
+            for hole in holes_under_line(from_, to):
+                key = hole_key(hole)
+                if key in ends or key in reported:
+                    continue
+                soldered = joints.get(key)
+                if soldered is None:
+                    continue
+                there = node_index.get(_node_side_key(hole, "bottom"))
+                if there is not None and own_net is not None and there.id == own_net:
+                    continue
+                reported.add(key)
+                kind = "Bent lead" if conductor.kind == "lead-bend" else "Bare wire"
+                violations.append(
+                    DrcViolation(
+                        rule="wire-over-joint",
+                        severity="error",
+                        message=(
+                            f"{kind} {conductor.id} {_conductor_ends(path)} lies across "
+                            f"{_safe_hole(hole)}, where {soldered} is soldered on another "
+                            f"net. The netlist joins a wire only at its ends, but bare copper "
+                            f"resting on a solder joint is a short at the bench. Route it "
+                            f"clear of {_safe_hole(hole)}, or use insulated wire, which may "
+                            f"pass over."
+                        ),
+                        holes=(hole,),
+                        conductor_ids=(conductor.id,),
+                    )
+                )
+    return violations
+
+
+# ---------------------------------------------------------------------------
 # Rule 5 -- solder-trace orthogonal-chain invariant (error)
 # ---------------------------------------------------------------------------
 
@@ -2108,6 +2196,7 @@ def run_drc(
         *_check_duplicate_pin_holes(doc, lookup),
         *_check_crossing_conductors(doc, conductor_net_index),
         *_check_conductor_geometry_crossings(doc, conductor_net_index),
+        *_check_wire_over_joint(doc, lookup, node_index, conductor_net_index),
         *_check_solder_trace_paths(doc),
         *_check_solder_trace_proximity(doc, lookup, node_index),
         *_check_mounting_hole_conflicts(doc, lookup),

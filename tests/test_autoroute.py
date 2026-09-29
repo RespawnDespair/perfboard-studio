@@ -51,6 +51,7 @@ from perfboard_studio.autoroute import (
 from perfboard_studio.command import CommandBus, CommandContext
 from perfboard_studio.commands import create_document_id_generator, create_standard_registry
 from perfboard_studio.connectivity import FootprintLookup, PhysicalPinRef, are_pins_connected
+from perfboard_studio.drc import run_drc
 from perfboard_studio.footprints import footprint_lookup
 from perfboard_studio.lvs import run_lvs, stale_conductor_ids
 from perfboard_studio.model import (
@@ -715,6 +716,11 @@ def test_property_random_netlist_autoroutes_without_shorts_and_reports_every_gap
     assert result.summary.shorts == 0, [
         issue.message for issue in result.issues if issue.kind == "short"
     ]
+    # The short LVS cannot see: bare copper lying across a joint joins nothing in the
+    # netlist. The router refuses to lay it, and DRC must agree that it never did.
+    assert [
+        v.message for v in run_drc(plan.document, LOOKUP) if v.rule == "wire-over-joint"
+    ] == []
 
     reported_failures = {item.link.net_name for item in unrouted_links(plan)}
     lvs_gaps = {
@@ -937,7 +943,6 @@ def test_lead_bend_first_folds_legs_and_the_others_never_do() -> None:
 @pytest.mark.parametrize("style", ["balanced", "solder", "wire", "lead-bend"])
 def test_every_style_produces_a_board_that_lvs_and_drc_accept(style: str) -> None:
     """A preference may change how the board is built. It may not change whether it works."""
-    from perfboard_studio.drc import run_drc
 
     registry = footprint_lookup()
     doc = dataclasses.replace(_load_golden_document("ne555"), conductors=())
