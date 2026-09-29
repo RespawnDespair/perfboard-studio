@@ -196,6 +196,17 @@ PICK_MM = 1.6
 #: or two neighbouring pins would compete for the same click.
 PIN_PICK_MM = 1.2
 
+#: ...and never smaller on screen than this, nor larger on the sheet than that. At the zoom
+#: a sheet is fitted at, 1.2 mm is five pixels -- a target a hand misses more often than
+#: it hits. The larger radius is safe because the NEAREST pin within it wins (``pin_at``):
+#: two neighbouring DIP pins never both claim a click, however far each one reaches.
+PIN_PICK_PX = 8
+PIN_PICK_MAX_MM = 2.0
+
+#: How far the pointer has to travel between press and release for the wire tool to read
+#: the gesture as a drag from one pin to another rather than as a click.
+DRAG_WIRE_PX = 6
+
 
 def _point(point: Point2) -> QPointF:
     return QPointF(point.x, point.y)
@@ -243,6 +254,9 @@ class SheetItem(QGraphicsItem):
         self.selected_notes: frozenset[str] = frozenset()
         #: The pin waiting for its partner while a wire is being drawn.
         self.pending_pin: tuple[str, str] | None = None
+        #: The pin the wire tool would take if the button went down now -- ringed, so the
+        #: click lands where it is aimed rather than one pin along.
+        self.hover_pin: tuple[str, str] | None = None
         #: Where the symbols being dragged are, relative to where the document says they
         #: are. Painted rather than committed, so a drag that is let go outside the sheet
         #: -- or undone -- leaves nothing behind.
@@ -317,6 +331,15 @@ class SheetItem(QGraphicsItem):
                 painter.setPen(pen)
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.drawEllipse(anchor, PICK_MM, PICK_MM)
+
+        if self.hover_pin is not None and self.hover_pin != self.pending_pin:
+            anchor = pin_anchor(drawing, *self.hover_pin)
+            if anchor is not None:
+                pen = QPen(QColor(HIGHLIGHT))
+                pen.setWidthF(HIGHLIGHT_MM * 0.4)
+                painter.setPen(pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawEllipse(anchor, PICK_MM * 0.8, PICK_MM * 0.8)
 
         self._labels(painter)
 
@@ -771,6 +794,11 @@ class SchematicView(QGraphicsView):
         self.set_pending_pin(None)
         self.pending_tee = None
         self._clear_ghosts()
+        if self.item is not None and self.item.hover_pin is not None:
+            # A ring under the pointer means "the wire tool would take this"; with another
+            # tool armed it would be a promise nothing keeps.
+            self.item.hover_pin = None
+            self.item.update()
         self.setCursor(
             Qt.CursorShape.ArrowCursor if tool == "select" else Qt.CursorShape.CrossCursor
         )
@@ -805,6 +833,11 @@ class SchematicView(QGraphicsView):
             self.item.pending_pin = pin
             self.item.update()
 
+    def pin_pick_radius(self) -> float:
+        """How close to a pin a click has to land, in sheet millimetres, at this zoom."""
+        scale = self.current_scale() or 1.0
+        return min(PIN_PICK_MAX_MM, max(PIN_PICK_MM, PIN_PICK_PX / scale))
+
     def pin_at(self, scene_pos: QPointF) -> tuple[str, str] | None:
         """The nearest pin within ``PIN_PICK_MM``, as ``(reference, pin number)``.
 
@@ -814,13 +847,14 @@ class SchematicView(QGraphicsView):
         """
         if self.item is None:
             return None
+        radius = self.pin_pick_radius()
         best: tuple[float, str, str] | None = None
         for symbol in self.item.drawing.symbols:
             for pin in symbol.pins:
                 dx = scene_pos.x() - (symbol.at.x + pin.at.x)
                 dy = scene_pos.y() - (symbol.at.y + pin.at.y)
                 distance = (dx * dx + dy * dy) ** 0.5
-                if distance <= PIN_PICK_MM and (best is None or distance < best[0]):
+                if distance <= radius and (best is None or distance < best[0]):
                     best = (distance, symbol.ref, pin.number)
         return (best[1], best[2]) if best is not None else None
 
@@ -1154,6 +1188,12 @@ class SchematicView(QGraphicsView):
             event.accept()
             return
 
+        if self.item is not None and self.tool == "wire":
+            hovered = self.pin_at(where)
+            if hovered != self.item.hover_pin:
+                self.item.hover_pin = hovered
+                self.item.update()
+
         if self.item is not None and self.tool == "wire" and self.pending_pin is not None:
             start = pin_anchor(self.item.drawing, *self.pending_pin)
             if start is not None:
@@ -1220,6 +1260,29 @@ class SchematicView(QGraphicsView):
             return
 
         where = self.mapToScene(event.position().toPoint())
+
+        if self.tool == "wire":
+            # A DRAG FROM A PIN IS A WIRE, as much as two clicks are. The press already took
+            # the first pin; released over another pin, or over a drawn wire, the drag ends
+            # the wire there. Released over nothing, the first pin stays taken and the next
+            # click finishes it -- the gesture falls back to the two clicks it always was.
+            pressed = self._press_at
+            self._press_at = None
+            travelled = (
+                (event.position().toPoint() - pressed).manhattanLength()
+                if pressed is not None
+                else 0
+            )
+            if travelled > DRAG_WIRE_PX and self.pending_pin is not None:
+                pin = self.pin_at(where)
+                if pin is not None and pin != self.pending_pin:
+                    self._wire_click(pin)
+                elif pin is None:
+                    tee = self.tee_at(where)
+                    if tee is not None:
+                        self._tee_click(tee)
+            event.accept()
+            return
 
         if self._shape_from is not None:
             start, end = self._shape_from, _snapped(where)

@@ -8233,6 +8233,110 @@ def test_a_fitted_sheet_stays_fitted_while_the_panel_finds_its_size() -> None:
         view.deleteLater()
 
 
+def _wire_view():
+    """A shown sheet of two resistors and nothing joining them, the wire tool armed, at a
+    zoom a fitted sheet really has -- where the old 1.2 mm pick was five pixels."""
+    from PySide6.QtWidgets import QApplication
+
+    from perfboard_studio.commands import AddPartPayload
+    from perfboard_studio.schematic import build_schematic
+    from perfboard_studio.ui.viewsch import SchematicView
+
+    window = _blank_window()
+    for ref in ("R1", "R2"):
+        assert window.bus.dispatch(
+            "part.add", AddPartPayload(ref=ref, footprint_id="r-axial-3")
+        ).ok
+    view = SchematicView()
+    view.resize(900, 600)
+    view.show()
+    QApplication.processEvents()
+    view.set_drawing(build_schematic(window.bus.document, footprint_lookup()))
+    view.set_tool("wire")
+    QApplication.processEvents()
+    return window, view
+
+
+def _pin_on_screen(view, ref: str, number: str):
+    from PySide6.QtCore import QPointF
+
+    symbol = next(s for s in view.item.drawing.symbols if s.ref == ref)
+    pin = next(p for p in symbol.pins if p.number == number)
+    return view.mapFromScene(QPointF(symbol.at.x + pin.at.x, symbol.at.y + pin.at.y))
+
+
+def _send_mouse(view, kind: str, pos, pressed: bool = False) -> None:
+    """A mouse event delivered straight to the sheet's viewport. QTest's own moves go
+    through the platform's cursor, and a move with no button held is not delivered at all
+    when the cursor is already where it is being sent -- which, in a suite, depends on
+    whichever test ran before."""
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtWidgets import QApplication
+
+    types = {
+        "move": QEvent.Type.MouseMove,
+        "press": QEvent.Type.MouseButtonPress,
+        "release": QEvent.Type.MouseButtonRelease,
+    }
+    left = Qt.MouseButton.LeftButton
+    button = Qt.MouseButton.NoButton if kind == "move" else left
+    held = left if (pressed or kind == "press") else Qt.MouseButton.NoButton
+    local = QPointF(pos)
+    event = QMouseEvent(
+        types[kind], local, view.viewport().mapToGlobal(local), button, held,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    QApplication.sendEvent(view.viewport(), event)
+
+
+def test_a_wire_can_be_dragged_from_pin_to_pin_or_clicked() -> None:
+    """The wire tool took two CLICKS and nothing else: a drag from one pin to another --
+    what everybody tries first -- took the first pin on the press and did nothing on the
+    release. Both are a wire now, and a pin is a target of at least a few pixels whatever
+    the zoom, with the one the pointer is over ringed before the click."""
+    from PySide6.QtCore import QPoint
+
+    window, view = _wire_view()
+    drawn: list[tuple] = []
+    view.wireDrawn.connect(lambda *args: drawn.append(args[:4]))
+    try:
+        start = _pin_on_screen(view, "R1", "2")
+        end = _pin_on_screen(view, "R2", "1")
+        # Off by a few pixels, as a hand is.
+        near = QPoint(3, 2)
+        _send_mouse(view, "move", end + near)
+        assert view.item.hover_pin == ("R2", "1")
+
+        _send_mouse(view, "press", start + near)
+        _send_mouse(view, "move", end + near, pressed=True)
+        _send_mouse(view, "release", end + near)
+        assert drawn == [("R1", "2", "R2", "1")]
+
+        for point in (start, end):
+            _send_mouse(view, "press", point)
+            _send_mouse(view, "release", point)
+        assert drawn[-1] == ("R1", "2", "R2", "1") and len(drawn) == 2
+
+        view.set_tool("select")
+        assert view.item.hover_pin is None
+
+        # The target is a few pixels whatever the zoom, and never so wide that it reaches
+        # past the next pin of a DIP by more than the nearest-wins rule can settle.
+        from perfboard_studio.ui.viewsch import PIN_PICK_MAX_MM, PIN_PICK_MM
+
+        view.resetTransform()
+        view.scale(4.0, 4.0)
+        assert view.pin_pick_radius() == PIN_PICK_MAX_MM
+        view.resetTransform()
+        view.scale(40.0, 40.0)
+        assert view.pin_pick_radius() == PIN_PICK_MM
+    finally:
+        view.close()
+        view.deleteLater()
+        _close(window)
+
+
 def test_a_pin_on_a_net_can_be_taken_off_it_from_the_sheet() -> None:
     """The one entry with no other door on this sheet, and the one you ask for while
     looking at the pin that is wired to the wrong thing."""

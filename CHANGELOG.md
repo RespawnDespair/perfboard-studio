@@ -41,6 +41,11 @@ closed without a bump.
   name with what each one is ("11 parts on a 6 x 8 cm board", the drawn-but-not-built one
   first), Import a KiCad Netlist, and the six steps named once.
 
+- **A wire on the sheet can be dragged from pin to pin**, as well as clicked at both ends.
+  A drag used to take the first pin and do nothing when let go -- the gesture everybody
+  tries first. The pin under the pointer is ringed before the click, and a pin is a target
+  of at least eight pixels at any zoom (it was 1.2 mm: five pixels on a fitted sheet).
+
 - **Ground and power from a pin's right-click.** A pin on nothing offers the sheet's rails
   by name, and GND and +5V when there are none — where it used to take the Label tool and
   typing the name.
