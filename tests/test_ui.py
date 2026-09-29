@@ -6475,6 +6475,44 @@ def test_turning_a_symbol_is_the_same_command_as_moving_one() -> None:
     _close(window)
 
 
+def test_r_turns_whatever_is_selected_in_the_view_with_the_keyboard() -> None:
+    """R was the board's Rotate and the sheet's Turn at once. With a part selected on the
+    board and the schematic panel open, both were live, Qt called the key ambiguous and
+    fired neither: R did nothing anywhere. Pressed through the real shortcut machinery,
+    from a real focus, because the bug was entirely about which of them the key reached."""
+    from PySide6.QtCore import Qt as QtCore_Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    window = _window_on(_load_dense())
+    window.show()
+    window.show_schematic()
+    on_board, on_sheet = window.bus.document.components[:2]
+    window.scene.select_components([on_board.id])
+    window.schematic_view.set_selection([on_sheet.ref])
+    QApplication.processEvents()
+
+    def rotation_of(component_id: str) -> int:
+        return next(c.rotation for c in window.bus.document.components if c.id == component_id)
+
+    window.schematic_view.setFocus()
+    QApplication.processEvents()
+    QTest.keyClick(window.schematic_view, QtCore_Qt.Key.Key_R)
+    QApplication.processEvents()
+
+    turned = {p.id: p.rotation for p in window.bus.document.sheet}
+    assert turned.get(on_sheet.id) == 90, "R on the sheet did not turn its selected symbol"
+    assert rotation_of(on_board.id) == on_board.rotation, "R on the sheet turned a board part"
+
+    window.view.setFocus()
+    QApplication.processEvents()
+    QTest.keyClick(window.view, QtCore_Qt.Key.Key_R)
+    QApplication.processEvents()
+
+    assert rotation_of(on_board.id) != on_board.rotation, "R on the board did nothing"
+    _close(window)
+
+
 def test_flipping_a_symbol_swaps_which_way_its_pins_face() -> None:
     window = _blank_window()
     _add(window, "R1", "r-axial-3")

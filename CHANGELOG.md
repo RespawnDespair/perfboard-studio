@@ -66,6 +66,12 @@ closed without a bump.
   board surface like every model, and the part of it that goes through the board was the
   one thing a header did not get.
 
+- **R did nothing while the schematic panel was open and a part was selected on the
+  board.** The board's Rotate and the sheet's Turn were both shortcuts on R, and Qt answers
+  two live shortcuts on one key by firing neither. R now belongs to the board window-wide,
+  and the sheet takes it back while it has the keyboard — R and Shift+R turn its selected
+  symbols either way.
+
 - **Borrowed parts were shaded in flat facets** — an LED's dome, a can's side — because the
   meshes carry no normals. They are computed once per mesh when it is read, with a feature
   angle that keeps real edges sharp.

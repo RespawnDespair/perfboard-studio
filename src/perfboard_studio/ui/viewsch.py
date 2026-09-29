@@ -39,7 +39,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from PySide6.QtCore import QLineF, QMimeData, QPoint, QPointF, QRect, QRectF, Qt, Signal
+from PySide6.QtCore import QEvent, QLineF, QMimeData, QPoint, QPointF, QRect, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QBrush,
     QColor,
@@ -515,6 +515,18 @@ class SheetItem(QGraphicsItem):
 # ---------------------------------------------------------------------------
 
 
+def _turn_of(event: QKeyEvent) -> int | None:
+    """+1 for R, -1 for Shift+R -- the board's own Rotate keys -- and None for anything else."""
+    if event.key() != Qt.Key.Key_R:
+        return None
+    modifiers = event.modifiers() & ~Qt.KeyboardModifier.KeypadModifier
+    if modifiers == Qt.KeyboardModifier.NoModifier:
+        return 1
+    if modifiers == Qt.KeyboardModifier.ShiftModifier:
+        return -1
+    return None
+
+
 class SchematicView(QGraphicsView):
     """Pan, zoom, and report what was clicked.
 
@@ -565,6 +577,8 @@ class SchematicView(QGraphicsView):
     noteMoved = Signal(int, float, float)
     #: Delete was pressed with something selected.
     deleteRequested = Signal()
+    #: R (+1) or Shift+R (-1) was pressed: turn the selected symbols by that many quarters.
+    turnRequested = Signal(int)
     #: The selection changed on the sheet itself.
     selectionChanged = Signal(list)
     #: The viewport position of a right-click that wants a menu. WHAT is on it is the
@@ -1190,7 +1204,29 @@ class SchematicView(QGraphicsView):
             )
         ]
 
+    def event(self, event: QEvent) -> bool:
+        # R TURNS WHAT IS SELECTED IN THE VIEW THAT HAS THE KEYBOARD. The board's Rotate owns
+        # R for the whole window, and the sheet's Turn used to own it too -- two shortcuts
+        # on one key, which Qt calls ambiguous and answers by firing NEITHER: with a part
+        # selected on the board and the schematic panel open, R did nothing anywhere.
+        # Accepting the override is how a focused widget takes a key back from the
+        # window's shortcuts, so R reaches keyPressEvent below and the board keeps it
+        # everywhere else.
+        if (
+            event.type() == QEvent.Type.ShortcutOverride
+            and isinstance(event, QKeyEvent)
+            and _turn_of(event) is not None
+        ):
+            event.accept()
+            return True
+        return super().event(event)
+
     def keyPressEvent(self, event: QKeyEvent) -> None:
+        turn = _turn_of(event)
+        if turn is not None:
+            self.turnRequested.emit(turn)
+            event.accept()
+            return
         if event.key() == Qt.Key.Key_Escape:
             if self.tool != "select":
                 self.set_tool("select")

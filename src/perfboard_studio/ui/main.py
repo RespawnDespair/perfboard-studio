@@ -4816,6 +4816,7 @@ class MainWindow(QMainWindow):
         self.schematic_view.labelRequested.connect(self.on_sheet_label)
         self.schematic_view.noteDrawn.connect(self.on_sheet_note_drawn)
         self.schematic_view.deleteRequested.connect(self.on_sheet_delete)
+        self.schematic_view.turnRequested.connect(self.on_schematic_rotate)
         self.schematic_view.footprintDropped.connect(self._on_sheet_footprint_dropped)
         self.schematic_view.contextMenuRequested.connect(self._on_sheet_context_menu)
         layout.addWidget(self.schematic_view, 1)
@@ -4912,7 +4913,9 @@ class MainWindow(QMainWindow):
         bar.addSeparator()
 
         self.act_sch_rotate = QAction(icons.icon("rotate"), t("Turn"), self)
-        self.act_sch_rotate.setShortcut(QKeySequence("R"))
+        # NO SHORTCUT. R is the board's Rotate, window-wide, and the sheet takes the key back
+        # while it has the focus (SchematicView.event) -- a second action on R made the key
+        # ambiguous, and Qt fires neither of two ambiguous shortcuts.
         self.act_sch_rotate.setToolTip(
             t("Turn the selected symbols a quarter clockwise. R does the same.")
         )
