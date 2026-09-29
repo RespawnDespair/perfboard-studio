@@ -1650,16 +1650,64 @@ def test_autoplace_commits_through_the_bus_as_one_undo_step(monkeypatch) -> None
     window.close()
 
 
-def test_reroll_advances_the_seed(monkeypatch) -> None:
-    """Annealing is a random walk, so "try again" has to actually try something else."""
+def test_every_press_of_auto_place_searches_from_a_new_seed(monkeypatch) -> None:
+    """Annealing is a random walk, so pressing it again has to actually try something else.
+    It did not: the same seed on the same board is the same answer, so a second press ran
+    for seconds and reported the placement the first had -- which reads as a button that
+    has stopped working."""
+    from perfboard_studio.ui import main as main_module
+
     window = _window_on(_load_dense())
     monkeypatch.setattr(window, "_confirm_placement", lambda plan, ms: False)
+    seeds: list[int] = []
+    real = main_module.plan_placement
+    monkeypatch.setattr(
+        main_module,
+        "plan_placement",
+        lambda doc, lookup, options, should_stop=None: (
+            seeds.append(options.seed) or real(doc, lookup, options, should_stop=should_stop)
+        ),
+    )
 
     window.on_autoplace()
-    assert window._place_seed == 0
-    window.on_autoplace(reroll=True)
-    assert window._place_seed == 1
+    window.on_autoplace()
+    assert seeds == [0, 1]
     window.close()
+
+
+def test_autoroute_on_a_finished_board_routes_it_again(monkeypatch) -> None:
+    """Nothing left to ADD used to mean nothing happened -- so changing the connection
+    style and pressing Autoroute did nothing at all. It plans the board's routing again
+    with the settings as they are, asking first because it rips copper up; and when that
+    comes out exactly as it is, it says so rather than asking to swap copper for itself."""
+    from pathlib import Path
+
+    from perfboard_studio.persist import deserialize_document
+
+    doc = deserialize_document(
+        (Path(__file__).resolve().parents[1] / "examples" / "lm317-supply.perf").read_text(
+            encoding="utf-8"
+        )
+    ).document
+    window = _window_on(doc)
+    asked: list[str] = []
+    monkeypatch.setattr(
+        type(window), "_confirm", lambda self, title, body, verb: asked.append(body) or True
+    )
+
+    window.on_autoroute_all()
+    assert len(asked) == 1, "a board already routed is routed again, after asking"
+    routed = window.bus.document.conductors
+
+    window.on_autoroute_all()
+    assert len(asked) == 1, "the same copper again is not a question"
+    assert window.bus.document.conductors == routed
+    assert "exactly as it is" in window.statusBar().currentMessage()
+
+    window.on_routing_style("wire")
+    window.on_autoroute_all()
+    assert len(asked) == 2 and window.bus.document.conductors != routed
+    _close(window)
 
 
 def test_autoplace_on_an_empty_board_says_so_rather_than_running(monkeypatch) -> None:

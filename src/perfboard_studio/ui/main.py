@@ -309,6 +309,17 @@ def _distance_to_segment(point: Point2, start: Point2, end: Point2) -> float:
     return math.hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy))
 
 
+def _same_copper(removed: Sequence[Any], planned: Sequence[Any]) -> bool:
+    """Whether a re-route would lay back exactly the copper it rips up: the same kinds on
+    the same holes, on the same faces, whichever end each run was drawn from."""
+
+    def shape(conductor: Any) -> tuple[str, str, tuple[tuple[int, int], ...]]:
+        holes = tuple((hole.col, hole.row) for hole in conductor.path)
+        return (conductor.kind, getattr(conductor, "side", "bottom"), min(holes, holes[::-1]))
+
+    return sorted(map(shape, removed)) == sorted(map(shape, planned))
+
+
 def _turned(rotation: Rotation, quarter_turns: int) -> Rotation:
     """A rotation a quarter of a turn on, wrapping. The one place the sheet does this."""
     return VALID_ROTATIONS[(VALID_ROTATIONS.index(rotation) + quarter_turns) % 4]
@@ -3918,7 +3929,7 @@ class MainWindow(QMainWindow):
                 "solderable as traces rather than wires. Shows the result before applying it."
             )
         )
-        self.act_autoplace.triggered.connect(lambda: self.on_autoplace())
+        self.act_autoplace.triggered.connect(self.on_autoplace)
         act_reroll = place_menu.addAction(t("&Try Another Arrangement"))
         act_reroll.setToolTip(
             t(
@@ -3926,7 +3937,7 @@ class MainWindow(QMainWindow):
                 "a real second answer rather than the same one twice."
             )
         )
-        act_reroll.triggered.connect(lambda: self.on_autoplace(reroll=True))
+        act_reroll.triggered.connect(self.on_autoplace)
 
         # A net could only ever arrive from a KiCad netlist, which quietly made a
         # schematic capture package a prerequisite for the ratsnest -- and so for
@@ -7598,25 +7609,27 @@ class MainWindow(QMainWindow):
 
     # -- placement ----------------------------------------------------------
 
-    def on_autoplace(self, reroll: bool = False) -> None:
+    def on_autoplace(self) -> None:
         """Anneal the placement, show what it found, and commit only if the user accepts.
 
         Asked rather than applied, unlike autoroute. Routing adds copper to a board the
         user arranged; this MOVES the board they arranged, which is not a thing to do to
         someone without showing them the result first and what it bought.
 
-        ``reroll`` advances the seed. Annealing is a random walk and the outcome genuinely
-        varies -- on the NE555 fixture the spread across seeds was 3 to 7 insulated wires
-        for the same circuit -- so "try again" is a real answer and not a placebo.
+        EVERY PRESS SEARCHES FROM A NEW SEED. Annealing is a random walk and the outcome
+        genuinely varies -- on the NE555 fixture the spread across seeds was 3 to 7
+        insulated wires for the same circuit -- and the same seed on the same board is the
+        same answer. So pressing it again used to run for seconds and report the placement
+        it had just reported, which reads as a button that has stopped working. The seed
+        is still printed with the result, so any answer can be had again.
         """
         if not self.bus.document.components:
             self.statusBar().showMessage(t("Nothing to place: the board is empty."), 6000)
             return
-        if reroll:
-            self._place_seed += 1
 
         document = self.bus.document
         options = PlacementOptions(seed=self._place_seed)
+        self._place_seed += 1
         t0 = time.perf_counter()
         plan = self._run_planner(
             t("Trying arrangements, and routing each one to compare them…"),
@@ -7629,10 +7642,13 @@ class MainWindow(QMainWindow):
             return
 
         if plan.is_empty:
+            # Kept on the status line rather than timed out: it is the whole answer to seconds
+            # of work, and one that vanished while somebody looked back at the board read
+            # exactly like the button doing nothing.
             self.statusBar().showMessage(
                 f"{describe_placement(plan)} ({elapsed:.0f} ms). "
-                + t("Place ▸ Try Another Arrangement searches again from a different seed."),
-                8000,
+                + t("Pressing Auto-place again searches from another seed."),
+                0,
             )
             return
 
@@ -7793,12 +7809,18 @@ class MainWindow(QMainWindow):
             return
         self.on_reroute(net_ids)
 
-    def on_reroute(self, only_net_ids: tuple[NetId, ...] | None) -> None:
+    def on_reroute(self, only_net_ids: tuple[NetId, ...] | None, why: str = "") -> None:
         """Rip up and route again, as one undoable command.
 
         Asked before it happens, because it DISCARDS routing -- which autoroute never
         does. The dialog says how much copper goes and what replaces it, since "14
         conductors become 12" is the only honest way to describe throwing away work.
+        ``why`` opens it, for a caller that arrived here from something else.
+
+        Not asked when the answer is the routing already there: planning is deterministic,
+        so with the same settings it usually is, and ripping copper up to lay the same
+        copper back is nothing to put a question in front of. It says so instead, and says
+        what would give a different answer.
         """
         if not self.bus.document.nets:
             self.statusBar().showMessage(t("No netlist imported, so there is nothing to route."), 6000)
@@ -7821,11 +7843,27 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"{t('Nothing to re-route')} ({elapsed:.0f} ms)", 6000)
             return
 
+        removing = set(plan.remove_ids)
+        if plan.remove_ids and _same_copper(
+            [c for c in document.conductors if c.id in removing], plan.conductors
+        ):
+            self.statusBar().showMessage(
+                f"{why + '  ' if why else ''}"
+                + t(
+                    "Routed again, and it came out exactly as it is ({elapsed:.0f} ms). "
+                    "A different Route ▸ Preferred Connection or Route ▸ Crossings gives a "
+                    "different routing."
+                ).format(elapsed=elapsed),
+                0,
+            )
+            return
+
         if plan.remove_ids:
             # Through _confirm: it rips up copper, and Yes under Enter made that a reflex --
             # twice over, since the stale-nets question below lands here on Yes as well.
             body = (
-                f"<b>{describe_reroute(plan)}</b><p>"
+                (f"<p>{why}</p>" if why else "")
+                + f"<b>{describe_reroute(plan)}</b><p>"
                 + t(
                     "{removed} existing conductor(s) will be removed and {planned} planned "
                     "in their place. Copper with no net assigned is left alone."
@@ -7966,6 +8004,18 @@ class MainWindow(QMainWindow):
         )
 
         if plan.is_empty:
+            # Nothing left to ADD, and pressing it again has to mean something: the routing
+            # already on the board is planned again, with the style and crossings as they are
+            # now -- which is what somebody who changed either and pressed Autoroute is
+            # asking for. Only copper that claims a net is ever ripped up (see
+            # autoroute.ReroutePlan), and on_reroute asks before it does.
+            wanted = set(only_net_ids) if only_net_ids else {net.id for net in document.nets}
+            if any(c.net_id in wanted for c in document.conductors):
+                self.on_reroute(
+                    only_net_ids,
+                    why=t("Everything is routed already, so Autoroute plans it again."),
+                )
+                return
             self.statusBar().showMessage(
                 f"{t('Nothing to route:')} {describe_plan(plan)}{cleared_note} ({elapsed:.0f} ms)",
                 8000,

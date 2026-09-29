@@ -107,6 +107,14 @@ closed without a bump.
 
 ### Fixed
 
+- **Pressing Autoroute or Auto-place a second time did nothing.** Autoroute on a finished
+  board said there was nothing to route, so changing the connection style or the crossings
+  and pressing it again changed nothing; it now plans the board's routing again with the
+  settings as they are — asking first, because it rips copper up — and says so when that
+  comes out exactly as it is. Auto-place searched from the same seed every time and found
+  the same answer; every press now searches from a new one, the seed is still shown with
+  the result, and an unchanged result stays on the status line instead of timing out.
+
 - **Moving a part on the schematic took every wire off the sheet.** The first move fixes
   the sheet's layout so nothing else jumps, and a fixed sheet draws only the wires
   somebody drew — none — so every connection turned into a net label and read as cut,

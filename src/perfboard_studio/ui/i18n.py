@@ -426,8 +426,18 @@ TURKISH: Mapping[str, str] = {
     "Ctrl+R routes it; Ctrl+Shift+A arranges it again from a different seed.": (
         "Ctrl+R yönlendirir; Ctrl+Shift+A farklı bir tohumla yeniden yerleştirir."
     ),
-    "Place ▸ Try Another Arrangement searches again from a different seed.": (
-        "Yerleştir ▸ Başka Bir Yerleşim Dene, farklı bir tohumla yeniden arar."
+    "Pressing Auto-place again searches from another seed.": (
+        "Otomatik Yerleştir'e yeniden basmak başka bir tohumla arar."
+    ),
+    "Everything is routed already, so Autoroute plans it again.": (
+        "Her şey zaten yönlendirilmiş; Otomatik Yönlendir hepsini yeniden planlıyor."
+    ),
+    "Routed again, and it came out exactly as it is ({elapsed:.0f} ms). "
+    "A different Route ▸ Preferred Connection or Route ▸ Crossings gives a "
+    "different routing.": (
+        "Yeniden yönlendirildi ve tıpatıp aynısı çıktı ({elapsed:.0f} ms). Farklı bir "
+        "yönlendirme için Yönlendir ▸ Tercih Edilen Bağlantı ya da Yönlendir ▸ Kesişmeler "
+        "ayarını değiştirin."
     ),
     "Nothing to re-route": "Yeniden yönlendirilecek bir şey yok",
     "Ctrl+Z puts them back.": "Ctrl+Z geri getirir.",
