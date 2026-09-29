@@ -1272,6 +1272,16 @@ is what somebody following the guide does. Sizes live in `view3d`'s constants an
 they measure; the two end pads get a solid at exactly the tube's radius there, so a flat
 cap never shows.
 
+**Solder is squashed, joints are cones, and wire bends.** A run is that tube squashed about
+the copper (`TRACE_FLATTEN`) with a cosine swell between pads (`TRACE_SAMPLES_PER_STEP`) --
+round, it read as grey plumbing. Every lead on the solder side gets a fillet
+(`build_joints`, one instanced actor, not in an exploded view) and trimmed leads stand
+`LEAD_TRIM_MM` proud of it; a wire's two ends are the same fillet. An insulated wire is
+stripped `WIRE_STRIP_MM` at each end over a tinned core, and every wire corner is bent
+round `WIRE_BEND_RADIUS_MM` (`_rounded`). `STACK_STEP_MM` is twice the tallest UPWARD
+extent -- since runs were squashed that is two insulated wires crossing, not a wire over a
+run -- and `test_no_two_conductors_are_drawn_in_the_same_place` is what said so.
+
 **How high a conductor sits is `occupancy.stacking_layers` — the WHOLE answer, not
 something to add `layer_z` back onto.** The document's own `layer_z` is that function's
 floor; adding it again in `conductor_z` put conductors the stacker had deliberately

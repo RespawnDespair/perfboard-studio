@@ -63,6 +63,14 @@ closed without a bump.
   corners standing on its feet. Both carry their value in print, as the real ones do —
   across the relay's top, stamped into the potentiometer's cover.
 
+- **Solder and wire look like solder and wire in 3D.** A run of solder was a round grey
+  tube with bulges, a wire's end a ball on its pad, an insulated wire a coloured pipe with a
+  mitre at every corner, and the leads came out of bare rings as if nothing had been
+  soldered. A run is now a low bright ridge swelling into a dome on each pad; every lead on
+  the solder side and both ends of every wire sit in a cone of solder, with the trimmed
+  lead standing proud of it; an insulated wire is stripped at each end over its tinned
+  core; and wire is bent round its corners and down into its holes.
+
 - **Solder traces go straight instead of in staircases.** Nothing in the search priced a
   bend, so a trace that stepped one hole across and one hole down, over and over, cost
   exactly what an L of the same length did — 77 one-hole steps in the solder-first routing

@@ -94,7 +94,7 @@ PAD_RGB = (0.80, 0.66, 0.32)
 #: Solder: dull pewter, and rough. Solder is NOT shiny wire, and PLAN.md Sec 8.3 makes
 #: telling the two apart at a glance a requirement of this view rather than a nicety --
 #: these two used to be (0.72,0.74,0.77) and (0.85,0.87,0.89), which is the same grey.
-SOLDER_RGB = (0.62, 0.63, 0.66)
+SOLDER_RGB = (0.68, 0.69, 0.72)
 #: Tinned copper wire: brighter, and specular enough to read as metal.
 BARE_RGB = (0.90, 0.92, 0.95)
 #: An insulated wire with no net colour of its own.
@@ -531,7 +531,7 @@ BORE_UNDER_PAD_MM = 0.015
 #: How far a trimmed lead stands proud of the solder-side copper. Enough to see that
 #: something came through the hole, not enough to look like a board nobody has cut the
 #: legs off yet.
-LEAD_TRIM_MM = 0.07
+LEAD_TRIM_MM = 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -694,8 +694,38 @@ def bore_span_z(board: Board) -> tuple[float, float]:
 #: crease all the way round -- so it read as balls threaded on a stick, a molecular model
 #: rather than a length of solder. It is one varying-radius surface now; see
 #: ``_trace_swell``.
-TRACE_JOINT_RADIUS_MM = 0.60
-TRACE_WAIST_RATIO = 0.60
+TRACE_JOINT_RADIUS_MM = 0.72
+TRACE_WAIST_RATIO = 0.52
+
+#: How tall a run stands against how wide it is. Solder WETS copper and spreads: a run is a
+#: low bright ridge and a dome on each pad, not a pipe -- and a round tube, however its
+#: radius swells, read as grey plumbing laid on the board. Squashed about the copper it is
+#: fused to, so the joints and the bridges keep their silhouette from above and lose the
+#: height that made them tubes.
+TRACE_FLATTEN = 0.5
+
+#: Points along a run per step from one pad to the next. Two -- a pad and a midpoint --
+#: made the radius change in straight lines, and a run's outline came out as a row of
+#: diamonds; with this many the swell follows a cosine and the outline is round.
+TRACE_SAMPLES_PER_STEP = 8
+
+#: The fillet of solder round a lead or a wire end where it goes through its pad: out to
+#: this radius on the copper, up the lead this far. A joint is a cone with a concave flank
+#: -- a meniscus -- and it is what makes a board look soldered at all: without it a lead
+#: came out of a bare ring, which is a board nobody has finished.
+SOLDER_FILLET_BASE_MM = 0.80
+SOLDER_FILLET_HEIGHT_MM = 0.55
+
+#: How much insulation is stripped off each end of an insulated wire, and the tinned core
+#: that shows there and goes down into the hole. A sleeve running right into the joint was
+#: a coloured capsule sitting on two pads.
+WIRE_STRIP_MM = 1.1
+WIRE_CORE_RADIUS_MM = 0.24
+
+#: The radius a wire is bent round, at every corner of its run and where it turns down
+#: into its hole. Wire is bent over a finger or a pair of pliers, not folded: a 90-degree
+#: mitre in a tube reads as plumbing, which is what an insulated wire looked like.
+WIRE_BEND_RADIUS_MM = 0.9
 
 #: 24 AWG hookup wire over the sleeve, and tinned copper for a bare link or a spine.
 BARE_WIRE_RADIUS_MM = 0.30
@@ -730,7 +760,13 @@ BEAD_RESOLUTION = 20
 #: off a board 1.6 mm thick. It bought levitation and no clearance.
 #: ``occupancy.stacking_layers`` now lifts only what actually crosses something, which is
 #: what makes a step this size affordable.
-STACK_STEP_MM = INSULATED_RADIUS_MM + TRACE_JOINT_RADIUS_MM + 0.15
+#: How far each stands off its centreline UPWARD -- a run squashed by TRACE_FLATTEN -- and
+#: the step is twice the tallest: two of the same kind can cross, and since runs were
+#: squashed the tallest pair is two insulated wires, not a wire over a run.
+STACK_STEP_MM = (
+    2 * max(INSULATED_RADIUS_MM, TRACE_JOINT_RADIUS_MM * TRACE_FLATTEN, BARE_WIRE_RADIUS_MM)
+    + 0.15
+)
 
 
 def conductor_radius(cond: Conductor) -> float:
@@ -3386,14 +3422,23 @@ def _conductor_centreline(
     """
     flat = [(*_xy(board, hole), run_z) for hole in cond.path]
     if is_trace:
-        # A point at every pad and one between each pair, so `_trace_swell` has somewhere
-        # to bring the radius back down. Nothing else about a run's path moves: it is fused
-        # to the copper along its whole length and goes exactly where the pads are.
+        # A point at every pad and TRACE_SAMPLES_PER_STEP - 1 between each pair, so
+        # `_trace_swell` can bring the radius down and back up smoothly. Nothing else about
+        # a run's path moves: it is fused to the copper along its whole length and goes
+        # exactly where the pads are.
         if len(flat) < 2:
             return flat
         woven: list[tuple[float, float, float]] = [flat[0]]
         for previous, point in pairwise(flat):
-            woven.append(((previous[0] + point[0]) / 2, (previous[1] + point[1]) / 2, run_z))
+            for step in range(1, TRACE_SAMPLES_PER_STEP):
+                t = step / TRACE_SAMPLES_PER_STEP
+                woven.append(
+                    (
+                        previous[0] + (point[0] - previous[0]) * t,
+                        previous[1] + (point[1] - previous[1]) * t,
+                        run_z,
+                    )
+                )
             woven.append(point)
         return woven
     if len(flat) < 2:
@@ -3420,6 +3465,42 @@ def _conductor_centreline(
             if end == 0
             else [*out, elbow, (x, y, joint_z)]
         )
+    return _rounded(out, WIRE_BEND_RADIUS_MM)
+
+
+def _rounded(
+    points: list[tuple[float, float, float]], radius: float, steps: int = 5
+) -> list[tuple[float, float, float]]:
+    """A polyline with every corner bent round, as wire is: each corner replaced by a curve
+    from ``radius`` before it to ``radius`` after it -- less where a leg is too short to
+    give that much, never more than half a leg, so two bends cannot overlap. The ends stay
+    exactly where they were: that is where the wire is soldered."""
+    if len(points) < 3:
+        return points
+    out = [points[0]]
+    for a, corner, b in zip(points, points[1:], points[2:], strict=False):
+        into = [corner[i] - a[i] for i in range(3)]
+        out_of = [b[i] - corner[i] for i in range(3)]
+        len_in, len_out = math.hypot(*into), math.hypot(*out_of)
+        if len_in == 0 or len_out == 0:
+            continue
+        cos = sum(into[i] * out_of[i] for i in range(3)) / (len_in * len_out)
+        if cos > 0.999:
+            out.append(corner)
+            continue
+        reach = min(radius, len_in / 2, len_out / 2)
+        start = tuple(corner[i] - into[i] / len_in * reach for i in range(3))
+        end = tuple(corner[i] + out_of[i] / len_out * reach for i in range(3))
+        for step in range(steps + 1):
+            t = step / steps
+            # A quadratic curve with the corner as its control point: tangent to both legs.
+            out.append(
+                tuple(  # type: ignore[arg-type]
+                    (1 - t) ** 2 * start[i] + 2 * (1 - t) * t * corner[i] + t**2 * end[i]
+                    for i in range(3)
+                )
+            )
+    out.append(points[-1])
     return out
 
 
@@ -3434,7 +3515,13 @@ def _trace_swell(cond: Conductor, centreline: list[tuple[float, float, float]]) 
     """
     del cond
     joint = 1.0 / TRACE_WAIST_RATIO
-    return [joint if index % 2 == 0 else 1.0 for index in range(len(centreline))]
+    swell = []
+    for index in range(len(centreline)):
+        # Full at a pad (phase 0), narrowest halfway to the next (phase 1/2), and a cosine
+        # between -- the rounded outline of solder drawn from one joint into the next.
+        phase = (index % TRACE_SAMPLES_PER_STEP) / TRACE_SAMPLES_PER_STEP
+        swell.append(1.0 + (joint - 1.0) * (1.0 + math.cos(2 * math.pi * phase)) / 2)
+    return swell
 
 
 def build_conductor(
@@ -3458,6 +3545,87 @@ def build_conductor(
     centreline = _conductor_centreline(cond, board, z, joint_z, is_trace)
     swell = _trace_swell(cond, centreline) if is_trace else None
 
+    insulated = cond.kind in ("insulated-wire", "top-jumper")
+    radius = conductor_radius(cond)
+    if insulated:
+        # The sleeve stops short of each end and the tinned core runs on into the hole:
+        # the sleeve along the trimmed centreline, the core along all of it.
+        sleeve = _trimmed(centreline, WIRE_STRIP_MM)
+        body = _tube_actor(sleeve, radius) if len(sleeve) > 1 else None
+        core = _tube_actor(centreline, WIRE_CORE_RADIUS_MM)
+        core.GetProperty().SetColor(*BARE_RGB)
+        _finish(core.GetProperty(), BRIGHT_TIN)
+        actors = [core]
+        if body is not None:
+            rgb = _hex_rgb(getattr(cond, "color", None), _insulation_rgb(net_class, signal_index))
+            body.GetProperty().SetColor(*rgb)
+            _finish(body.GetProperty(), INSULATION)
+            actors.append(body)
+    else:
+        actor = _tube_actor(centreline, radius, swell)
+        if swell is not None:
+            # Squashed about the copper, for TRACE_FLATTEN's reason.
+            _flatten_about(actor, joint_z)
+        rgb = _hex_rgb(getattr(cond, "color", None), SOLDER_RGB if is_trace else BARE_RGB)
+        actor.GetProperty().SetColor(*rgb)
+        # Solder is metal and it is ROUGH metal -- a broad soft sheen rather than the tight
+        # glint tinned wire gives. Making it smooth is what once made a run look like wire,
+        # which is the one thing it must not look like; leaving it matte is what made it
+        # look like grey plumbing, which is not better. The difference is one number now.
+        _finish(actor.GetProperty(), SOLDER_MAT if is_trace else BRIGHT_TIN)
+        actors = [actor]
+
+    # The distinction that matters: a trace is soldered at EVERY pad it crosses, a wire
+    # only at its two ends. Render exactly that -- driven by the same
+    # `contacts_every_path_hole` predicate the connectivity engine itself uses.
+    #
+    # A run's joints ALONG its length are in the tube above, because a run of solder is one
+    # piece of metal. Its two ENDS still need a solid: a tube's cap is a flat disc, which at
+    # a corner shows as a sliced-off face. At exactly the radius the tube already has there
+    # and squashed as the run is, a sphere is tangent to it and the seam does not exist.
+    #
+    # A wire's two ends are fillets -- solder, on the ends of something that is not, and the
+    # cone of it round each end is how you see where a wire is actually attached.
+    ends = vtk.vtkPoints()
+    for hole in (cond.path[0], cond.path[-1]):
+        x, y = _xy(board, hole)
+        # AT THE PAD, not at the conductor. A fillet is centred on the copper and wicks
+        # into the hole; drawn at a lifted wire's own height it would hang in the air above
+        # the pad it is supposedly made on.
+        ends.InsertNextPoint(x, y, joint_z)
+    end_data = vtk.vtkPolyData()
+    end_data.SetPoints(ends)
+    if is_trace:
+        sphere = vtk.vtkSphereSource()
+        sphere.SetRadius(radius)
+        sphere.SetThetaResolution(BEAD_RESOLUTION)
+        sphere.SetPhiResolution(BEAD_RESOLUTION)
+        sphere.Update()
+        cap: vtk.vtkPolyData = sphere.GetOutput()
+    else:
+        cap = _fillet_source(radius if not insulated else WIRE_CORE_RADIUS_MM, cond.side)
+    glyph = vtk.vtkGlyph3DMapper()
+    glyph.SetInputData(end_data)
+    glyph.SetSourceData(cap)
+    glyph.SetOrient(False)
+    glyph.SetScaling(False)
+    beads = vtk.vtkActor()
+    beads.SetMapper(glyph)
+    if is_trace:
+        _flatten_about(beads, joint_z)
+    beads.GetProperty().SetColor(*SOLDER_RGB)
+    # The same material as the run it swells out of -- a joint and the solder leading into
+    # it are one piece of metal, and two finishes would draw a seam that is not there.
+    _finish(beads.GetProperty(), SOLDER_MAT)
+    actors.append(beads)
+    return actors
+
+
+def _tube_actor(
+    centreline: list[tuple[float, float, float]], radius: float, swell: list[float] | None = None
+) -> vtk.vtkActor:
+    """A tube along ``centreline``: ``radius`` throughout, or -- with ``swell`` -- that
+    radius at the narrowest point and each point's multiple of it elsewhere."""
     points = vtk.vtkPoints()
     line = vtk.vtkPolyLine()
     line.GetPointIds().SetNumberOfIds(len(centreline))
@@ -3476,8 +3644,6 @@ def build_conductor(
             widths.InsertNextValue(value)
         poly.GetPointData().SetScalars(widths)
 
-    insulated = cond.kind in ("insulated-wire", "top-jumper")
-    radius = conductor_radius(cond)
     tube = vtk.vtkTubeFilter()
     tube.SetInputData(poly)
     # VTK scales the radius by scalar/min(scalar), so the radius set here is the value at
@@ -3501,65 +3667,107 @@ def build_conductor(
     mapper.ScalarVisibilityOff()
     actor = vtk.vtkActor()
     actor.SetMapper(mapper)
-    if is_trace:
-        fallback = SOLDER_RGB
-    elif insulated:
-        fallback = _insulation_rgb(net_class, signal_index)
-    else:
-        fallback = BARE_RGB
-    rgb = _hex_rgb(getattr(cond, "color", None), fallback)
-    actor.GetProperty().SetColor(*rgb)
-    # Solder is metal and it is ROUGH metal -- a broad soft sheen rather than the tight
-    # glint tinned wire gives. Making it smooth is what once made a run look like wire,
-    # which is the one thing it must not look like; leaving it matte is what made it look
-    # like grey plumbing, which is not better. The difference is one number now.
-    if is_trace:
-        _finish(actor.GetProperty(), SOLDER_MAT)
-    elif insulated:
-        _finish(actor.GetProperty(), INSULATION)
-    else:
-        _finish(actor.GetProperty(), BRIGHT_TIN)
-    actors = [actor]
+    return actor
 
-    # The distinction that matters: a trace is soldered at EVERY pad it crosses, a wire
-    # only at its two ends. Render exactly that -- driven by the same
-    # `contacts_every_path_hole` predicate the connectivity engine itself uses.
-    #
-    # A run's joints ALONG its length are in the tube above, because a run of solder is one
-    # piece of metal and spheres dropped on it meet it in a crease. Its two ENDS still need
-    # a solid: a tube's cap is a flat disc, which at a corner shows as a sliced-off face.
-    # At exactly the radius the tube already has there, a sphere is tangent to it and the
-    # seam does not exist.
-    #
-    # A wire's two are proud of it, and have to be: they are SOLDER, on the ends of
-    # something that is not, and a silver fillet at each end of a coloured sleeve is how
-    # you see where a wire is actually attached.
-    bead_pts = vtk.vtkPoints()
-    for hole in (cond.path[0], cond.path[-1]):
-        x, y = _xy(board, hole)
-        # AT THE PAD, not at the conductor. A fillet is centred on the copper and wicks
-        # into the hole; drawn at a lifted wire's own height it would hang in the air above
-        # the pad it is supposedly made on.
-        bead_pts.InsertNextPoint(x, y, joint_z)
-    bead_data = vtk.vtkPolyData()
-    bead_data.SetPoints(bead_pts)
-    sphere = vtk.vtkSphereSource()
-    sphere.SetRadius(radius if is_trace else radius * BEAD_RATIO_WIRE)
-    sphere.SetThetaResolution(BEAD_RESOLUTION)
-    sphere.SetPhiResolution(BEAD_RESOLUTION)
-    bead_glyph = vtk.vtkGlyph3DMapper()
-    bead_glyph.SetInputData(bead_data)
-    bead_glyph.SetSourceConnection(sphere.GetOutputPort())
-    bead_glyph.SetOrient(False)
-    bead_glyph.SetScaling(False)
-    beads = vtk.vtkActor()
-    beads.SetMapper(bead_glyph)
-    beads.GetProperty().SetColor(*SOLDER_RGB)
-    # The same material as the run it swells out of -- a joint and the solder leading into
-    # it are one piece of metal, and two finishes would draw a seam that is not there.
-    _finish(beads.GetProperty(), SOLDER_MAT)
-    actors.append(beads)
-    return actors
+
+def _flatten_about(actor: vtk.vtkActor, plane_z: float) -> None:
+    """Squash an actor by ``TRACE_FLATTEN`` towards the plane ``z = plane_z`` -- the copper
+    a run of solder is fused to -- leaving it where it is in x and y."""
+    actor.SetOrigin(0.0, 0.0, plane_z)
+    actor.SetScale(1.0, 1.0, TRACE_FLATTEN)
+
+
+def _trimmed(
+    centreline: list[tuple[float, float, float]], strip: float
+) -> list[tuple[float, float, float]]:
+    """``centreline`` with ``strip`` millimetres of its length taken off each end: where an
+    insulated wire's sleeve stops and the stripped core begins. Empty when there is not
+    that much wire."""
+    lengths = [math.dist(a, b) for a, b in pairwise(centreline)]
+    if sum(lengths) <= 2 * strip:
+        return []
+
+    def cut(points: list[tuple[float, float, float]], steps: list[float]) -> list[tuple[float, float, float]]:
+        remaining = strip
+        for index, length in enumerate(steps):
+            if length > remaining:
+                a, b = points[index], points[index + 1]
+                t = remaining / length
+                start = (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t)
+                return [start, *points[index + 1 :]]
+            remaining -= length
+        return []
+
+    front = cut(centreline, lengths)
+    back = cut(front[::-1], [math.dist(a, b) for a, b in pairwise(front[::-1])])
+    return back[::-1]
+
+
+@functools.lru_cache(maxsize=16)
+def _fillet_source(lead_radius: float, side: BoardSide) -> vtk.vtkPolyData:
+    """The solder round a lead where it comes through a pad on ``side``: a cone with a
+    concave flank from ``SOLDER_FILLET_BASE_MM`` on the copper up to just over the lead,
+    standing off the face it is made on -- down from the solder side, up from the top.
+
+    Built once per size and face and shared: every wire end and every lead on a board is
+    one of three or four of these, and each is a lathe, a sweep and a normals pass. Only
+    ever handed to a glyph mapper as SOURCE DATA, which reads it and never changes it.
+    """
+    rise = -1.0 if side == "bottom" else 1.0
+    # Ending AT the lead, so the lead or the wire running out of it closes the top: a
+    # fillet that stopped wider than its lead showed a flat disc there, a stump with
+    # something stuck in it.
+    top = lead_radius
+    base = SOLDER_FILLET_BASE_MM
+    steps = 10
+    profile = [(0.0, 0.0)]
+    for index in range(steps + 1):
+        t = index / steps
+        profile.append((top + (base - top) * (1.0 - t) ** 2, rise * SOLDER_FILLET_HEIGHT_MM * t))
+    profile.append((0.0, rise * SOLDER_FILLET_HEIGHT_MM))
+    return _lathe(profile, resolution=BEAD_RESOLUTION + 8)
+
+
+def build_joints(doc: PerfDocument, lookup: FootprintLookup) -> list[vtk.vtkActor]:
+    """A fillet of solder round every lead where it comes through the solder side, in one
+    instanced actor.
+
+    The leads came out of bare rings: a board with every part fitted and nothing soldered,
+    on the one view whose job is to show the solder side. Not drawn on a hole a mounting
+    bore has taken or a finger that was never drilled -- a lead there is DRC's error to
+    report, and a joint drawn on it would say it had been made.
+    """
+    board = doc.board
+    dead = patched_holes(doc) | undrilled_holes(doc)
+    z = pad_z(board, "bottom")
+    points = vtk.vtkPoints()
+    radius = 0.28
+    for comp in doc.components:
+        footprint = lookup(comp.footprint_id)
+        if footprint is None:
+            continue
+        radius = max(radius, footprint.lead_diameter / 2 if footprint.lead_diameter else 0.0)
+        for _pin, hole in all_pin_holes(comp, footprint):
+            if not (0 <= hole.col < board.cols and 0 <= hole.row < board.rows):
+                continue
+            if hole_key(hole) in dead:
+                continue
+            x, y = _xy(board, hole)
+            points.InsertNextPoint(x, y, z)
+    if points.GetNumberOfPoints() == 0:
+        return []
+    data = vtk.vtkPolyData()
+    data.SetPoints(points)
+    glyph = vtk.vtkGlyph3DMapper()
+    glyph.SetInputData(data)
+    glyph.SetSourceData(_fillet_source(min(radius, 0.4), "bottom"))
+    glyph.SetOrient(False)
+    glyph.SetScaling(False)
+    actor = vtk.vtkActor()
+    actor.SetMapper(glyph)
+    actor.GetProperty().SetColor(*SOLDER_RGB)
+    _finish(actor.GetProperty(), SOLDER_MAT)
+    return [actor]
 
 
 def _insulation_rgb(net_class: NetClass | None, signal_index: int) -> tuple[float, float, float]:
@@ -3759,6 +3967,11 @@ def populate_renderer(
         ren.AddActor(actor)
     for actor in build_mounting_holes(doc):
         ren.AddActor(actor)
+    if exploded_mm <= 0:
+        # Not in an exploded view: the parts are off the board there, and a joint round a
+        # lead that is not in its hole is solder on nothing.
+        for actor in build_joints(doc, lookup):
+            ren.AddActor(actor)
     leaders = build_drop_lines(lookup, doc, exploded_mm)
     if leaders is not None:
         ren.AddActor(leaders)

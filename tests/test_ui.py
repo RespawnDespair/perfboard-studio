@@ -3212,10 +3212,13 @@ def test_one_stacking_step_clears_the_widest_pair_that_can_cross() -> None:
         BARE_WIRE_RADIUS_MM,
         INSULATED_RADIUS_MM,
         STACK_STEP_MM,
+        TRACE_FLATTEN,
         TRACE_JOINT_RADIUS_MM,
     )
 
-    radii = (TRACE_JOINT_RADIUS_MM, BARE_WIRE_RADIUS_MM, INSULATED_RADIUS_MM)
+    # How far each stands off its centreline UPWARD, which is the direction a step lifts:
+    # a run is squashed about the copper it is fused to (TRACE_FLATTEN).
+    radii = (TRACE_JOINT_RADIUS_MM * TRACE_FLATTEN, BARE_WIRE_RADIUS_MM, INSULATED_RADIUS_MM)
     widest_pair = sum(sorted(radii)[-2:])
 
     assert widest_pair < STACK_STEP_MM, "a step that leaves two crossing tubes overlapping"
@@ -3281,16 +3284,122 @@ def test_a_run_swells_where_it_is_soldered_and_draws_in_between() -> None:
     copper = pad_z(board, "bottom")
     trace = SolderTraceConductor(id="t1", path=tuple(HoleCoord(c, 2) for c in range(2, 6)))
 
+    from perfboard_studio.ui.view3d import TRACE_SAMPLES_PER_STEP
+
     line = _conductor_centreline(trace, board, copper, copper, is_trace=True)
     swell = _trace_swell(trace, line)
 
+    samples = TRACE_SAMPLES_PER_STEP
     assert len(swell) == len(line)
-    assert len(line) == 2 * len(trace.path) - 1, "a point at each pad and one between"
-    # Widest exactly at the pads, narrowest exactly between them.
-    at_pads = swell[0::2]
-    between = swell[1::2]
+    assert len(line) == samples * (len(trace.path) - 1) + 1, "a pad, then points between"
+    # Widest exactly at the pads, narrowest exactly halfway between them...
+    at_pads = swell[0::samples]
+    halfway = swell[samples // 2 :: samples]
     assert len(at_pads) == len(trace.path)
-    assert min(at_pads) > max(between)
+    assert min(at_pads) == max(swell) and max(halfway) == min(swell)
+    # ...and never a corner in between: the width falls to the waist and rises again.
+    first_step = swell[: samples + 1]
+    assert first_step[: samples // 2 + 1] == sorted(first_step[: samples // 2 + 1], reverse=True)
+    assert first_step[samples // 2 :] == sorted(first_step[samples // 2 :])
+
+
+def test_every_lead_on_the_solder_side_is_soldered() -> None:
+    """The leads came out of bare rings -- a board with every part fitted and nothing
+    soldered, on the one view whose job is to show the solder side. One fillet at every
+    pin hole, and none where a mounting bore has taken the pad."""
+    import dataclasses
+
+    from perfboard_studio.geometry import all_pin_holes
+    from perfboard_studio.model import MountingHole
+    from perfboard_studio.ui.view3d import build_joints
+
+    doc = _load_dense()
+    lookup = footprint_lookup()
+    holes = {
+        (hole.col, hole.row)
+        for comp in doc.components
+        if (fp := lookup(comp.footprint_id)) is not None
+        for _pin, hole in all_pin_holes(comp, fp)
+        if 0 <= hole.col < doc.board.cols and 0 <= hole.row < doc.board.rows
+    }
+    (actor,) = build_joints(doc, lookup)
+    assert actor.GetMapper().GetInput().GetNumberOfPoints() == len(holes)
+
+    col, row = sorted(holes)[0]
+    bored = dataclasses.replace(
+        doc, mounting_holes=(MountingHole(id="mh1", at=HoleCoord(col, row)),)
+    )
+    (fewer,) = build_joints(bored, lookup)
+    assert fewer.GetMapper().GetInput().GetNumberOfPoints() < len(holes)
+
+
+def test_a_fillet_is_a_closed_cone_standing_off_the_face_it_is_made_on() -> None:
+    import vtkmodules.all as vtk
+
+    from perfboard_studio.ui.view3d import (
+        LEAD_TRIM_MM,
+        SOLDER_FILLET_BASE_MM,
+        SOLDER_FILLET_HEIGHT_MM,
+        _fillet_source,
+    )
+
+    below = _fillet_source(0.3, "bottom").GetBounds()
+    above = _fillet_source(0.3, "top").GetBounds()
+    assert below[5] == pytest.approx(0.0) and below[4] == pytest.approx(-SOLDER_FILLET_HEIGHT_MM)
+    assert above[4] == pytest.approx(0.0) and above[5] == pytest.approx(SOLDER_FILLET_HEIGHT_MM)
+    assert below[1] == pytest.approx(SOLDER_FILLET_BASE_MM, abs=0.01)
+    # A trimmed lead stands proud of its joint, as a cut one does.
+    assert LEAD_TRIM_MM > SOLDER_FILLET_HEIGHT_MM
+
+    welded = vtk.vtkCleanPolyData()
+    welded.SetInputData(_fillet_source(0.3, "bottom"))
+    welded.ToleranceIsAbsoluteOn()
+    welded.SetAbsoluteTolerance(1e-6)
+    edges = vtk.vtkFeatureEdges()
+    edges.SetInputConnection(welded.GetOutputPort())
+    edges.BoundaryEdgesOn()
+    edges.FeatureEdgesOff()
+    edges.NonManifoldEdgesOff()
+    edges.ManifoldEdgesOff()
+    edges.Update()
+    assert edges.GetOutput().GetNumberOfCells() == 0
+
+
+def test_an_insulated_wire_is_stripped_at_both_ends() -> None:
+    """A sleeve running right into the joint was a coloured capsule on two pads."""
+    import itertools
+    import math
+
+    from perfboard_studio.ui.view3d import WIRE_STRIP_MM, _trimmed
+
+    line = [(0.0, 0.0, 0.0), (5.0, 0.0, 0.0), (5.0, 5.0, 0.0)]
+    sleeve = _trimmed(line, WIRE_STRIP_MM)
+    length = sum(math.dist(a, b) for a, b in itertools.pairwise(line))
+    kept = sum(math.dist(a, b) for a, b in itertools.pairwise(sleeve))
+    assert kept == pytest.approx(length - 2 * WIRE_STRIP_MM)
+    assert sleeve[0] == pytest.approx((WIRE_STRIP_MM, 0.0, 0.0))
+    assert sleeve[-1] == pytest.approx((5.0, 5.0 - WIRE_STRIP_MM, 0.0))
+    assert _trimmed([(0.0, 0.0, 0.0), (2.0, 0.0, 0.0)], WIRE_STRIP_MM) == []
+
+
+def test_a_wire_is_bent_round_its_corners_and_ends_where_it_is_soldered() -> None:
+    """A 90-degree mitre in a tube reads as plumbing; wire is bent over a finger."""
+    import math
+
+    from perfboard_studio.ui.view3d import WIRE_BEND_RADIUS_MM, _rounded
+
+    corner = (5.0, 0.0, 0.0)
+    line = [(0.0, 0.0, 0.0), corner, (5.0, 5.0, 0.0)]
+    bent = _rounded(line, WIRE_BEND_RADIUS_MM)
+    assert bent[0] == line[0] and bent[-1] == line[-1]
+    assert corner not in bent, "the corner is replaced by the bend"
+    assert min(math.dist(point, corner) for point in bent) > 0.1
+    assert all(
+        math.dist(point, corner) <= WIRE_BEND_RADIUS_MM + 1e-9
+        for point in bent[1:-1]
+    ), "and the bend stays within its radius of where the corner was"
+    straight = [(0.0, 0.0, 0.0), (2.0, 0.0, 0.0), (4.0, 0.0, 0.0)]
+    assert _rounded(straight, WIRE_BEND_RADIUS_MM) == straight
 
 
 def _segment_gap(p1, p2, q1, q2):
