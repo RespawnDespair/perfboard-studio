@@ -47,6 +47,8 @@ from .schematic import (
     MARGIN_MM,
     NET_LABEL_MM,
     PIN_LABEL_MM,
+    REF_LABEL_MM,
+    VALUE_LABEL_MM,
     Annotation,
     Label,
     NoConnect,
@@ -93,8 +95,10 @@ class SheetInk:
     #: On, off. A dash long enough to read as deliberate at a glance and at print size.
     dash_mm: tuple[Mm, Mm] = (1.4, 0.9)
 
-    ref_mm: Mm = 1.7
-    value_mm: Mm = 1.4
+    #: From the layout, which reserves a band of room above and below every row for
+    #: exactly this text (``schematic.REF_BAND_MM`` / ``VALUE_BAND_MM``).
+    ref_mm: Mm = REF_LABEL_MM
+    value_mm: Mm = VALUE_LABEL_MM
     #: NOT a number of its own. `schematic.py` reserves a box of exactly this height above
     #: each run so that no wire is drawn through the net's name, and a sheet that then drew
     #: the name at some other size would be filling a gap that was measured for a different
@@ -319,7 +323,7 @@ def _label(label: Label, ink: SheetInk) -> str:
         size, colour, bold = ink.ref_mm, ink.ink, True
     elif label.kind == "value":
         size, colour, bold = ink.value_mm, ink.dim, False
-    elif label.kind == "net":
+    elif label.kind in ("net", "rail"):
         size, colour, bold = ink.net_mm, ink.signal, False
     else:
         size, colour, bold = ink.pin_mm, ink.dim, False
@@ -363,17 +367,24 @@ def drawing_to_svg(
     notes_band = (
         ink.note_mm * (_NOTE_LEADING * len(drawing.notes) + 1.0) if drawing.notes else 0.0
     )
+    # The same property for the whole height, stated the same way: the box starts at the
+    # WRITTEN -title_band, and its written height has to reach the bottom of the sheet from
+    # there. 124.46 of sheet under a 7.68 title came to 132.14 written, and -7.68 + 132.14
+    # is 124.45999999999998 -- a sheet cropped by a femtometre, which is still cropped.
+    total_h = _ceil_to_written(sheet_h + title_band + notes_band)
+    while float(_n(-title_band)) + float(_n(total_h)) < sheet_h + notes_band:
+        total_h += 0.001
 
     out: list[str] = [
         '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" '
-        f'width="{_n(sheet_w)}mm" height="{_n(sheet_h + title_band + notes_band)}mm" '
-        f'viewBox="0 {_n(-title_band)} {_n(sheet_w)} {_n(sheet_h + title_band + notes_band)}">'
+        f'width="{_n(sheet_w)}mm" height="{_n(total_h)}mm" '
+        f'viewBox="0 {_n(-title_band)} {_n(sheet_w)} {_n(total_h)}">'
     ]
     out.append(f"<title>{escape(title or 'Schematic')}</title>")
     out.append(f"<desc>Perfboard Studio {__version__}</desc>")
     out.append(
         f'<rect x="0" y="{_n(-title_band)}" width="{_n(sheet_w)}" '
-        f'height="{_n(sheet_h + title_band + notes_band)}" fill="{ink.background}"/>'
+        f'height="{_n(total_h)}" fill="{ink.background}"/>'
     )
 
     if title:

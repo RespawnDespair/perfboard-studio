@@ -69,7 +69,9 @@ from perfboard_studio.schematic import (
     PIN_PITCH_MM,
     RAIL_GLYPH_DEPTH_MM,
     RAIL_GLYPH_MM,
+    REF_LABEL_MM,
     TRACK_PITCH_MM,
+    VALUE_LABEL_MM,
     Label,
     SchematicDrawing,
     SchematicOptions,
@@ -174,6 +176,63 @@ def test_no_two_symbols_share_space(path: Path) -> None:
             assert not overlapping, f"{a[4]} and {b[4]} overlap"
 
 
+def part_label_box(label: Label) -> tuple[float, float, float, float]:
+    """The rectangle a reference or a value occupies -- a reference ABOVE its point, a value
+    BELOW it, both centred -- at the sizes the exported sheet draws them. Written out again
+    for the reason ``net_label_box`` is."""
+    size = REF_LABEL_MM if label.kind == "ref" else VALUE_LABEL_MM
+    half = len(label.text) * size * NET_LABEL_ADVANCE / 2
+    if label.kind == "ref":
+        return label.at.x - half, label.at.y - size, label.at.x + half, label.at.y
+    return label.at.x - half, label.at.y, label.at.x + half, label.at.y + 1.2 * size
+
+
+@pytest.mark.parametrize("path", ALL_BOARDS, ids=lambda path: path.stem)
+def test_no_trunk_runs_through_a_reference_or_a_value(path: Path) -> None:
+    """A row used to be exactly as tall as its tallest body, and the first lane of the
+    channel beneath it was where that body's value is printed: the 555 drawn from a netlist
+    had trunks through "NE555", "10nF" and "J1". ``REF_BAND_MM`` and ``VALUE_BAND_MM`` keep
+    the lanes out of both texts, and every HORIZONTAL run is a lane -- which is the reading
+    that matters, since a line along a word is the overlap that makes it unreadable."""
+    drawing = drawing_for(path)
+    for label in drawing.labels:
+        if label.kind not in ("ref", "value"):
+            continue
+        box = part_label_box(label)
+        for start, end, what in segments(drawing):
+            if abs(start.y - end.y) > 1e-9:
+                continue
+            assert not box_meets_segment(box, start, end), (
+                f"{path.stem}: {what} runs through the {label.kind} {label.text}"
+            )
+
+
+@pytest.mark.parametrize("path", ALL_BOARDS, ids=lambda path: path.stem)
+def test_no_net_name_is_printed_over_another_piece_of_text(path: Path) -> None:
+    """Three names looking for room near the same corner of an IC all used to find the same
+    room: a net name was kept off the wires and nothing else, so "VCC", "THRESH" and "OUT"
+    came out as one smudge under U1, and a name could land on a value."""
+    drawing = drawing_for(path)
+    texts = [
+        (net_label_box(label) if label.kind in ("net", "rail") else part_label_box(label), label)
+        for label in drawing.labels
+        if label.kind in ("net", "rail", "ref", "value")
+    ]
+    for index, (box, label) in enumerate(texts):
+        if label.kind not in ("net", "rail"):
+            continue
+        for other_index, (other, other_label) in enumerate(texts):
+            if other_index == index:
+                continue
+            overlapping = (
+                box[0] < other[2] and other[0] < box[2] and box[1] < other[3] and other[1] < box[3]
+            )
+            assert not overlapping, (
+                f"{path.stem}: the net name {label.text} is printed over "
+                f"the {other_label.kind} {other_label.text}"
+            )
+
+
 def net_label_box(label: Label) -> tuple[float, float, float, float]:
     """The rectangle a net name occupies. ``Label.at`` IS its baseline, and it sits above.
 
@@ -182,7 +241,10 @@ def net_label_box(label: Label) -> tuple[float, float, float, float]:
     agree with it.
     """
     width = len(label.text) * NET_LABEL_MM * NET_LABEL_ADVANCE
-    return label.at.x, label.at.y - NET_LABEL_MM, label.at.x + width, label.at.y
+    left = {"left": label.at.x, "centre": label.at.x - width / 2, "right": label.at.x - width}[
+        label.anchor
+    ]
+    return left, label.at.y - NET_LABEL_MM, left + width, label.at.y
 
 
 def box_meets_segment(
@@ -628,6 +690,28 @@ def test_turning_rails_off_puts_the_ground_net_back_on_the_sheet_as_wire() -> No
     plain = build_schematic(document, REGISTRY, SchematicOptions(rail_classes=frozenset()))
     assert not plain.rails
     assert any(wire.net_class == "ground" for wire in plain.wires)
+
+
+def test_every_power_glyph_says_which_supply_it_is() -> None:
+    """A power glyph is a bar on a stem, so two supplies drew two identical bars and which pin
+    was on which could only be found by tracing wires back to the connector. Every power
+    glyph now carries its net's name, centred over the bar; a ground glyph says GND on its
+    own and is left alone."""
+    drawing = drawing_for(EXAMPLES_DIR / "ne555-astable.perf")
+    names = [label for label in drawing.labels if label.kind == "rail"]
+    assert any(rail.net_class == "power" for rail in drawing.rails)
+    for rail in drawing.rails:
+        over = [
+            label
+            for label in names
+            if abs(label.at.x - rail.at.x) < 1e-9 and rail.at.y - GRID_MM < label.at.y < rail.at.y
+        ]
+        if rail.net_class == "power":
+            assert [label.text for label in over] == [rail.net_name], (
+                f"the {rail.net_name} glyph at {rail.at} does not say which supply it is"
+            )
+        else:
+            assert not over, "a ground glyph says GND already"
 
 
 def test_a_ground_rail_points_down_and_a_power_rail_points_up() -> None:

@@ -146,6 +146,30 @@ PIN_PITCH_MM: Mm = 2 * GRID_MM
 NET_LABEL_MM: Mm = 1.3
 NET_LABEL_ADVANCE: float = 0.55
 
+#: The height a part's reference and its value are drawn at, in millimetres of sheet.
+#:
+#: The same arrangement again: the derived layout reserves a band above and below every
+#: row of symbols for these two (``REF_BAND_MM``, ``VALUE_BAND_MM``), and the exported sheet takes its sizes
+#: from here (``SheetInk.ref_mm`` / ``value_mm``) so the band was measured for the text
+#: that is actually drawn in it.
+REF_LABEL_MM: Mm = 1.7
+VALUE_LABEL_MM: Mm = 1.4
+
+#: The room above and below a row of symbols that belongs to the row's references and
+#: values, and that no channel lane may use.
+#:
+#: WITHOUT IT A TRUNK RAN THROUGH THE TEXT. A row was exactly as tall as its tallest body,
+#: and the first lane of the channel under it sat one grid step below that body -- which
+#: is where the value is printed, 1.0 to 2.5 mm down. On a 555 drawn from a netlist the
+#: trunks went through "NE555", "10nF" and "J1" in one sheet. A reference starts 3.6 mm
+#: over its body, so it gets a whole step and the last lane above is then at least 1.5 mm
+#: clear of it; a value needs only half a step to put the first lane 1.3 mm under it.
+#: Asymmetric because the two texts are: every row pays for the pair, and a full step
+#: under every row pushed two of the random fixtures past the aspect the sheet is held to.
+#: ``test_no_trunk_runs_through_a_reference_or_a_value`` is the measurement.
+REF_BAND_MM: Mm = GRID_MM
+VALUE_BAND_MM: Mm = GRID_MM / 2
+
 #: The height a pin number or pin name is drawn at, in millimetres of sheet.
 #:
 #: The same arrangement as ``NET_LABEL_MM``: a box WIDENS to fit the names its part
@@ -357,12 +381,15 @@ class Label:
     """A piece of text with a place and a job.
 
     ``kind`` exists so the renderer can style text without parsing it: a reference reads
-    bold, a value dim, a net name small, a pin number smaller still.
+    bold, a value dim, a net name small, a pin number smaller still. ``rail`` is a net name
+    printed at a power glyph (``_rail_names``) -- drawn exactly as a net name,
+    and a kind of its own because it names a glyph rather than a run, which is what every
+    rule about where a net name sits relative to its wire is written about.
     """
 
     text: str
     at: Point2
-    kind: Literal["ref", "value", "net", "pin"]
+    kind: Literal["ref", "value", "net", "pin", "rail"]
     anchor: Literal["left", "centre", "right"] = "left"
 
 
@@ -2170,6 +2197,81 @@ def _net_label_at(
     return Point2(x=best, y=above)
 
 
+def _rail_names(rails: Sequence[Rail]) -> list[Label]:
+    """The net's name over every power glyph.
+
+    A power glyph is a bar on a stem and nothing else, so a sheet with a 5 V rail and a 12 V
+    rail drew two identical bars, and which pin was on which supply could only be found by
+    tracing the wires back to the connector -- the one question the glyph exists to answer
+    (``rail_glyph_bars``). Every schematic prints the supply's name on its symbol.
+
+    Over the bar, clear of it by ``NET_LABEL_CLEARANCE_MM``: the band a net name gets over
+    its own run, and for the same reason it cannot reach the next lane -- the two together
+    stay under ``TRACK_PITCH_MM``. A ground glyph is left as it is. It already says GND,
+    and there is no room to say anything else: under its bars is the next lane and beside
+    them the next vertical track, one pitch away, where a name was first tried and landed
+    on the neighbouring glyph.
+    """
+    labels: list[Label] = []
+    for rail in rails:
+        if rail.net_class != "power":
+            continue
+        x, y = rail.at.x, rail.at.y
+        if rail.direction == "up":
+            at = Point2(x=x, y=y - NET_LABEL_CLEARANCE_MM)
+        else:
+            at = Point2(x=x, y=y + NET_LABEL_CLEARANCE_MM + NET_LABEL_MM)
+        labels.append(Label(text=rail.net_name, at=at, kind="rail", anchor="centre"))
+    return labels
+
+
+def _net_name_box(label: Label) -> tuple[Mm, Mm, Mm, Mm]:
+    """``_label_box`` for a net name of any anchor: the text sits above its baseline."""
+    width = _text_width(label.text, NET_LABEL_MM)
+    left = {"left": label.at.x, "centre": label.at.x - width / 2, "right": label.at.x - width}
+    return _label_box(label.text, left[label.anchor], label.at.y)
+
+
+def _text_width(text: str, size: Mm) -> Mm:
+    """About how wide ``text`` is at ``size`` -- the advance ``_label_box`` assumes."""
+    return len(text) * size * NET_LABEL_ADVANCE
+
+
+def _part_text_width(placed: _Placed, options: SchematicOptions) -> Mm:
+    """The widest of a symbol's reference and value, as the layout reserves room for them."""
+    widest = _text_width(placed.ref, REF_LABEL_MM)
+    if options.show_values and placed.value:
+        widest = max(widest, _text_width(placed.value, VALUE_LABEL_MM))
+    return widest
+
+
+def _part_label_box(label: Label) -> tuple[Mm, Mm, Mm, Mm] | None:
+    """The rectangle a reference or a value occupies, read the way both renderers draw it:
+    a reference sits ABOVE its point and a value BELOW it, each centred on it. None for
+    anything else -- pin text is inside or on its own symbol, where no net name goes."""
+    if label.kind == "ref":
+        size = REF_LABEL_MM
+        top, bottom = label.at.y - size, label.at.y
+    elif label.kind == "value":
+        size = VALUE_LABEL_MM
+        top, bottom = label.at.y, label.at.y + 1.2 * size
+    else:
+        return None
+    half = _text_width(label.text, size) / 2
+    return label.at.x - half, top, label.at.x + half, bottom
+
+
+def _box_obstacle(box: tuple[Mm, Mm, Mm, Mm]) -> tuple[tuple[Point2, Point2], ...]:
+    """A rectangle as something ``_box_is_clear`` avoids: its diagonal.
+
+    That test compares a segment's BOUNDING BOX with the candidate, so a diagonal stands
+    for the whole rectangle, interior included -- four edges would let a shorter name sit
+    inside a longer one without touching any of them.
+    """
+    x0, y0, x1, y1 = box
+    return ((Point2(x=x0, y=y0), Point2(x=x1, y=y1)),)
+
+
 def _crossings(
     box: tuple[Mm, Mm, Mm, Mm], obstacles: Sequence[tuple[Point2, Point2]]
 ) -> int:
@@ -2565,6 +2667,9 @@ def _hand_drawn_sheet(
     for rail in rails:
         obstacles.extend(_segments_of(rail.path))
         obstacles.extend(rail_glyph_bars(rail))
+    rail_names = _rail_names(rails)
+    for label in rail_names:
+        obstacles.extend(_box_obstacle(_net_name_box(label)))
     for _length, name, run_start, run_end in longest_run.values():
         span = (min(run_start.x, run_end.x), max(run_start.x, run_end.x))
         at = _net_label_at(name, span, run_start.y, obstacles)
@@ -2618,7 +2723,7 @@ def _hand_drawn_sheet(
         rails=tuple(rails),
         junctions=junctions,
         no_connects=tuple(no_connects),
-        labels=(*part_labels, *net_labels),
+        labels=(*part_labels, *rail_names, *net_labels),
         annotations=annotations,
         width=width,
         height=height,
@@ -2873,7 +2978,11 @@ def _derived_sheet(
     column_width = [0.0] * ncols
     row_height = [0.0] * nrows
     for placed in symbols.values():
-        column_width[placed.col] = max(column_width[placed.col], placed.body.width)
+        # A value wider than its body ("Conn_01x02" under a two-pin connector) would hang
+        # into the channel beside it, where the verticals run -- so it widens the column.
+        column_width[placed.col] = max(
+            column_width[placed.col], placed.body.width, _part_text_width(placed, options)
+        )
         row_height[placed.row] = max(row_height[placed.row], placed.body.height)
 
     # -- which channel each run belongs in ----------------------------------
@@ -2940,8 +3049,8 @@ def _derived_sheet(
     for index in range(nrows):
         horizontal_channel_y[index] = cursor
         cursor += horizontal_gap[index]
-        row_y[index] = cursor
-        cursor += row_height[index]
+        row_y[index] = cursor + REF_BAND_MM
+        cursor += REF_BAND_MM + row_height[index] + VALUE_BAND_MM
     horizontal_channel_y[nrows] = cursor
     cursor += horizontal_gap[nrows]
     height = cursor + MARGIN_MM
@@ -3097,21 +3206,34 @@ def _derived_sheet(
                     NoConnect(ref=ref, pin=pin.number, at=placed.anchor_of(pin))
                 )
 
+    ordered = sorted(symbols.values(), key=lambda placed: _ref_sort_key(placed.ref))
+    # The same call the hand-drawn sheet makes. A reference sitting a different
+    # distance above its symbol depending on which kind of sheet it is on would be one
+    # fact with two answers, and the exporters read whichever they were given.
+    part_labels = _part_labels(ordered, options)
+
     obstacles: list[tuple[Point2, Point2]] = []
     for wire in wires:
         obstacles.extend(_segments_of(wire.path))
     for rail in rails:
         obstacles.extend(_segments_of(rail.path))
         obstacles.extend(rail_glyph_bars(rail))
+    # Text is in the way too. A net name used to be kept off the WIRES and nothing else, so
+    # three names looking for room near the same corner of an IC all found the same room
+    # and were printed on top of one another ("VCC", "THRESH" and "OUT" in one smudge), and
+    # a name could land on a part's value. Each name placed becomes an obstacle for the
+    # next, in the fixed order the names are taken in, so the sheet is still deterministic.
+    for label in part_labels:
+        box = _part_label_box(label)
+        if box is not None:
+            obstacles.extend(_box_obstacle(box))
+    rail_names = _rail_names(rails)
+    for label in rail_names:
+        obstacles.extend(_box_obstacle(_net_name_box(label)))
     for name, span, y in pending_labels:
         at = _net_label_at(name, span, y, obstacles)
         net_labels.append(Label(text=name, at=at, kind="net", anchor="left"))
-
-    ordered = sorted(symbols.values(), key=lambda placed: _ref_sort_key(placed.ref))
-    # The same call the hand-drawn sheet makes. A reference sitting a different
-    # distance above its symbol depending on which kind of sheet it is on would be one
-    # fact with two answers, and the exporters read whichever they were given.
-    part_labels = _part_labels(ordered, options)
+        obstacles.extend(_box_obstacle(_label_box(name, at.x, at.y)))
 
     drawn = tuple(
         Symbol(
@@ -3136,7 +3258,7 @@ def _derived_sheet(
         rails=tuple(rails),
         junctions=tuple(junctions),
         no_connects=tuple(no_connects),
-        labels=(*part_labels, *net_labels),
+        labels=(*part_labels, *rail_names, *net_labels),
         annotations=annotations,
         width=width,
         height=height,

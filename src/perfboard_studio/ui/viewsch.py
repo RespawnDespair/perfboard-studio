@@ -487,7 +487,7 @@ class SheetItem(QGraphicsItem):
                 colour, size, bold = INK, REF_PX, True
             elif label.kind == "value":
                 colour, size, bold = INK_DIM, VALUE_PX, False
-            elif label.kind == "net":
+            elif label.kind in ("net", "rail"):
                 colour, size, bold = SIGNAL, NET_PX, False
             else:
                 colour, size, bold = INK_DIM, PIN_PX, False
@@ -518,7 +518,7 @@ def label_alignment(label: Label) -> Qt.AlignmentFlag:
         "centre": Qt.AlignmentFlag.AlignHCenter,
         "right": Qt.AlignmentFlag.AlignLeft,
     }[label.anchor]
-    if label.kind in ("ref", "net"):  # above the point -- a net name's point is its baseline
+    if label.kind in ("ref", "net", "rail"):  # above the point -- a net name's is its baseline
         vertical = Qt.AlignmentFlag.AlignTop
     elif label.kind == "value":  # below it
         vertical = Qt.AlignmentFlag.AlignBottom
