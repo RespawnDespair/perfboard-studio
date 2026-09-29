@@ -1694,6 +1694,9 @@ def test_autoroute_on_a_finished_board_routes_it_again(monkeypatch) -> None:
     monkeypatch.setattr(
         type(window), "_confirm", lambda self, title, body, verb: asked.append(body) or True
     )
+    # The example is routed exactly as the window routes it by default, so the style has
+    # to change for the answer to -- which is the case this test is about.
+    window.on_routing_style("solder")
 
     window.on_autoroute_all()
     assert len(asked) == 1, "a board already routed is routed again, after asking"
@@ -4400,6 +4403,9 @@ def test_re_routing_asks_through_the_box_with_cancel_under_enter(monkeypatch) ->
     monkeypatch.setattr(
         type(window), "_confirm", lambda self, title, body, verb: asked.append(verb) or False
     )
+    # Something other than the example's own routing, or there is nothing to ask about:
+    # the examples are routed as the window routes by default.
+    window.on_routing_style("solder")
 
     window.on_reroute(None)
 
