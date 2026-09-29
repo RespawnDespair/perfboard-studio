@@ -242,8 +242,8 @@ TURKISH: Mapping[str, str] = {
     "Enter or right-click finishes, Esc cancels": "Enter veya sağ tık bitirir, Esc iptal eder",
     "no pins yet": "henüz pin yok",
     "Nothing on this board yet.": "Bu kartta henüz bir şey yok.",
-    "Start with the circuit, in the Schematic panel beside this one (Ctrl+5).":
-        "Devreyle başla: yanındaki Şematik panelinden (Ctrl+5).",
+    "Start with the circuit, in the Schematic panel beside this one (Ctrl+2).":
+        "Devreyle başla: yanındaki Şema panelinden (Ctrl+2).",
     "Add Part… describes a part, Wire joins two pins, and Place on the Board "
     "suggests a board to suit the circuit and arranges it.": (
         "Parça Ekle… bir parçayı tanımlar, Bağla iki pini birleştirir, Kart Üzerine "
@@ -380,6 +380,13 @@ TURKISH: Mapping[str, str] = {
     "Delete conductors": "İletkenleri sil",
     "Apply this placement?": "Bu yerleşim uygulansın mı?",
     "Re-route?": "Yeniden route edilsin mi?",
+    "Re-route": "Yeniden Route Et",
+    "{removed} existing conductor(s) will be removed and {planned} planned "
+    "in their place. Copper with no net assigned is left alone.": (
+        "Mevcut {removed} iletken kaldırılacak ve yerlerine {planned} iletken "
+        "planlanacak. Neti atanmamış bakıra dokunulmaz."
+    ),
+    "One Ctrl+Z puts it all back.": "Tek bir Ctrl+Z hepsini geri getirir.",
     "Placement refused": "Yerleşim reddedildi",
     "Routing refused": "Route reddedildi",
     "Re-route refused": "Yeniden route reddedildi",
@@ -1083,6 +1090,14 @@ TURKISH: Mapping[str, str] = {
     # -- dialog titles ---------------------------------------------------------
     "Re-route the nets whose parts moved?": (
         "Parçaları taşınan netler yeniden route edilsin mi?"
+    ),
+    "<b>{names}</b> still carry the copper laid out before a part moved."
+    "<p>Autoroute only adds, so routing now leaves that copper in place "
+    "and puts more beside it. Re-routing them rips it up and plans "
+    "again.</p>": (
+        "<b>{names}</b> hâlâ bir parça taşınmadan önce döşenen bakırı taşıyor."
+        "<p>Otomatik route yalnızca ekler; şimdi route etmek o bakırı yerinde bırakıp "
+        "yanına yenisini koyar. Yeniden route etmek onu söküp yeniden planlar.</p>"
     ),
     "Some connections could not be made": "Bazı bağlantılar yapılamadı",
     "Some connections could not be routed": "Bazı bağlantılar route edilemedi",

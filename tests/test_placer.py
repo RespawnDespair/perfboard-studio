@@ -1027,6 +1027,18 @@ def test_describe_leads_with_what_the_user_gets() -> None:
     assert "mm less connection length" in line
 
 
+def test_a_longer_estimate_is_said_to_be_longer() -> None:
+    """The winner is chosen on what it costs to build, not on straight-line length, so the
+    estimate can come out longer -- atmega328-relay went 704 -> 767 mm -- and the line read
+    "~-64 mm less connection length"."""
+    from perfboard_studio.placer import _connection_length_change
+
+    assert _connection_length_change(-63.6) == "~64 mm more connection length"
+    assert _connection_length_change(12.2) == "~12 mm less connection length"
+    assert _connection_length_change(0.3) == "about the same connection length"
+    assert "-" not in _connection_length_change(-0.4)
+
+
 # ---------------------------------------------------------------------------
 # 5. Stripboard: the board where placement IS the wiring
 # ---------------------------------------------------------------------------

@@ -557,7 +557,7 @@ def describe(plan: PlacementPlan) -> str:
     parts = [f"{len(plan.changes)} part(s) placed"]
     if turned:
         parts.append(f"{turned} turned")
-    parts.append(f"~{plan.wire_saved_mm:.0f} mm less connection length")
+    parts.append(_connection_length_change(plan.wire_saved_mm))
     if plan.before.overlap_pairs > 0 and plan.after.overlap_pairs == 0:
         parts.append(f"{plan.before.overlap_pairs} overlap(s) cleared")
     if plan.before.overhanging_parts > 0 and plan.after.overhanging_parts == 0:
@@ -569,6 +569,23 @@ def describe(plan: PlacementPlan) -> str:
     if plan.route_cost is not None:
         parts.append(f"routing cost {plan.route_cost:.0f}")
     return ", ".join(parts)
+
+
+def _connection_length_change(saved_mm: float) -> str:
+    """The estimate, worded by its sign.
+
+    It CAN come out longer. The winner is picked on what the board costs to BUILD --
+    legality, then what is left unrouted, then physical warnings, then the router's own
+    total (``_pick_best``) -- and straight-line length is only an estimate of that, so an
+    arrangement cheaper to wire can have longer connections. This printed "~-64 mm less
+    connection length" for exactly that, which says the opposite of what happened.
+    """
+    rounded = round(saved_mm)
+    if rounded > 0:
+        return f"~{rounded} mm less connection length"
+    if rounded < 0:
+        return f"~{-rounded} mm more connection length"
+    return "about the same connection length"
 
 
 # ---------------------------------------------------------------------------

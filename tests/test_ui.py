@@ -311,6 +311,23 @@ def test_bottom_side_actually_reflects_about_hole_span_not_board_size() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_no_colour_is_spelled_as_an_eight_digit_string() -> None:
+    """Qt reads "#rrggbbaa" as #AARRGGBB, so "#000000b4" is a fully transparent blue: the
+    terminal openings were first drawn invisible that way, and a header's pin outline,
+    "#00000060", stayed invisible until this looked. Give the alpha to QColor(r, g, b, a)."""
+    import re
+
+    ui = pathlib.Path(view2d.__file__).resolve().parent
+    trap = re.compile(r"QColor\(\s*[\"']#[0-9A-Fa-f]{8}[\"']")
+    found = [
+        f"{path.name}:{number}"
+        for path in sorted(ui.glob("*.py"))
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        if trap.search(line)
+    ]
+    assert found == []
+
+
 def test_scale_check_passes_exactly() -> None:
     doc = _load_dense()
     lookup = footprint_lookup()
@@ -3891,6 +3908,28 @@ def test_deleting_a_net_keeps_its_copper_and_releases_the_claim(monkeypatch) -> 
     _close(window)
 
 
+def test_re_routing_asks_through_the_box_with_cancel_under_enter(monkeypatch) -> None:
+    """It rips up copper, and it asked with QMessageBox.question and Yes under Enter -- the
+    one destructive question in the window that did not go through _confirm."""
+    from perfboard_studio.ui import i18n
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    document = persist.parse_document_or_throw(
+        (root / "examples" / "ne555-astable.perf").read_text(encoding="utf-8")
+    )
+    window = _window_on(document)
+    asked: list[str] = []
+    monkeypatch.setattr(
+        type(window), "_confirm", lambda self, title, body, verb: asked.append(verb) or False
+    )
+
+    window.on_reroute(None)
+
+    assert asked == [i18n.t("Re-route")]
+    assert window.bus.document is document or window.bus.document.conductors == document.conductors
+    _close(window)
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -3962,6 +4001,22 @@ def test_an_empty_board_says_what_to_do_with_itself() -> None:
     )
 
     assert window.view.empty_hint.isHidden()
+    _close(window)
+
+
+def test_the_empty_board_names_the_key_that_really_opens_the_schematic() -> None:
+    """It said Ctrl+5, which is the Parts panel, for as long as the panels have been
+    numbered. A key written into prose is a second copy of the shortcut; this holds the two
+    together."""
+    from perfboard_studio.commands import create_starter_document
+    from perfboard_studio.model import DocumentMeta
+
+    stamp = "2026-01-01T00:00:00.000Z"
+    window = _window_on(create_starter_document(DocumentMeta(name="t", created=stamp, modified=stamp)))
+
+    key = window.act_schematic.shortcut().toString()
+    assert key
+    assert f"({key})" in window.view.empty_hint.text()
     _close(window)
 
 
@@ -4558,6 +4613,27 @@ def test_opening_a_document_puts_it_on_the_recent_list(tmp_path) -> None:
 
     assert window._recent_paths() == [str(board.resolve())]
     assert next(a.text() for a in window.menu_recent.actions()).endswith("board.perf")
+    _close(window)
+
+
+def test_a_board_opened_after_a_blank_launch_comes_up_on_the_board(tmp_path) -> None:
+    """A blank launch puts the schematic in front, which is right for a design with nothing
+    in it -- and nothing put the board back, so the first example anybody opened came up as
+    its schematic, with the board behind a tab."""
+    from perfboard_studio.commands import create_starter_document
+    from perfboard_studio.model import DocumentMeta
+
+    stamp = "2026-01-01T00:00:00.000Z"
+    window = _window_on(create_starter_document(DocumentMeta(name="t", created=stamp, modified=stamp)))
+    window._open_the_schematic_on_an_empty_design()
+    assert window.schematic_is_showing()
+    board = tmp_path / "board.perf"
+    board.write_text(GOLDEN.read_text(encoding="utf-8"), encoding="utf-8")
+
+    window._load_path(board)
+
+    assert window.schematic_is_showing() is False
+    assert window._raised_dock is window.dock_board
     _close(window)
 
 

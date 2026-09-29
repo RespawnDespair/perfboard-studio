@@ -72,6 +72,25 @@ closed without a bump.
   and the sheet takes it back while it has the keyboard — R and Shift+R turn its selected
   symbols either way.
 
+- **A board opened after a blank launch came up as its schematic.** The blank launch puts
+  the sheet in front, the session remembered it, and nothing put the board back. A board
+  with parts on it now opens on the board; a design with nothing placed opens on the sheet.
+
+- **Auto-place said "~-64 mm less connection length"** when the estimate had grown. The
+  winner is chosen on what the board costs to build, not on straight-line length, so the
+  estimate can rise; it is now worded by its sign.
+
+- **Re-route asked with Yes under Enter**, and it is the one question that rips up
+  copper. It goes through the same box as every other destructive question now — Cancel
+  under Enter, the verb on the button — and its text is translated.
+
+- **The empty board's hint gave the Parts panel's key for the Schematic** (Ctrl+5, not
+  Ctrl+2), and a test now holds the hint to the action's real shortcut.
+
+- **A header's pin marks had an invisible outline in 2D**: `"#00000060"` is read by Qt as
+  `#AARRGGBB`, a fully transparent blue. A test now refuses an eight-digit colour string
+  anywhere in the interface.
+
 - **Borrowed parts were shaded in flat facets** — an LED's dome, a can's side — because the
   meshes carry no normals. They are computed once per mesh when it is read, with a feature
   angle that keeps real edges sharp.

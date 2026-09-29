@@ -2105,7 +2105,7 @@ def _paint_pin_marks(
     square: bool,
 ) -> None:
     """A contact per pin: square for a header's pins, round for a terminal's screw heads."""
-    painter.setPen(QPen(QColor("#00000060"), 0.1))
+    painter.setPen(QPen(QColor(0, 0, 0, 0x60), 0.1))  # Not "#00000060": Qt reads that as #AARRGGBB
     painter.setBrush(QBrush(accent))
     size = 0.62
     for pin in footprint.pins:

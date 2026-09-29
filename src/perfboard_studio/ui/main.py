@@ -4660,6 +4660,22 @@ class MainWindow(QMainWindow):
             return
         self.show_schematic()
 
+    def _show_what_the_document_has(self) -> None:
+        """Bring forward the view a document that has just been OPENED has something in.
+
+        The other half of the method above. A blank launch puts the sheet in front, the
+        session remembers it, and nothing put the board back -- so the first example
+        anybody opened came up as its schematic, with the board they had asked for hidden
+        behind a tab. A board with parts on it opens on the board; a design with nothing
+        placed yet opens on the sheet, which is the only place it has anything to show.
+        Not on a reload from disk: somebody watching an agent work chose what to look at.
+        """
+        document = self.bus.document
+        if document.components:
+            self.show_board()
+        elif document.parts:
+            self.show_schematic()
+
     def _refresh_empty_hint(self) -> None:
         """Tell a blank board what to do with itself, the first time round.
 
@@ -4679,7 +4695,7 @@ class MainWindow(QMainWindow):
             return
         self.view.set_empty_hint(
             f"<b>{t('Nothing on this board yet.')}</b><br><br>"
-            f"{t('Start with the circuit, in the Schematic panel beside this one (Ctrl+5).')}<br>"
+            f"{t('Start with the circuit, in the Schematic panel beside this one (Ctrl+2).')}<br>"
             f"{t('Add Part… describes a part, Wire joins two pins, and Place on the Board '
                  'suggests a board to suit the circuit and arranges it.')}<br><br>"
             f"{t('Or place parts straight onto the board from the Parts panel, and use '
@@ -7473,18 +7489,19 @@ class MainWindow(QMainWindow):
             return
 
         if plan.remove_ids:
-            answer = QMessageBox.question(
-                self,
-                t("Re-route?"),
-                f"<b>{describe_reroute(plan)}</b>"
-                f"<p>{len(plan.remove_ids)} existing conductor(s) will be removed and "
-                f"{len(plan.conductors)} planned in their place. Copper with no net "
-                f"assigned is left alone.</p>"
-                f"<p>One Ctrl+Z puts it all back.</p>",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
-                QMessageBox.StandardButton.Yes,
+            # Through _confirm: it rips up copper, and Yes under Enter made that a reflex --
+            # twice over, since the stale-nets question below lands here on Yes as well.
+            body = (
+                f"<b>{describe_reroute(plan)}</b><p>"
+                + t(
+                    "{removed} existing conductor(s) will be removed and {planned} planned "
+                    "in their place. Copper with no net assigned is left alone."
+                ).format(removed=len(plan.remove_ids), planned=len(plan.conductors))
+                + "</p><p>"
+                + t("One Ctrl+Z puts it all back.")
+                + "</p>"
             )
-            if answer != QMessageBox.StandardButton.Yes:
+            if not self._confirm(t("Re-route?"), body, t("Re-route")):
                 return
 
         result = self.bus.dispatch("conductor.replace", plan.payload())
@@ -7563,9 +7580,12 @@ class MainWindow(QMainWindow):
             answer = QMessageBox.question(
                 self,
                 t("Re-route the nets whose parts moved?"),
-                f"<b>{', '.join(names)}</b> still carry the copper laid out before a part "
-                f"moved.<p>Autoroute only adds, so routing now leaves that copper in place "
-                f"and puts more beside it. Re-routing them rips it up and plans again.</p>",
+                t(
+                    "<b>{names}</b> still carry the copper laid out before a part moved."
+                    "<p>Autoroute only adds, so routing now leaves that copper in place "
+                    "and puts more beside it. Re-routing them rips it up and plans "
+                    "again.</p>"
+                ).format(names=", ".join(names)),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.Yes,
             )
@@ -8750,6 +8770,7 @@ class MainWindow(QMainWindow):
         # snatch it back to the whole board a dozen times a minute.
         if not reason:
             self.view.fit_board()
+            self._show_what_the_document_has()
         note = (
             " " + t("({count} warning(s))").format(count=len(result.warnings))
             if result.warnings
