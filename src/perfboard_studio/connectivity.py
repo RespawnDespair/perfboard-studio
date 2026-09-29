@@ -184,8 +184,34 @@ def _net_id_for(lowest: PhysicalNodeRef) -> str:
     return f"net:{lowest.hole.col}:{lowest.hole.row}:{lowest.side}"
 
 
+#: The last answer, with the document and lookup it was worked out for -- see
+#: ``extract_physical_nets``. Held strongly, so the identity it is matched on cannot be
+#: handed to another object while it is here.
+_LAST_EXTRACTED: tuple[PerfDocument, FootprintLookup, tuple[PhysicalNet, ...]] | None = None
+
+
 def extract_physical_nets(doc: PerfDocument, lookup: FootprintLookup) -> list[PhysicalNet]:
-    """Every electrically-distinct island on the board, sorted deterministically."""
+    """Every electrically-distinct island on the board, sorted deterministically.
+
+    REMEMBERED FOR THE LAST DOCUMENT ASKED ABOUT. A document is immutable, so the same
+    object always has the same answer, and it is mostly asked twice in a row: the
+    autorouter reads the ratsnest of a board and then hands the same board to the router,
+    which works out its net index from it again. On atmega328-relay's auto-place that was
+    3480 calls, about 2.5 ms each, a thousand or more of them repeats. Matched by identity
+    and nothing else -- an equal document built separately is worked out again, which is
+    only slower, never wrong. The one entry is replaced whole, so a planner thread and the
+    window reading it at once each see a consistent pair.
+    """
+    global _LAST_EXTRACTED
+    last = _LAST_EXTRACTED
+    if last is not None and last[0] is doc and last[1] is lookup:
+        return list(last[2])
+    nets = _extract_physical_nets(doc, lookup)
+    _LAST_EXTRACTED = (doc, lookup, tuple(nets))
+    return nets
+
+
+def _extract_physical_nets(doc: PerfDocument, lookup: FootprintLookup) -> list[PhysicalNet]:
     ds = _DisjointSet()
     node_info: dict[str, PhysicalNodeRef] = {}
 

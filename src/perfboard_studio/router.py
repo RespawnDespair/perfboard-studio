@@ -32,15 +32,15 @@ for this project existing (PLAN.md Sec 6.1).
 
 Deterministic: no clock, no RNG. The same board and request always give the same route.
 
-PORT FIDELITY NOTE. The A* open list below is a plain list, scanned linearly for the
-lowest f-score each iteration, exactly as the TypeScript source does. A binary heap
-would have a better asymptotic constant, but it would also change which of several
-equal-f nodes is popped first, and that can silently pick a different (still optimal,
-but different) path -- which would break byte-for-byte agreement with the golden
-fixtures dumped from the TypeScript engine. Keep the linear scan.
+PORT FIDELITY NOTE. The TypeScript source scans its open list linearly for the lowest
+f-score, and which of several equal-f nodes it pops decides which of several equally good
+paths comes out -- so the ORDER matters to the golden fixtures, not just the costs. It
+pops the earliest-pushed of the lowest f. ``_OpenList`` is a heap keyed on (f, push order),
+which pops exactly that node every time; it was a scan here for years on the belief that a
+heap breaks ties differently, which a heap on f ALONE does. Every golden route stayed
+byte-identical when it changed, which is the only reason to believe it was safe.
 
-...and it is not what makes this slow, which was worth measuring before trading the
-proof away for it. Autorouting a 100 x 60 board with 60 parts took 6.8 s, and a profile
+...and the scan was not most of the cost either, which was worth measuring first. Autorouting a 100 x 60 board with 60 parts took 6.8 s, and a profile
 put the search's own loop at under a tenth of it: the time was in ``_has_foreign_neighbour``
 (R5' priced into the search, asked a million times for about two thousand distinct
 questions per route) and in building ``"37,12"`` hole-key strings 15.8 million times.
@@ -960,21 +960,15 @@ def _find_hopping_path(
 
     g_score: dict[tuple[int, int], float] = {start_key: 0.0}
     came_from: dict[tuple[int, int], tuple[HoleCoord, bool]] = {}
-    open_list: list[_OpenEntry] = [
-        _OpenEntry(hole=from_, f=manhattan(from_, to) * costs.solder_trace_step)
-    ]
+    open_list = _OpenList(from_, manhattan(from_, to) * costs.solder_trace_step)
     closed: set[tuple[int, int]] = set()
     expanded = 0
 
     while open_list:
-        best_index = 0
-        for i in range(1, len(open_list)):
-            if open_list[i].f < open_list[best_index].f:
-                best_index = i
-        current = open_list.pop(best_index)
-        current_key = _key(current.hole)
+        current = open_list.pop()
+        current_key = _key(current)
         if current_key == goal_key:
-            return _reconstruct_steps(came_from, current.hole, from_)
+            return _reconstruct_steps(came_from, current, from_)
         if current_key in closed:
             continue
         closed.add(current_key)
@@ -984,7 +978,7 @@ def _find_hopping_path(
             return None
 
         g = g_score.get(current_key, math.inf)
-        for move_to, hopped, step_cost in _moves_from(ctx, current.hole, from_, to):
+        for move_to, hopped, step_cost in _moves_from(ctx, current, from_, to):
             next_key = _key(move_to)
             if next_key in closed:
                 continue
@@ -992,13 +986,8 @@ def _find_hopping_path(
             if tentative >= g_score.get(next_key, math.inf):
                 continue
             g_score[next_key] = tentative
-            came_from[next_key] = (current.hole, hopped)
-            open_list.append(
-                _OpenEntry(
-                    hole=move_to,
-                    f=tentative + manhattan(move_to, to) * costs.solder_trace_step,
-                )
-            )
+            came_from[next_key] = (current, hopped)
+            open_list.push(move_to, tentative + manhattan(move_to, to) * costs.solder_trace_step)
     return None
 
 
@@ -1067,10 +1056,32 @@ def _reconstruct_steps(
     return steps
 
 
-@dataclass(frozen=True, slots=True)
-class _OpenEntry:
-    hole: HoleCoord
-    f: float
+class _OpenList:
+    """A*'s open list: the lowest f first, and among equal f the one pushed EARLIEST.
+
+    That is exactly what the original engine's linear scan picked -- it kept entries in the
+    order they were appended, removed them in place, and took the first with the lowest f
+    under a strict ``<`` -- so a heap keyed on (f, push order) pops the same hole every time
+    and every golden route stays byte-identical. It was kept a scan on the belief that a
+    heap would break ties differently; a heap on f ALONE would, and this is not that one.
+    Measured: the scan was an eighth of an auto-place on atmega328-relay.
+    """
+
+    __slots__ = ("_heap", "_pushed")
+
+    def __init__(self, start: HoleCoord, f: float) -> None:
+        self._heap: list[tuple[float, int, HoleCoord]] = [(f, 0, start)]
+        self._pushed = 1
+
+    def __bool__(self) -> bool:
+        return bool(self._heap)
+
+    def push(self, hole: HoleCoord, f: float) -> None:
+        heapq.heappush(self._heap, (f, self._pushed, hole))
+        self._pushed += 1
+
+    def pop(self) -> HoleCoord:
+        return heapq.heappop(self._heap)[2]
 
 
 def _find_solder_trace_path(
@@ -1090,25 +1101,17 @@ def _find_solder_trace_path(
 
     g_score: dict[tuple[int, int], float] = {start_key: 0.0}
     came_from: dict[tuple[int, int], HoleCoord] = {}
-    open_list: list[_OpenEntry] = [
-        _OpenEntry(hole=from_, f=manhattan(from_, to) * costs.solder_trace_step)
-    ]
+    # Lowest f first, ties to the earliest pushed -- the original's scan, see _OpenList.
+    open_list = _OpenList(from_, manhattan(from_, to) * costs.solder_trace_step)
     closed: set[tuple[int, int]] = set()
     expanded = 0
 
     while open_list:
-        # Small boards and short routes: a linear scan beats the constant factor of a
-        # heap. (A heap would also change tie-breaking order among equal-f nodes,
-        # which can pick a different equal-cost path -- see the module docstring.)
-        best_index = 0
-        for i in range(1, len(open_list)):
-            if open_list[i].f < open_list[best_index].f:
-                best_index = i
-        current = open_list.pop(best_index)
+        current = open_list.pop()
 
-        current_key = _key(current.hole)
+        current_key = _key(current)
         if current_key == goal_key:
-            return _reconstruct(came_from, current.hole, from_)
+            return _reconstruct(came_from, current, from_)
         if current_key in closed:
             continue
         closed.add(current_key)
@@ -1118,7 +1121,7 @@ def _find_solder_trace_path(
             return None
 
         g = g_score.get(current_key, math.inf)
-        for next_hole in neighbors4(current.hole, ctx.doc.board):
+        for next_hole in neighbors4(current, ctx.doc.board):
             next_key = _key(next_hole)
             if next_key in closed:
                 continue
@@ -1135,12 +1138,8 @@ def _find_solder_trace_path(
                 continue
 
             g_score[next_key] = tentative
-            came_from[next_key] = current.hole
-            open_list.append(
-                _OpenEntry(
-                    hole=next_hole, f=tentative + manhattan(next_hole, to) * costs.solder_trace_step
-                )
-            )
+            came_from[next_key] = current
+            open_list.push(next_hole, tentative + manhattan(next_hole, to) * costs.solder_trace_step)
 
     return None
 
@@ -1455,10 +1454,9 @@ def _find_grid_wire_path(
     """A* over (hole, heading), so a bend can be priced: the holes the wire lies over, in
     order, and what laying it costs.
 
-    A heap keyed on (f, insertion order) rather than the trace search's linear scan. That
-    scan is kept for the TypeScript engine's tie-breaking, which forty-five golden routes
-    depend on; no golden route was ever laid along the grid, so there is nothing here to
-    agree with, and insertion order breaks ties just as deterministically.
+    A heap keyed on (f, insertion order), like the trace searches' ``_OpenList``, over a
+    state that also carries a heading. No golden route was ever laid along the grid, so
+    there is nothing here for the tie-breaking to agree with -- only to be deterministic.
     """
     board = ctx.doc.board
     step = board.pitch * per_mm

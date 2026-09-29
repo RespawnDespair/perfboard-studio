@@ -46,6 +46,13 @@ closed without a bump.
 
 ### Changed
 
+- **Routing is a fifth faster, and auto-place a tenth**, with every route and placement
+  unchanged: the trace searches' open list is a heap that pops exactly the node the
+  original's linear scan did (lowest f, then earliest pushed), and the physical nets of
+  a document are remembered for the last one asked about, which the autorouter asked
+  about twice per connection. `atmega328-relay`: autoroute 2.6 → 2.1 s, auto-place 24 →
+  22 s.
+
 - **The Turkish interface has one word for routing.** "Route" and "Trace" were both
   "Yol" — a menu and a drawing tool named alike — the Autoroute button read "Oto-yol"
   (a motorway), and the rest said "route et" half in English. Routing is now
