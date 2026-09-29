@@ -419,7 +419,7 @@ WINDOW_STATE_KEY = "session/windowState"
 #: were left over, off the side of the window in the case that found this. Refusing the old
 #: state outright costs one person one rearranged window, once; honouring it costs them a
 #: window with two views missing from it.
-WINDOW_STATE_VERSION = 3
+WINDOW_STATE_VERSION = 4
 BOARD_COLOUR_KEY = "session/boardColour"
 RATSNEST_KEY = "session/showRatsnest"
 RULERS_KEY = "session/showRulers"
@@ -3180,6 +3180,7 @@ class MainWindow(QMainWindow):
         self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, self.workflow_strip)
         self._build_status_bar()
+        self._sync_toolbars_to_view()
 
         self._subscribe_bus()
         self.on_bus_changed(self.bus.document, None)
@@ -3474,6 +3475,7 @@ class MainWindow(QMainWindow):
         if visible and isinstance(dock, QDockWidget):
             self._raised_dock = dock
         self._sync_central_hint()
+        self._sync_toolbars_to_view()
         if self._schematic_stale and self.schematic_is_showing():
             self._refresh_schematic_panel()
 
@@ -3595,9 +3597,44 @@ class MainWindow(QMainWindow):
     SIDE_PANEL_MIN_WIDTH = 240
 
     _toolbar_text_width: int | None
-    #: Each toolbar button in the order it gives up its words, with the pixels that saves.
-    #: Measured once, with every button showing its words; see ``_fit_toolbar``.
-    _toolbar_savings: list[tuple[QToolButton, int]] | None
+    #: Each toolbar button in the order it gives up its words, with the pixels that saves
+    #: and the bar it is on. Measured once, with every button showing its words; see
+    #: ``_fit_toolbar``.
+    _toolbar_savings: list[tuple[QToolButton, int, QToolBar]] | None
+    #: What each bar needs with every word showing, measured with the savings.
+    _toolbar_widths: dict[QToolBar, int]
+
+    def _toolbars(self) -> tuple[QToolBar, ...]:
+        """The three bars of the top row, left to right."""
+        return (self.toolbar, self.board_toolbar, self.views_toolbar)
+
+    def toolbar_button(self, action: QAction) -> QToolButton | None:
+        """The button ``action`` has on whichever of the three bars it is on."""
+        for bar in self._toolbars():
+            button = bar.widgetForAction(action)
+            if isinstance(button, QToolButton):
+                return button
+        return None
+
+    def board_is_showing(self) -> bool:
+        """Whether the board is in front of the user -- ``schematic_is_showing``'s
+        question, and answered the same way, about the other panel."""
+        dock = getattr(self, "dock_board", None)
+        if dock is None or dock.isHidden():
+            return False
+        if dock.isFloating() or not self.tabifiedDockWidgets(dock):
+            return True
+        return self._raised_dock is dock
+
+    def _sync_toolbars_to_view(self) -> None:
+        """The board's tools while the board is in front, and not otherwise."""
+        board_bar = getattr(self, "board_toolbar", None)
+        if board_bar is None:
+            return
+        showing = self.board_is_showing()
+        if board_bar.isHidden() == showing:
+            board_bar.setVisible(showing)
+            self._fit_toolbar()
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
@@ -3648,29 +3685,37 @@ class MainWindow(QMainWindow):
         Insulated became four identical pictures. Now it sheds only what it must, in
         ``_toolbar_shedding_order``. Every button keeps its name in its tooltip.
         """
-        bar = getattr(self, "toolbar", None)
-        if bar is None or bar.isFloating() or bar.orientation() != Qt.Orientation.Horizontal:
+        if getattr(self, "views_toolbar", None) is None:
             return
+        bars = self._toolbars()
         with_words = Qt.ToolButtonStyle.ToolButtonTextUnderIcon
         icon_only = Qt.ToolButtonStyle.ToolButtonIconOnly
         if self._toolbar_savings is None:
-            if bar.toolButtonStyle() != with_words:
+            if any(bar.toolButtonStyle() != with_words for bar in bars):
                 return
-            self._toolbar_text_width = bar.sizeHint().width()
-            savings: list[tuple[QToolButton, int]] = []
+            self._toolbar_widths = {bar: bar.sizeHint().width() for bar in bars}
+            savings: list[tuple[QToolButton, int, QToolBar]] = []
             for action in self._toolbar_shedding_order():
-                button = bar.widgetForAction(action)
-                if not isinstance(button, QToolButton):
+                for bar in bars:
+                    button = bar.widgetForAction(action)
+                    if isinstance(button, QToolButton):
+                        break
+                else:
                     continue
                 wide = button.sizeHint().width()
                 button.setToolButtonStyle(icon_only)
-                savings.append((button, max(0, wide - button.sizeHint().width())))
+                savings.append((button, max(0, wide - button.sizeHint().width()), bar))
                 button.setToolButtonStyle(with_words)
             self._toolbar_savings = savings
-        assert self._toolbar_text_width is not None
+        # The row as it is now: the board's bar counts only while it is up, which is why
+        # the sheet in front gives the other two bars their words back.
+        showing = [bar for bar in bars if not bar.isHidden()]
+        self._toolbar_text_width = sum(self._toolbar_widths[bar] for bar in showing)
         # Per button, never the bar's own style: setting that re-styles every button.
         short_by = self._toolbar_text_width - self.width()
-        for button, saved in self._toolbar_savings:
+        for button, saved, bar in self._toolbar_savings:
+            if bar.isHidden():
+                continue
             wanted = icon_only if short_by > 0 else with_words
             if button.toolButtonStyle() != wanted:
                 button.setToolButtonStyle(wanted)
@@ -4868,15 +4913,32 @@ class MainWindow(QMainWindow):
         The four conductor icons deliberately share one drawing and differ only in what
         runs between the two pads, because that difference IS the application.
         """
-        bar = QToolBar("Main")
-        # Named for the same reason the docks are: restoreState puts an unnamed toolbar
-        # back wherever it likes.
-        bar.setObjectName("mainToolbar")
-        bar.setMovable(False)
-        bar.setIconSize(QSize(icons.SIZE, icons.SIZE))
-        bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
-        self.addToolBar(bar)
+        # THREE BARS IN ONE ROW, so the middle one can go: the document's (save, undo,
+        # redo), the BOARD's tools, and the views. With the sheet in front, a row of
+        # solder-trace and jumper tools, and a Rotate and a Mirror that turned whatever was
+        # selected on the board rather than on the sheet (which has its own), was thirteen
+        # buttons that did nothing to what was on screen -- or did it somewhere else.
+        # ``_sync_toolbars_to_view`` shows the board's bar only while the board is.
+        def new_bar(title: str, name: str) -> QToolBar:
+            made = QToolBar(title)
+            # Named for the same reason the docks are: restoreState puts an unnamed
+            # toolbar back wherever it likes.
+            made.setObjectName(name)
+            made.setMovable(False)
+            made.setIconSize(QSize(icons.SIZE, icons.SIZE))
+            made.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+            # Out of the toolbar area's right-click menu: which bar shows is the view's
+            # decision, and one put away by hand would stay away after the board came back.
+            made.toggleViewAction().setVisible(False)
+            self.addToolBar(made)
+            return made
+
+        bar = new_bar("Main", "mainToolbar")
         self.toolbar = bar
+        board_bar = new_bar("Board", "boardToolbar")
+        self.board_toolbar = board_bar
+        views_bar = new_bar("Views", "viewsToolbar")
+        self.views_toolbar = views_bar
         #: What the toolbar needs with its words under the icons. Measured the first time
         #: the window is laid out, in the mode it was built in -- before that it has no
         #: buttons to measure -- and only once, because the answer depends on the language
@@ -4920,54 +4982,52 @@ class MainWindow(QMainWindow):
         bar.addAction(self.act_undo)
         bar.addAction(self.act_redo)
 
-        bar.addSeparator()
         # The netlist, which had been the hardest thing in the application to reach: two
         # levels of menu, then a dialog, before a single pin could be joined to anything.
         self.act_connect.setIcon(icons.icon("connect"))
         self.act_new_net.setIcon(icons.icon("new-net"))
-        bar.addAction(self.act_connect)
-        bar.addAction(self.act_new_net)
+        board_bar.addAction(self.act_connect)
+        board_bar.addAction(self.act_new_net)
 
-        bar.addSeparator()
+        board_bar.addSeparator()
         for kind in ("solder-trace", "solder-trace-wired", "bare-wire", "insulated-wire",
                      "top-jumper"):
             self.act_draw[kind].setIcon(icons.icon(kind))
-            bar.addAction(self.act_draw[kind])
+            board_bar.addAction(self.act_draw[kind])
 
-        bar.addSeparator()
+        board_bar.addSeparator()
         self.act_autoplace.setIcon(icons.icon("autoplace"))
         self.act_autoroute.setIcon(icons.icon("autoroute"))
-        bar.addAction(self.act_autoplace)
-        bar.addAction(self.act_autoroute)
+        board_bar.addAction(self.act_autoplace)
+        board_bar.addAction(self.act_autoroute)
 
-        bar.addSeparator()
+        board_bar.addSeparator()
         self.act_rotate_cw.setIcon(icons.icon("rotate"))
         self.act_mirror.setIcon(icons.icon("mirror"))
         self.act_delete.setIcon(icons.icon("delete"))
-        bar.addAction(self.act_rotate_cw)
-        bar.addAction(self.act_mirror)
-        bar.addAction(self.act_delete)
+        board_bar.addAction(self.act_rotate_cw)
+        board_bar.addAction(self.act_mirror)
+        board_bar.addAction(self.act_delete)
 
-        bar.addSeparator()
+        board_bar.addSeparator()
         self.act_flip.setIcon(icons.icon("flip"))
         self.act_ratsnest.setIcon(icons.icon("ratsnest"))
         self.act_fit.setIcon(icons.icon("fit"))
-        bar.addAction(self.act_flip)
-        bar.addAction(self.act_ratsnest)
-        bar.addAction(self.act_fit)
+        board_bar.addAction(self.act_flip)
+        board_bar.addAction(self.act_ratsnest)
+        board_bar.addAction(self.act_fit)
 
         # THE VIEWS, LAST AND TOGETHER, and each button brings its view to the front --
         # the same action as Ctrl+1..3 and the View menu's Show entries. They used to be
         # the docks' toggleViewActions, which are lit while a panel is OPEN rather than in
         # front, so with the board and the sheet stacked both were lit and pressing Board
         # closed the board. See the View menu for where opening and closing went.
-        bar.addSeparator()
         self.act_show_board.setIcon(icons.icon("board"))
         self.act_show_schematic.setIcon(icons.icon("schematic"))
         self.act_show_3d.setIcon(icons.icon("3d"))
-        bar.addAction(self.act_show_board)
-        bar.addAction(self.act_show_schematic)
-        bar.addAction(self.act_show_3d)
+        views_bar.addAction(self.act_show_board)
+        views_bar.addAction(self.act_show_schematic)
+        views_bar.addAction(self.act_show_3d)
 
         # The menu entries carry the same pictures. A toolbar that teaches one icon and a
         # menu that shows another teaches nothing.
@@ -5691,6 +5751,7 @@ class MainWindow(QMainWindow):
         # Said here as well as from the signal: Qt emits visibilityChanged only for a
         # window that is on screen, and a headless run has none.
         self._sync_central_hint()
+        self._sync_toolbars_to_view()
 
     def schematic_is_showing(self) -> bool:
         """Whether the sheet is in front of the user.
@@ -10476,6 +10537,10 @@ class MainWindow(QMainWindow):
         self._sync_dock_titlebars()
         self._sync_central_hint()
         self._open_the_schematic_on_an_empty_design()
+        # After the panels are where they will be: restoreState brings back whatever
+        # the board's bar was showing when the window closed, and that was a fact about
+        # which panel was in front THEN.
+        self._sync_toolbars_to_view()
 
         colour = settings.value(BOARD_COLOUR_KEY, "")
         if isinstance(colour, str) and colour in self.act_colour:

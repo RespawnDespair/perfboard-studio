@@ -5378,22 +5378,22 @@ def test_a_toolbar_a_little_too_wide_loses_only_the_words_it_must() -> None:
         QApplication.processEvents()
         savings = window._toolbar_savings
         assert savings is not None and window._toolbar_text_width is not None
-        first = next((i for i, (_b, saved) in enumerate(savings) if saved > 0), None)
+        first = next((i for i, (_b, saved, _bar) in enumerate(savings) if saved > 0), None)
         if first is None:
             pytest.skip("no text has any width on this platform")
         window.resize(window._toolbar_text_width - 1, 900)
         QApplication.processEvents()
         icon_only = [
             button.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonIconOnly
-            for button, _saved in savings
+            for button, _saved, _bar in savings
         ]
         assert icon_only == [i <= first for i in range(len(savings))]
-        assert savings[0][0] is window.toolbar.widgetForAction(window.act_save)
-        assert savings[-1][0] is window.toolbar.widgetForAction(
-            window.act_draw["solder-trace"]
-        )
-        # Every button on the bar is in the order, or one would never give its words up.
-        on_bar = [a for a in window.toolbar.actions() if not a.isSeparator()]
+        assert savings[0][0] is window.toolbar_button(window.act_save)
+        assert savings[-1][0] is window.toolbar_button(window.act_draw["solder-trace"])
+        # Every button on the bars is in the order, or one would never give its words up.
+        on_bar = [
+            a for bar in window._toolbars() for a in bar.actions() if not a.isSeparator()
+        ]
         assert len(savings) == len(on_bar)
     finally:
         _close(window)
@@ -5410,13 +5410,13 @@ def test_a_narrow_window_keeps_every_toolbar_button_on_screen() -> None:
     window.show()
     window.resize(1100, 700)
     QApplication.processEvents()
-    styles = {button.toolButtonStyle() for button, _saved in window._toolbar_savings}
+    styles = {button.toolButtonStyle() for button, _saved, _bar in window._toolbar_savings}
     assert styles == {Qt.ToolButtonStyle.ToolButtonIconOnly}
 
     assert window._toolbar_text_width is not None
     window.resize(window._toolbar_text_width + 40, 900)
     QApplication.processEvents()
-    styles = {button.toolButtonStyle() for button, _saved in window._toolbar_savings}
+    styles = {button.toolButtonStyle() for button, _saved, _bar in window._toolbar_savings}
     assert styles == {Qt.ToolButtonStyle.ToolButtonTextUnderIcon}
     # ...and the side panels keep room for the names they list.
     assert window.dock_nets.widget().minimumWidth() >= window.SIDE_PANEL_MIN_WIDTH
@@ -5831,7 +5831,7 @@ def test_every_tool_on_the_bar_has_a_picture_and_a_short_label() -> None:
     every time, which is how the tools ended up being hunted for in the menus instead."""
     window = _window_on(_load_dense())
 
-    tools = [a for a in window.toolbar.actions() if not a.isSeparator()]
+    tools = [a for bar in window._toolbars() for a in bar.actions() if not a.isSeparator()]
 
     assert len(tools) >= 15
     for action in tools:
@@ -5839,6 +5839,31 @@ def test_every_tool_on_the_bar_has_a_picture_and_a_short_label() -> None:
         assert action.iconText(), f"{action.text()} has no button label"
         assert len(action.iconText()) <= 12, f"{action.iconText()} is too long for a button"
     _close(window)
+
+
+def test_the_boards_tools_are_on_the_bar_only_while_the_board_is_in_front() -> None:
+    """With the sheet in front the bar still offered five conductor tools, Auto-place and
+    Autoroute, and a Rotate and a Mirror that turned whatever was selected on the BOARD --
+    the sheet has its own. The board's bar goes while the board is behind, and the menus
+    and shortcuts keep every one of those actions."""
+    window = _window_on(_load_dense())
+    try:
+        window.show_board()
+        assert window.board_is_showing()
+        assert not window.board_toolbar.isHidden()
+
+        window.show_schematic()
+        assert not window.board_is_showing()
+        assert window.board_toolbar.isHidden()
+        assert window.act_autoroute.isEnabled(), "the menu entry must still work"
+        # Save, undo and the views stay: they are about the document, not about a panel.
+        assert not window.toolbar.isHidden()
+        assert not window.views_toolbar.isHidden()
+
+        window.show_board()
+        assert not window.board_toolbar.isHidden()
+    finally:
+        _close(window)
 
 
 def test_the_menus_keep_the_full_wording_the_buttons_abbreviate() -> None:
