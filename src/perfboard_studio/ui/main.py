@@ -405,6 +405,7 @@ RULERS_KEY = "session/showRulers"
 HATCH_KEY = "session/hatchFarSide"
 ROUTING_STYLE_KEY = "session/routingStyle"
 GRID_WIRES_KEY = "session/gridWires"
+EXPORT_DIR_KEY = "session/exportDirectory"
 LANGUAGE_KEY = "session/language"
 #: Whether this person has ever placed a part. The blank-board guidance is for the first
 #: launch, and repeating it forever is the application explaining its own front door to
@@ -10053,8 +10054,47 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(t("Saved {path}").format(path=path), 8000)
         return True
 
+    def _ask_where_to_export(self, title: str, suggested: str, file_filter: str) -> Path | None:
+        """Where an export goes, asked -- with the answer it used to assume filled in.
+
+        Every export used to write fixed names beside the board, or into whatever folder the
+        process happened to start in for a board never saved, and to overwrite what was
+        there without a word -- behind menu items whose "…" promised a question. The dialog
+        opens beside the board with the name it would have used, so Enter does what the menu
+        always did; the platform's own dialog asks before replacing a file. A board with no
+        file yet starts where the last export went. None when the user cancels.
+        """
+        if self.current_path is not None:
+            folder = self.current_path.parent
+        else:
+            remembered = app_settings().value(EXPORT_DIR_KEY, "")
+            folder = (
+                Path(remembered)
+                if isinstance(remembered, str) and remembered and Path(remembered).is_dir()
+                else Path.home()
+            )
+        chosen, _selected = QFileDialog.getSaveFileName(
+            self, title, str(folder / suggested), file_filter
+        )
+        if not chosen:
+            return None
+        path = Path(chosen)
+        app_settings().setValue(EXPORT_DIR_KEY, str(path.parent))
+        return path
+
+    def _export_stem(self) -> str:
+        """The name an export starts from: the board's file, or "board" before it has one."""
+        return self.current_path.stem if self.current_path is not None else "board"
+
     def on_export_pdf(self) -> None:
-        base = self.current_path.with_suffix("") if self.current_path else Path.cwd() / "board"
+        chosen = self._ask_where_to_export(
+            t("Export 1:1 PDF — the solder side is written beside it"),
+            f"{self._export_stem()}_component_side.pdf",
+            t("PDF (*.pdf)"),
+        )
+        if chosen is None:
+            return
+        stem = chosen.stem.removesuffix("_component_side")
         doc = self.bus.document
         # Overlays off: the 1:1 sheet is a soldering template held against the real board,
         # and the ratsnest draws what is NOT built yet. Printing it would put dashed lines
@@ -10062,8 +10102,10 @@ class MainWindow(QMainWindow):
         top_scene = self._export_scene(doc, "top")
         bottom_scene = self._export_scene(doc, "bottom")
         try:
-            p1 = export_pdf(doc.board, top_scene, base.with_name(base.name + "_component_side.pdf"))
-            p2 = export_pdf(doc.board, bottom_scene, base.with_name(base.name + "_solder_side.pdf"), mirrored=True)
+            p1 = export_pdf(doc.board, top_scene, chosen.with_suffix(".pdf"))
+            p2 = export_pdf(
+                doc.board, bottom_scene, chosen.with_name(f"{stem}_solder_side.pdf"), mirrored=True
+            )
         except OSError as err:
             QMessageBox.critical(
                 self, t("Export failed"), t("Could not write the PDF: {reason}").format(reason=err)
@@ -10089,7 +10131,13 @@ class MainWindow(QMainWindow):
         return BoardScene(doc, self.lookup, side=side, show_ratsnest=False, show_rulers=False)
 
     def on_export_3d_png(self) -> None:
-        out = self.current_path.with_suffix(".png") if self.current_path else Path.cwd() / "board_3d.png"
+        suggested = f"{self.current_path.stem}.png" if self.current_path else "board_3d.png"
+        chosen = self._ask_where_to_export(
+            t("Export 3D Snapshot"), suggested, t("PNG image (*.png)")
+        )
+        if chosen is None:
+            return
+        out = chosen.with_suffix(".png")
         # The same guard the guide export has, for the same reason: on a machine with no
         # offscreen GL, VTK does not raise, it ends the process -- with every unsaved
         # edit in it.
@@ -10215,14 +10263,23 @@ class MainWindow(QMainWindow):
         return None if skipped else images
 
     def on_export_guide(self) -> None:
-        """Write the build guide beside the document, and say what it could not cover.
+        """Write the build guide where the user says -- beside the board by default -- and
+        say what it could not cover.
 
         Four files rather than one, because they get used in different places: the HTML
         on a phone at the bench, the CSVs in a spreadsheet or an order, the JSON by
         whatever comes next. The 1:1 PDF sheets are a separate export because they are a
         separate thing -- a template you hold against the board, not a document you read.
+        Asked BEFORE the pictures are drawn, which is the part that takes a while.
         """
-        base = self.current_path.with_suffix("") if self.current_path else Path.cwd() / "board"
+        chosen = self._ask_where_to_export(
+            t("Export Build Guide — the cut list, parts list and JSON go beside it"),
+            f"{self._export_stem()}_guide.html",
+            t("HTML page (*.html)"),
+        )
+        if chosen is None:
+            return
+        stem = chosen.stem.removesuffix("_guide")
         guide = build_guide(self.bus.document, self.lookup)
 
         # One 3D render per step, before anything is written -- see _render_step_images.
@@ -10231,13 +10288,12 @@ class MainWindow(QMainWindow):
 
         written: list[Path] = []
         try:
-            for suffix, text in (
-                ("_guide.html", guide_to_html(guide, images)),
-                ("_cut_list.csv", cut_list_to_csv(guide)),
-                ("_bom.csv", bom_to_csv(guide)),
-                ("_guide.json", guide_to_json(guide)),
+            for path, text in (
+                (chosen.with_suffix(".html"), guide_to_html(guide, images)),
+                (chosen.with_name(f"{stem}_cut_list.csv"), cut_list_to_csv(guide)),
+                (chosen.with_name(f"{stem}_bom.csv"), bom_to_csv(guide)),
+                (chosen.with_name(f"{stem}_guide.json"), guide_to_json(guide)),
             ):
-                path = base.with_name(base.name + suffix)
                 path.write_text(text, encoding="utf-8")
                 written.append(path)
         except OSError as err:
@@ -10269,7 +10325,8 @@ class MainWindow(QMainWindow):
         self._offer_to_open(written)
 
     def on_export_schematic(self) -> None:
-        """Write the circuit as a sheet beside the document: SVG, PDF and PNG.
+        """Write the circuit as a sheet -- SVG, PDF and PNG under the one name asked for,
+        beside the board unless told otherwise.
 
         Three files for the reason the guide writes four -- they get used in different
         places. The SVG is the drawing itself, vector, editable in any illustration tool and
@@ -10282,12 +10339,18 @@ class MainWindow(QMainWindow):
         panel: the panel may never have been opened, and the export must not depend on
         whether somebody looked at it first.
         """
-        base = self.current_path.with_suffix("") if self.current_path else Path.cwd() / "board"
         drawing = build_schematic(self.bus.document, self.lookup)
         if not drawing.symbols:
             QMessageBox.information(
                 self, t("Nothing to export"), t("This document has no parts to draw yet.")
             )
+            return
+        chosen = self._ask_where_to_export(
+            t("Export Schematic — the SVG and PNG are written beside it"),
+            f"{self._export_stem()}_schematic.pdf",
+            t("PDF (*.pdf)"),
+        )
+        if chosen is None:
             return
 
         svg = drawing_to_svg(drawing, title=self.bus.document.meta.name)
@@ -10298,17 +10361,17 @@ class MainWindow(QMainWindow):
         failure: Exception | None = None
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
-            sheet = base.with_name(base.name + "_schematic.svg")
+            sheet = chosen.with_suffix(".svg")
             sheet.write_text(svg, encoding="utf-8")
             written.append(sheet)
             written.append(
                 svg_to_pdf(
                     svg,
-                    base.with_name(base.name + "_schematic.pdf"),
+                    chosen.with_suffix(".pdf"),
                     title=self.bus.document.meta.name,
                 )
             )
-            written.append(svg_to_png(svg, base.with_name(base.name + "_schematic.png")))
+            written.append(svg_to_png(svg, chosen.with_suffix(".png")))
         except (OSError, SchematicRenderError) as err:
             failure = err
         finally:

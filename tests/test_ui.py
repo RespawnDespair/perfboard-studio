@@ -1700,6 +1700,12 @@ def test_exporting_the_guide_writes_all_four_files(tmp_path, monkeypatch) -> Non
     # headless run it waits for a click that never comes. Its own behaviour is checked by
     # test_the_export_offers_to_open_what_it_wrote below.
     monkeypatch.setattr(main_module.MainWindow, "_offer_to_open", lambda self, written: None)
+    # The export asks where to write; this answers with what it suggests.
+    monkeypatch.setattr(
+        main_module.MainWindow,
+        "_ask_where_to_export",
+        lambda self, title, suggested, file_filter: tmp_path / suggested,
+    )
     window.on_export_guide()
 
     written = sorted(p.name for p in tmp_path.iterdir())
@@ -1723,6 +1729,12 @@ def test_guide_gaps_are_reported_in_a_dialog_not_only_the_status_bar(tmp_path, m
         lambda parent, title, text, *args, **kwargs: shown.append(text),
     )
     monkeypatch.setattr(main_module.MainWindow, "_offer_to_open", lambda self, written: None)
+    # The export asks where to write; this answers with what it suggests.
+    monkeypatch.setattr(
+        main_module.MainWindow,
+        "_ask_where_to_export",
+        lambda self, title, suggested, file_filter: tmp_path / suggested,
+    )
     window.on_export_guide()
 
     assert shown and "could not cover" in shown[0]
@@ -1748,6 +1760,11 @@ def test_the_step_pictures_are_counted_and_can_be_skipped(tmp_path, monkeypatch)
         "perfboard_studio.ui.main.QMessageBox.warning", lambda *args, **kwargs: None
     )
     monkeypatch.setattr(main_module.MainWindow, "_offer_to_open", lambda self, written: None)
+    monkeypatch.setattr(
+        main_module.MainWindow,
+        "_ask_where_to_export",
+        lambda self, title, suggested, file_filter: tmp_path / suggested,
+    )
     seen: list[tuple[int, int]] = []
     guarded: list[bool] = []
 
@@ -1770,6 +1787,62 @@ def test_the_step_pictures_are_counted_and_can_be_skipped(tmp_path, monkeypatch)
     html = (tmp_path / "board_guide.html").read_text(encoding="utf-8")
     assert "data:image/jpeg" not in html
     assert window.isEnabled() and not window._planner_running
+    _close(window)
+
+
+@requires_offscreen_gl  # cancelled before any render, but the scanner reads on_export_guide
+def test_every_export_asks_where_and_suggests_what_it_used_to_write(tmp_path, monkeypatch) -> None:
+    """They wrote fixed names beside the board without a word, overwriting what was there,
+    behind menu items whose "…" promised a question. The suggestion is the old name, so
+    accepting it does exactly what the menu always did; cancelling writes nothing."""
+    from perfboard_studio.ui import main as main_module
+    from perfboard_studio.ui import view3d
+
+    window = _window_on(_load_dense())
+    window.current_path = tmp_path / "board.perf"
+    asked: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        main_module.MainWindow,
+        "_ask_where_to_export",
+        lambda self, title, suggested, file_filter: asked.append((suggested, file_filter)) or None,
+    )
+    monkeypatch.setattr(view3d, "offscreen_gl_available", lambda: True)
+
+    window.on_export_pdf()
+    window.on_export_3d_png()
+    window.on_export_guide()
+    window.on_export_schematic()
+
+    assert [name for name, _filter in asked] == [
+        "board_component_side.pdf",
+        "board.png",
+        "board_guide.html",
+        "board_schematic.pdf",
+    ]
+    assert list(tmp_path.iterdir()) == [], "a cancelled export wrote something"
+    _close(window)
+
+
+def test_an_export_under_a_name_of_ones_own_writes_its_companions_beside_it(
+    tmp_path, monkeypatch
+) -> None:
+    from perfboard_studio.ui import main as main_module
+
+    window = _window_on(_golden_document("ne555"))
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.setattr(
+        main_module.MainWindow,
+        "_ask_where_to_export",
+        lambda self, title, suggested, file_filter: elsewhere / "timer.pdf",
+    )
+    monkeypatch.setattr(
+        main_module.MainWindow, "_offer_to_open", lambda self, written, **kwargs: None
+    )
+
+    window.on_export_schematic()
+
+    assert sorted(p.name for p in elsewhere.iterdir()) == ["timer.pdf", "timer.png", "timer.svg"]
     _close(window)
 
 

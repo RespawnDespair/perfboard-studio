@@ -477,6 +477,19 @@ TURKISH: Mapping[str, str] = {
     "Design rules checked in {ms} ms. Click to see the findings.": (
         "Tasarım kuralları {ms} ms'de denetlendi. Bulguları görmek için tıkla."
     ),
+    "Export 1:1 PDF — the solder side is written beside it": (
+        "1:1 PDF Dışa Aktar — lehim tarafı yanına yazılır"
+    ),
+    "PDF (*.pdf)": "PDF belgesi (*.pdf)",
+    "Export 3D Snapshot": "3D Görüntüyü Dışa Aktar",
+    "PNG image (*.png)": "PNG görüntüsü (*.png)",
+    "Export Build Guide — the cut list, parts list and JSON go beside it": (
+        "Montaj Rehberini Dışa Aktar — kesim listesi, parça listesi ve JSON yanına yazılır"
+    ),
+    "HTML page (*.html)": "HTML sayfası (*.html)",
+    "Export Schematic — the SVG and PNG are written beside it": (
+        "Şemayı Dışa Aktar — SVG ve PNG yanına yazılır"
+    ),
     "Open E&xample": "Örn&ek Aç",
     "Opens as a new, untitled board: Save asks where your copy goes.": (
         "Yeni, adsız bir kart olarak açılır: Kaydet, kopyanın nereye gideceğini sorar."

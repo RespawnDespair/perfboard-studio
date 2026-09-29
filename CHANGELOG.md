@@ -48,6 +48,14 @@ closed without a bump.
 
 ### Changed
 
+- **Every export asks where it goes.** The build guide, the schematic, the 1:1 PDF and
+  the 3D snapshot wrote fixed names beside the board — or into whatever folder the
+  application started in, for a board never saved — and replaced what was there without
+  a word, behind menu items whose "…" promised a question. Each now opens the save
+  dialog beside the board with the name it used to write, so accepting it does what the
+  menu always did; its companion files go beside the one chosen, and a board with no
+  file yet starts where the last export went.
+
 - **The findings panel says what is wrong in words.** A rule's row read
   "component-body-overlap (error)"; it reads "Parts overlap (error)" now — translated —
   with the rule's id in the tooltip and still matched by the filter, and LVS's kinds
