@@ -2565,6 +2565,85 @@ def assembly_step_for(value: int, maximum: int) -> int | None:
     return value - 1
 
 
+def _rule_title(rule: str) -> str:
+    """What a DRC rule is called in the findings panel: words, not the rule's id.
+
+    The id -- ``component-body-overlap`` -- is the tool's vocabulary, and it stays in the
+    tooltip and the filter; a row read by somebody fixing their board says what is wrong.
+    Built at call time so the titles come out in the language the window was built in.
+    A rule with no title here is shown by its id, so a new rule is never hidden.
+    """
+    titles = {
+        "component-body-overlap": t("Parts overlap"),
+        "component-off-board": t("Part off the board"),
+        "component-overhangs-edge": t("Part hangs past the edge"),
+        "component-too-tall": t("Part too tall for the case"),
+        "conductor-crossing": t("Conductors cross"),
+        "conductor-off-board": t("Conductor off the board"),
+        "creepage-clearance": t("Too close for the voltage"),
+        "crossing-conductors": t("Conductors share a hole"),
+        "current-capacity": t("Too thin for the current"),
+        "cut-track-conflict": t("Pin on a cut track"),
+        "duplicate-pin-hole": t("Two pins in one hole"),
+        "edge-connector-conflict": t("Pin on an edge finger"),
+        "heat-proximity": t("Heat source too close"),
+        "jumper-under-body": t("Jumper under a part"),
+        "lead-bend-too-long": t("Bent lead too long"),
+        "mounting-hole-clearance": t("Too close to a mounting hole"),
+        "mounting-hole-conflict": t("Pin on a mounting hole"),
+        "pad-lifting-risk": t("Pads may lift"),
+        "pin-not-connected": t("Pin connected to nothing"),
+        "solder-trace-invalid-path": t("Solder trace skips a hole"),
+        "solder-trace-proximity": t("Solder next to another net"),
+        "solder-trace-too-long": t("Solder trace too long"),
+        "terminal-entry-blocked": t("Terminal entry blocked"),
+        "terminal-entry-faces-in": t("Terminal faces into the board"),
+        "unknown-footprint": t("Unknown footprint"),
+        "wire-over-joint": t("Bare wire on a joint"),
+        "wire-too-thick-for-hole": t("Wire too thick for the hole"),
+    }
+    return titles.get(rule, rule)
+
+
+def _lvs_title(kind: str) -> str:
+    """The same, for an LVS finding's kind."""
+    titles = {
+        "open": t("Open: a net in pieces"),
+        "short": t("Short: two nets joined"),
+        "floating-conductor": t("Copper joined to no pin"),
+        "unplaced-component": t("Part not on the board"),
+        "unknown-footprint": t("Unknown footprint"),
+        "unrouted-net": t("Net not wired yet"),
+    }
+    return titles.get(kind, kind)
+
+
+def _severity_word(severity: str) -> str:
+    return t("error") if severity == "error" else t("warning")
+
+
+class _OpensPanel(QObject):
+    """Makes a status-bar count a way to the panel that explains it.
+
+    "DRC 3 err" in the corner of the window said something was wrong and gave no way to
+    find out what, short of knowing the DRC panel was Ctrl+7. A filter rather than a link,
+    so the label keeps its own colours.
+    """
+
+    def __init__(self, label: QLabel, dock: QDockWidget) -> None:
+        super().__init__(label)
+        self._dock = dock
+        label.setCursor(Qt.CursorShape.PointingHandCursor)
+        label.installEventFilter(self)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if event.type() == QEvent.Type.MouseButtonRelease:
+            self._dock.show()
+            self._dock.raise_()
+            return True
+        return False
+
+
 class _FrameOnFirstSize(QObject):
     """Frames the 3D panel once, when its render window first has a size to frame it in.
 
@@ -6804,6 +6883,10 @@ class MainWindow(QMainWindow):
             # still readable; a window that will not fit the screen is not.
             label.setMinimumWidth(1)
             bar.addPermanentWidget(label)
+        # Each count opens the panel that says what it is counting (see _OpensPanel).
+        _OpensPanel(self.label_drc, self.dock_drc)
+        _OpensPanel(self.label_lvs, self.dock_drc)
+        _OpensPanel(self.label_ratsnest, self.dock_nets)
 
     # -- the one repaint path: every successful command, undo and redo funnels here --
 
@@ -6934,9 +7017,14 @@ class MainWindow(QMainWindow):
         warns = sum(1 for v in self._last_violations if v.severity == "warning")
         drc_colour = ERROR if errors else (WARNING if warns else OK)
         drc_text = t("DRC {errors} err / {warnings} warn").format(errors=errors, warnings=warns)
-        self.label_drc.setText(
-            f'<span style="color:{drc_colour}">{drc_text}</span>'
-            f'  <span style="color:{TEXT_DIM}">{self._last_drc_ms:.1f} ms</span>'
+        # The count and nothing else. How long the check took is a number for whoever is
+        # tuning DRC, not for somebody reading whether their board is right -- it is in the
+        # tooltip for the first, and off the bar for the second.
+        self.label_drc.setText(f'<span style="color:{drc_colour}">{drc_text}</span>')
+        self.label_drc.setToolTip(
+            t("Design rules checked in {ms} ms. Click to see the findings.").format(
+                ms=f"{self._last_drc_ms:.1f}"
+            )
         )
 
         if self._last_lvs is not None:
@@ -7000,13 +7088,19 @@ class MainWindow(QMainWindow):
         tree.addTopLevelItem(drc_root)
         by_rule: dict[str, list[DrcViolation]] = {}
         for v in violations:
-            if needle and needle not in f"{v.rule} {v.severity} {v.message}".lower():
+            haystack = f"{v.rule} {_rule_title(v.rule)} {v.severity} {v.message}".lower()
+            if needle and needle not in haystack:
                 continue
             by_rule.setdefault(v.rule, []).append(v)
         for rule in sorted(by_rule):
             items = by_rule[rule]
             severity = items[0].severity
-            rule_item = QTreeWidgetItem([f"{rule} ({severity})", f"{len(items)}"])
+            rule_item = QTreeWidgetItem(
+                [f"{_rule_title(rule)} ({_severity_word(severity)})", f"{len(items)}"]
+            )
+            # The id stays one hover away: it is what the documentation and the MCP
+            # server call the rule, and what somebody searching for it will type.
+            rule_item.setToolTip(0, rule)
             # The colour the status bar already uses for the same count, so a warning
             # reads the same whether it is a number on the bar or a row in this tree.
             rule_item.setForeground(0, QColor(ERROR if severity == "error" else WARNING))
@@ -7033,12 +7127,13 @@ class MainWindow(QMainWindow):
         tree.addTopLevelItem(lvs_root)
         by_kind: dict[str, list[LvsIssue]] = {}
         for iss in lvs.issues:
-            if needle and needle not in f"{iss.kind} {iss.message}".lower():
+            if needle and needle not in f"{iss.kind} {_lvs_title(iss.kind)} {iss.message}".lower():
                 continue
             by_kind.setdefault(iss.kind, []).append(iss)
         for kind in sorted(by_kind):
             kind_issues = by_kind[kind]
-            kind_item = QTreeWidgetItem([kind, f"{len(kind_issues)}"])
+            kind_item = QTreeWidgetItem([_lvs_title(kind), f"{len(kind_issues)}"])
+            kind_item.setToolTip(0, kind)
             kind_item.setForeground(0, QColor(ERROR if kind in self._LVS_WRONG else WARNING))
             kind_item.setData(0, ROLE_FINDING_KEY, f"lvs:{kind}")
             lvs_root.addChild(kind_item)

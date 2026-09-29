@@ -4212,11 +4212,72 @@ def test_the_findings_can_be_filtered_down_to_one_rule() -> None:
 
     window.drc_filter.setText(wanted)
 
+    # The row says what the rule is about; its id -- what was typed -- is in the tooltip.
     shown = {
-        window.drc_tree.topLevelItem(0).child(j).text(0).split(" ")[0]
+        window.drc_tree.topLevelItem(0).child(j).toolTip(0)
         for j in range(window.drc_tree.topLevelItem(0).childCount())
     }
     assert shown == {wanted}
+    _close(window)
+
+
+def test_every_rule_and_every_lvs_finding_has_a_title_in_words() -> None:
+    """The panel listed "component-body-overlap (error)". Read off the engine's own source
+    and types, so a new rule without a title is a failure here rather than an id on screen."""
+    import re
+    from typing import get_args
+
+    from perfboard_studio import drc, lvs
+    from perfboard_studio.ui.main import _lvs_title, _rule_title
+
+    source = pathlib.Path(drc.__file__).read_text(encoding="utf-8")
+    rules = set(re.findall(r'rule="([a-z0-9-]+)"', source))
+    assert len(rules) > 20
+    assert [rule for rule in sorted(rules) if _rule_title(rule) == rule] == []
+    kinds = get_args(lvs.LvsIssueKind.__value__)
+    assert kinds
+    assert [kind for kind in kinds if _lvs_title(kind) == kind] == []
+
+
+def test_a_finding_row_says_what_is_wrong_and_keeps_the_rule_id() -> None:
+    from perfboard_studio.ui.main import _rule_title
+
+    window = _window_on(_load_dense())
+    rule = sorted({v.rule for v in window._last_violations})[0]
+    row = _drc_group(window, f"drc:{rule}")
+
+    assert row.text(0).startswith(_rule_title(rule))
+    assert rule not in row.text(0)
+    assert row.toolTip(0) == rule
+    _close(window)
+
+
+def test_the_status_bar_counts_open_the_panel_that_explains_them() -> None:
+    """"DRC 3 err" said something was wrong and gave no way to find out what."""
+    from PySide6.QtCore import QEvent, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtWidgets import QApplication
+
+    window = _window_on(_load_dense())
+    window.show()
+    for label, dock in (
+        (window.label_drc, window.dock_drc),
+        (window.label_lvs, window.dock_drc),
+        (window.label_ratsnest, window.dock_nets),
+    ):
+        dock.hide()
+        QApplication.processEvents()
+        click = QMouseEvent(
+            QEvent.Type.MouseButtonRelease,
+            QPointF(2, 2),
+            QPointF(2, 2),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(label, click)
+        assert not dock.isHidden()
+    assert "ms" not in window.label_drc.text()
     _close(window)
 
 
@@ -4431,7 +4492,7 @@ def test_a_severity_has_the_same_colour_in_the_tree_as_on_the_status_bar() -> No
 
     for j in range(root.childCount()):
         item = root.child(j)
-        rule = item.text(0).split(" ")[0]
+        rule = item.toolTip(0)  # the row is in words; the rule's id is its tooltip
         expected = ERROR if by_rule[rule] == "error" else WARNING
         assert item.foreground(0).color().name() == expected, rule
     _close(window)

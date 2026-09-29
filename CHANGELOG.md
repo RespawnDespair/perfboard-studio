@@ -48,6 +48,13 @@ closed without a bump.
 
 ### Changed
 
+- **The findings panel says what is wrong in words.** A rule's row read
+  "component-body-overlap (error)"; it reads "Parts overlap (error)" now — translated —
+  with the rule's id in the tooltip and still matched by the filter, and LVS's kinds
+  likewise. A test reads every rule id out of `drc.py` so a new one cannot appear untitled.
+  The DRC, LVS and to-route counts on the status bar open the panel that explains them,
+  and the DRC count no longer carries its run time, which is in its tooltip.
+
 - **Routing is a fifth faster, and auto-place a tenth**, with every route and placement
   unchanged: the trace searches' open list is a heap that pops exactly the node the
   original's linear scan did (lowest f, then earliest pushed), and the physical nets of
