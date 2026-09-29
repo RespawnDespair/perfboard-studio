@@ -117,8 +117,11 @@ MODELS: tuple[Model, ...] = (
     # -- discretes ---------------------------------------------------------
     Model("r-axial-3", "Resistor_THT", "R_Axial_DIN0207_L6.3mm_D2.5mm_P7.62mm_Horizontal"),
     Model("r-axial-4", "Resistor_THT", "R_Axial_DIN0207_L6.3mm_D2.5mm_P10.16mm_Horizontal"),
+    # KiCad has no 6.3 mm body at 12.70 mm, so r-axial-5 takes the 9 mm one -- the pitch
+    # comes first. r-axial-6 IS a 9 mm body, and was given the 6.3 mm one while the 9 mm
+    # model at its own pitch sat in the library: the two looked swapped on a board.
     Model("r-axial-5", "Resistor_THT", "R_Axial_DIN0309_L9.0mm_D3.2mm_P12.70mm_Horizontal"),
-    Model("r-axial-6", "Resistor_THT", "R_Axial_DIN0207_L6.3mm_D2.5mm_P15.24mm_Horizontal"),
+    Model("r-axial-6", "Resistor_THT", "R_Axial_DIN0309_L9.0mm_D3.2mm_P15.24mm_Horizontal"),
     Model("d-do35", "Diode_THT", "D_DO-35_SOD27_P7.62mm_Horizontal"),
     Model("d-do41", "Diode_THT", "D_DO-41_SOD81_P10.16mm_Horizontal"),
     # -- capacitors --------------------------------------------------------

@@ -1148,12 +1148,12 @@
   "parts": [
    {
     "bounds": [
-     4.47,
-     -1.25,
-     0.0035,
-     10.77,
-     1.25,
-     2.4965
+     3.12,
+     -1.6,
+     0.0045,
+     12.12,
+     1.6,
+     3.1955
     ],
     "color": "#c07635",
     "material": "ceramic",
@@ -1162,12 +1162,12 @@
    },
    {
     "bounds": [
-     -0.3,
-     -0.2992,
-     0.35,
-     15.54,
-     0.2992,
-     1.55
+     -0.35,
+     -0.349,
+     0.55,
+     15.59,
+     0.349,
+     1.95
     ],
     "color": "#a5a392",
     "material": "steel",
@@ -1175,19 +1175,19 @@
    },
    {
     "bounds": [
-     -0.3,
-     -0.2992,
+     -0.35,
+     -0.349,
      -0.05,
-     15.54,
-     0.2992,
-     0.35
+     15.59,
+     0.349,
+     0.55
     ],
     "color": "#aaaaaa",
     "material": "tinned",
     "mesh": "r-axial-6.2.ply"
    }
   ],
-  "source": "Resistor_THT/R_Axial_DIN0207_L6.3mm_D2.5mm_P15.24mm_Horizontal"
+  "source": "Resistor_THT/R_Axial_DIN0309_L9.0mm_D3.2mm_P15.24mm_Horizontal"
  },
  "screw-terminal-2": {
   "parts": [

@@ -152,6 +152,34 @@ def test_an_leds_flat_is_on_its_cathode(footprint_id: str) -> None:
     assert reach_towards_cathode < reach_away - 0.2, (x_min, x_max, cathode_x)
 
 
+#: Axial parts whose model is knowingly longer than the footprint says, and why.
+AXIAL_LENGTH_EXCEPTIONS = {
+    # KiCad has no 6.3 mm (DIN0207) body at 12.70 mm, and the pitch comes first.
+    "r-axial-5": "DIN0309 is the only body KiCad draws at 12.70 mm",
+}
+
+
+@pytest.mark.parametrize(
+    "footprint_id",
+    sorted(
+        fid
+        for fid in MODELLED
+        if (fp := get_footprint(fid)) is not None and fp.body.archetype == "axial-cylinder"
+    ),
+)
+def test_an_axial_models_barrel_is_the_length_its_footprint_says(footprint_id: str) -> None:
+    """r-axial-6 is a 9 mm body and was drawn with KiCad's 6.3 mm one, while r-axial-5 --
+    a 6.3 mm body -- has to borrow the 9 mm model: the two looked swapped on a board,
+    with the right 9 mm model at r-axial-6's pitch sitting unused in the library."""
+    if footprint_id in AXIAL_LENGTH_EXCEPTIONS:
+        pytest.skip(AXIAL_LENGTH_EXCEPTIONS[footprint_id])
+    model = partmodels.model_for(footprint_id)
+    footprint = get_footprint(footprint_id)
+    assert model is not None and model.body is not None and footprint is not None
+    x0, _y0, _z0, x1, _y1, _z1 = model.body.bounds
+    assert abs((x1 - x0) - float(footprint.body.dims["length"])) <= 1.5, model.source
+
+
 def test_the_relay_is_drawn_as_its_own_footprint() -> None:
     """``relay-spdt`` is an on-grid approximation that no KiCad relay model shares a pinout
     with, so it has no model and the generated box -- its own footprint's size -- draws it."""

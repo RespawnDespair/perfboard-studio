@@ -71,6 +71,11 @@ closed without a bump.
 
 ### Fixed
 
+- **A 9 mm resistor (`r-axial-6`) was drawn with a 6.3 mm body in 3D**, while KiCad's 9 mm
+  model at its own pitch sat unused. It has that model now; `r-axial-5` keeps the 9 mm one
+  because KiCad draws nothing shorter at 12.70 mm, and a test holds every axial model's
+  barrel to its footprint's length, that one exception named.
+
 - **An electrolytic's minus stripe was shaded as dull khaki metal in 3D**, because the
   model converter took its colour for the can's aluminium top. It is print on the sleeve
   now, in the colour the 2D view draws it; the minus signs KiCad prints down it keep
