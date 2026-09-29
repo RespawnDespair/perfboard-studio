@@ -79,6 +79,15 @@ closed without a bump.
 
 ### Fixed
 
+- **The schematic panel drew every label in the opposite corner.** The drawing says
+  which end of a label's text is at its point, and the SVG export reads it that way;
+  the panel handed the same words to a text helper that aligns inside a box centred on
+  the point, where they mean the reverse. So net names sat left of and below their
+  point — across the wires the layout had kept clear of them, and off the sheet's left
+  edge ("XTAL1" read "TAL1") — references hung under their symbols, values stood over
+  them and pin numbers were on the wrong side of their leads. The panel and the export
+  now put every label in the same place.
+
 - **A net name with no room above its wire went back to where the wire branches.** When
   no step along a run cleared the band above it, the name returned to the run's left-hand
   end — where the branches drop to the pins — with a wire through it. It now tries the

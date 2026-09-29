@@ -5729,6 +5729,63 @@ def test_far_side_copper_reads_as_a_band_not_just_hatch_strokes() -> None:
 # holding still.
 
 
+@pytest.mark.skipif(
+    QApplication.instance() is not None
+    and QApplication.instance().platformName() == "offscreen"  # type: ignore[union-attr]
+    and sys.platform == "win32",
+    reason="Qt's offscreen plugin ships no font database on Windows; see "
+    "main._default_headless_platform",
+)
+@pytest.mark.parametrize(
+    ("kind", "anchor", "right", "above"),
+    [
+        ("net", "left", True, True),  # a net name starts at its point, which is its baseline
+        ("ref", "centre", None, True),  # a reference sits above its point
+        ("value", "centre", None, False),  # a value below it
+        ("pin", "left", True, None),  # a pin number beside its lead, centred on the point
+        ("pin", "right", False, None),
+    ],
+)
+def test_the_panel_puts_a_label_where_the_export_does(
+    kind: str, anchor: str, right: bool | None, above: bool | None
+) -> None:
+    """The panel read ``Label.anchor`` as Qt words, but ``draw_label`` aligns inside a box
+    centred on the point, so every label came out in the opposite quadrant from the one the
+    layout kept clear and the export draws in: net names over the wires, "XTAL1" hanging off
+    the sheet's left edge. Measured on the pixels, where the text actually lands."""
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QColor, QImage, QPainter, QPen
+
+    from perfboard_studio.model import Point2
+    from perfboard_studio.schematic import Label
+    from perfboard_studio.ui.scenetext import draw_label
+    from perfboard_studio.ui.viewsch import label_alignment
+
+    label = Label(text="XTAL1", at=Point2(x=0.0, y=0.0), kind=kind, anchor=anchor)
+    image = QImage(400, 400, QImage.Format.Format_ARGB32)
+    image.fill(QColor("white"))
+    painter = QPainter(image)
+    painter.setPen(QPen(QColor("black")))
+    draw_label(painter, QPointF(200, 200), label.text, 20, label_alignment(label))
+    painter.end()
+    xs = [x for y in range(400) for x in range(400) if image.pixelColor(x, y).red() < 128]
+    ys = [y for y in range(400) for x in range(400) if image.pixelColor(x, y).red() < 128]
+    assert xs, "no text reached the pixels"
+
+    if right is True:
+        assert min(xs) >= 197
+    elif right is False:
+        assert max(xs) <= 203
+    else:
+        assert min(xs) < 200 < max(xs)
+    if above is True:
+        assert max(ys) <= 203
+    elif above is False:
+        assert min(ys) >= 197
+    else:
+        assert min(ys) < 200 < max(ys)
+
+
 def _move_symbol(window, ref: str, x: float, y: float) -> None:
     """Drag one symbol to a place on the sheet, the way the view reports one.
 

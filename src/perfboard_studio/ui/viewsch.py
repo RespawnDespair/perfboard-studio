@@ -69,6 +69,7 @@ from perfboard_studio.model import NetNode, Point2
 from perfboard_studio.schematic import (
     GRID_MM,
     Annotation,
+    Label,
     NoConnect,
     Rail,
     SchematicDrawing,
@@ -481,38 +482,49 @@ class SheetItem(QGraphicsItem):
                 painter.drawRect(box)
 
     def _labels(self, painter: QPainter) -> None:
-        alignment = {
-            "left": Qt.AlignmentFlag.AlignLeft,
-            "centre": Qt.AlignmentFlag.AlignHCenter,
-            "right": Qt.AlignmentFlag.AlignRight,
-        }
         for label in self.drawing.labels:
             if label.kind == "ref":
                 colour, size, bold = INK, REF_PX, True
-                vertical = Qt.AlignmentFlag.AlignBottom
             elif label.kind == "value":
                 colour, size, bold = INK_DIM, VALUE_PX, False
-                vertical = Qt.AlignmentFlag.AlignTop
             elif label.kind == "net":
                 colour, size, bold = SIGNAL, NET_PX, False
-                vertical = Qt.AlignmentFlag.AlignBottom
             else:
                 colour, size, bold = INK_DIM, PIN_PX, False
-                vertical = Qt.AlignmentFlag.AlignVCenter
             painter.setPen(QPen(QColor(colour)))
-            draw_label(
-                painter,
-                _point(label.at),
-                label.text,
-                size,
-                alignment[label.anchor] | vertical,
-                bold=bold,
-            )
+            draw_label(painter, _point(label.at), label.text, size, label_alignment(label), bold=bold)
 
 
 # ---------------------------------------------------------------------------
 # The view
 # ---------------------------------------------------------------------------
+
+
+def label_alignment(label: Label) -> Qt.AlignmentFlag:
+    """Where a label's text goes relative to its point, in ``draw_label``'s own terms.
+
+    Those are not Qt's usual ones: ``draw_label`` aligns the text inside a box CENTRED on
+    the point, so AlignRight puts the text to the point's right and AlignTop puts it above.
+    ``Label.anchor`` says which end of the text is at the point -- "left" means the text
+    starts there and runs right -- and the SVG export, and the layout that reserved room for
+    each label, read it that way. The panel read the Qt words at face value and drew every
+    label in the opposite quadrant: net names left of and below their point, over the wires
+    the layout had kept clear and off the sheet's left edge ("XTAL1" showing as "TAL1"),
+    references below their point, values above it, and pin numbers on the wrong side of
+    their leads.
+    """
+    horizontal = {
+        "left": Qt.AlignmentFlag.AlignRight,
+        "centre": Qt.AlignmentFlag.AlignHCenter,
+        "right": Qt.AlignmentFlag.AlignLeft,
+    }[label.anchor]
+    if label.kind in ("ref", "net"):  # above the point -- a net name's point is its baseline
+        vertical = Qt.AlignmentFlag.AlignTop
+    elif label.kind == "value":  # below it
+        vertical = Qt.AlignmentFlag.AlignBottom
+    else:  # a pin number, centred on it
+        vertical = Qt.AlignmentFlag.AlignVCenter
+    return horizontal | vertical
 
 
 def _turn_of(event: QKeyEvent) -> int | None:
