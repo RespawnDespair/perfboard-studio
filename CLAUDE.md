@@ -712,8 +712,11 @@ What keeps everything D6 was protecting:
 - **The body keeps OUR colour.** `bodies.BODY_STYLES` is one table for the 2D view, the 3D
   view and the guide's step images; a red LED coming out a different red in two of the three
   would be giving that up for a borrowed mesh. The converter marks the biggest non-metal
-  piece as the body and it is painted from our table. Leads, tabs, bands and the gold on a
-  header pin keep the colour they were drawn with, because our table has no opinion there.
+  piece as the body and it is painted from our table. Leads, tabs and the gold on a header
+  pin keep the colour they were drawn with, because our table has no opinion there. A
+  DIODE'S BAND is the exception, because the table does have one: it is the style's accent,
+  which the 2D view draws, so `view3d._pieces_for` paints the mesh's own band with it and
+  prints no second band of its own (there were two, at different ends of the barrel).
 - **Materials are ours**, so a borrowed mesh answers light by the same rules as a generated
   one. The index names one of `view3d.MODEL_MATERIALS`; a name the renderer does not have is
   caught by a test rather than shaded as plastic in silence.

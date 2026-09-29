@@ -48,6 +48,28 @@ closed without a bump.
   real resize, the offscreen render and the guide's step images once their window has a
   size.
 
+- **An LED's flat stood on its anode in 3D.** KiCad numbers the cathode pin 1 and puts the
+  flange's flat on it; this application numbers the anode pin 1. The three LED meshes are
+  now converted turned end for end (`tools/import_kicad_models.py`, re-run against KiCad
+  10), and `tests/test_model_leads.py` measures which side the flat is on.
+
+- **Diodes had two cathode bands in 3D**: the borrowed mesh's own, and one more printed at
+  the very end of the barrel. The mesh's band is kept, where the real part has it, and
+  painted in the colour the 2D view draws it.
+
+- **The underside legend labelled the wrong columns in 3D.** It was reflected about the
+  hole span on top of the camera turning the board over, so it was mirrored twice: column A
+  carried "AH". Each glyph is now reflected about its own centre and stays under the hole
+  it names — and a one-edge legend stays on the same physical edge as in the 2D view.
+
+- **Pin headers had nothing on the solder side in 3D.** The borrowed pin is cut at the
+  board surface like every model, and the part of it that goes through the board was the
+  one thing a header did not get.
+
+- **Borrowed parts were shaded in flat facets** — an LED's dome, a can's side — because the
+  meshes carry no normals. They are computed once per mesh when it is read, with a feature
+  angle that keeps real edges sharp.
+
 ## [0.13.0] - 2026-09-26
 
 ### Added

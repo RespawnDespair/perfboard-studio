@@ -143,9 +143,16 @@ MODELS: tuple[Model, ...] = (
     # model is the part as made, legs 1.27 mm apart.
     Model("to92", "Package_TO_SOT_THT", "TO-92_Inline_Wide"),
     Model("to220", "Package_TO_SOT_THT", "TO-220-3_Vertical"),
-    Model("led-3mm", "LED_THT", "LED_D3.0mm", materials=(("#720301", "lens"),)),
-    Model("led-5mm", "LED_THT", "LED_D5.0mm", materials=(("#720301", "lens"),)),
-    Model("led-10mm", "LED_THT", "LED_D10.0mm", materials=(("#720301", "lens"),)),
+    # TURNED END FOR END. KiCad's pin 1 is the CATHODE, and the flange's flat is on it; ours
+    # is the anode (footprints.led_footprint), so drawn as it comes the flat -- the one
+    # thing that says which way round an LED goes -- stood on the anode. Half a turn about z
+    # puts the model's pin 2 at our pin 1, and the offset puts it back on the grid.
+    Model("led-3mm", "LED_THT", "LED_D3.0mm", rotate=180.0, offset=(2.54, 0.0),
+          materials=(("#720301", "lens"),)),
+    Model("led-5mm", "LED_THT", "LED_D5.0mm", rotate=180.0, offset=(2.54, 0.0),
+          materials=(("#720301", "lens"),)),
+    Model("led-10mm", "LED_THT", "LED_D10.0mm", rotate=180.0, offset=(2.54, 0.0),
+          materials=(("#720301", "lens"),)),
     Model("xtal-hc49", "Crystal", "Crystal_HC49-U_Vertical",
           materials=(("#2a2a2a", "steel"),)),
     # Legs 6.5 x 4.5 mm on a 5.08 x 2.54 mm footprint: the case is centred on the four holes,
@@ -571,8 +578,9 @@ def main(argv: list[str] | None = None) -> int:
         # renderer paints it in OUR colour rather than KiCad's. `bodies.BODY_STYLES` is one
         # table for the 2D view, the 3D view and the guide's step images, and a red LED that
         # came out a different red in two of the three would give that up for a borrowed
-        # mesh. Everything else -- leads, tabs, bands, the gold on a pin -- keeps the colour
-        # the model was drawn with, because our table has no opinion about those.
+        # mesh. Everything else -- leads, tabs, the gold on a pin -- keeps the colour the
+        # model was drawn with, because our table has no opinion about those. (A diode's
+        # band is the exception, and the renderer, not this, paints it: view3d._pieces_for.)
         body_index = next(
             (
                 index

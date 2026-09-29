@@ -131,6 +131,27 @@ def test_the_to92_is_the_model_with_its_legs_bent_to_the_grid() -> None:
     assert sorted(round(x, 2) for x, _y in _feet(model)) == [0.0, 2.54, 5.08]
 
 
+@pytest.mark.parametrize("footprint_id", ["led-3mm", "led-5mm", "led-10mm"])
+def test_an_leds_flat_is_on_its_cathode(footprint_id: str) -> None:
+    """The flange's flat is how an LED says which way round it goes, and it is on the
+    cathode. KiCad numbers the cathode pin 1 and we number the ANODE pin 1, so the model as
+    it came stood its flat on the anode -- a board built from the picture has the LED in
+    backwards. The flat is where the flange stops short, so it is the side of the case
+    nearer the pins' midpoint."""
+    model = partmodels.model_for(footprint_id)
+    footprint = get_footprint(footprint_id)
+    assert model is not None and footprint is not None
+    body = model.body
+    assert body is not None and len(body.bounds) == 6
+    cathode = next(pin for pin in footprint.pins if pin.name == "K")
+    cathode_x = cathode.d_col * STANDARD_PITCH_MM
+    middle = sum(pin.d_col for pin in footprint.pins) / len(footprint.pins) * STANDARD_PITCH_MM
+    x_min, x_max = body.bounds[0], body.bounds[3]
+    reach_towards_cathode = x_max - middle if cathode_x > middle else middle - x_min
+    reach_away = middle - x_min if cathode_x > middle else x_max - middle
+    assert reach_towards_cathode < reach_away - 0.2, (x_min, x_max, cathode_x)
+
+
 def test_the_relay_is_drawn_as_its_own_footprint() -> None:
     """``relay-spdt`` is an on-grid approximation that no KiCad relay model shares a pinout
     with, so it has no model and the generated box -- its own footprint's size -- draws it."""

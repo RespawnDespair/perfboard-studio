@@ -78,7 +78,7 @@ from .bodies import (
     style_for,
     surface_for,
 )
-from .partmodels import PartModel, header_pin_model, terminal_block_models
+from .partmodels import ModelPiece, PartModel, header_pin_model, terminal_block_models
 from .partmodels import model_for as _model_for
 
 SUBSTRATE_RGB = {
@@ -1125,6 +1125,20 @@ def build_legend(doc: PerfDocument) -> list[vtk.vtkActor]:
                 scale = max_width / text_width
             transform = vtk.vtkTransform()
             transform.Translate(x, y, 0.0)
+            if face == "bottom":
+                # Ink on the underside, being looked at from underneath: each glyph is
+                # reflected about its OWN centre, or turning the board over in 3D shows the
+                # legend written backwards. This is the one view where the text is a
+                # physical object seen directly rather than an annotation drawn over a
+                # picture. (view2d deliberately does the opposite for the face it sees
+                # THROUGH the board: reversed 1 mm text is noise there.)
+                #
+                # ONLY the glyph. Its position is already the physical one, under the column
+                # it names, and the camera turning over is what mirrors the picture. The
+                # whole legend used to be reflected about the hole span as well, which
+                # mirrored it twice: column A was labelled "AH" on the underside, and a
+                # one-edge legend moved to the other edge from the one the 2D view prints.
+                transform.Scale(-1.0, 1.0, 1.0)
             if rotate:
                 transform.RotateZ(rotate)
             transform.Scale(scale, scale, scale)
@@ -1138,29 +1152,8 @@ def build_legend(doc: PerfDocument) -> list[vtk.vtkActor]:
             append.AddInputData(placed.GetOutput())
         append.Update()
 
-        printed = append.GetOutputPort()
-        if face == "bottom":
-            # Ink on the underside, being looked at from underneath. Both the glyphs and
-            # their positions have to reflect, or turning the board over in 3D shows the
-            # legend written backwards -- and this is the one view where the text is a
-            # physical object being seen directly rather than an annotation drawn over a
-            # picture. (view2d deliberately does the opposite for the face it is seeing
-            # THROUGH the board: reversed 1 mm text is noise, and what the reader wants
-            # off a label there is the address, not the reflection.)
-            #
-            # Reflected about the HOLE SPAN, the axis view2d.hole_to_screen mirrors about,
-            # so both views agree which hole a label belongs to.
-            flip = vtk.vtkTransform()
-            flip.Translate(span_w, 0.0, 0.0)
-            flip.Scale(-1.0, 1.0, 1.0)
-            mirrored = vtk.vtkTransformPolyDataFilter()
-            mirrored.SetTransform(flip)
-            mirrored.SetInputConnection(append.GetOutputPort())
-            mirrored.Update()
-            printed = mirrored.GetOutputPort()
-
         mapper = vtk.vtkPolyDataMapper()
-        mapper.SetInputConnection(printed)
+        mapper.SetInputConnection(append.GetOutputPort())
         actor = vtk.vtkActor()
         actor.SetMapper(mapper)
         # Just clear of the substrate, on whichever face carries the print. Silkscreen is
@@ -1600,7 +1593,10 @@ def _axial_pieces(body: _WorldBody) -> list[_Piece]:
 
 
 def _axial_markings(
-    body: _WorldBody, barrel: tuple[float, float, float] | None = None
+    body: _WorldBody,
+    barrel: tuple[float, float, float] | None = None,
+    *,
+    polarity_band: bool = True,
 ) -> list[_Piece]:
     """What is PRINTED on a lying cylinder: the colour code, or the cathode band.
 
@@ -1633,7 +1629,7 @@ def _axial_markings(
             )
         )
 
-    if body.polarity is not None:
+    if body.polarity is not None and polarity_band:
         # A band at the end nearest the marked pin, standing very slightly proud so it is
         # visible against the body rather than fighting it for the same pixels.
         band_width = max(along * 0.16, 0.5)
@@ -2332,16 +2328,37 @@ def _mesh(path: str) -> vtk.vtkPolyData:
     scene is rebuilt on every edit -- re-reading a DIP-8 forty times per keystroke is the
     same mistake the pad grid exists not to make. ``SetInputData`` downstream then takes a
     real reference, so nothing here can be collected out from under a mapper.
+
+    NORMALS ARE COMPUTED HERE, because the files carry none, and without them every
+    triangle is shaded flat: an LED's dome came out as facets and a can's side as stripes,
+    which reads as a low-polygon model however fine the mesh is. The feature angle keeps a
+    real edge -- a DIP's shoulder, the rim of a can -- a crease rather than smearing it into
+    the faces either side, the same judgement ``_moulded_box`` makes. Once per file, cached.
     """
     reader = vtk.vtkPLYReader()
     reader.SetFileName(path)
-    reader.Update()
+    normals = vtk.vtkPolyDataNormals()
+    normals.SetInputConnection(reader.GetOutputPort())
+    normals.SetFeatureAngle(_MESH_FEATURE_ANGLE_DEG)
+    normals.SplittingOn()
+    normals.Update()
     data = vtk.vtkPolyData()
-    data.DeepCopy(reader.GetOutput())
+    data.DeepCopy(normals.GetOutput())
     return data
 
 
-def _model_pieces(body: _WorldBody, model: PartModel, comp: Any, board: Board) -> list[_Piece]:
+#: Where a borrowed mesh's smooth shading stops and a crease begins. 40 degrees keeps a
+#: 24- or 32-sided can round and a moulded package's shoulders sharp.
+_MESH_FEATURE_ANGLE_DEG = 40.0
+
+
+def _model_pieces(
+    body: _WorldBody,
+    model: PartModel,
+    comp: Any,
+    board: Board,
+    marking_rgb: str | None = None,
+) -> list[_Piece]:
     """A borrowed package, placed on its holes.
 
     NOTHING IS MEASURED HERE, and that is the point: a KiCad through-hole model's origin is
@@ -2356,7 +2373,9 @@ def _model_pieces(body: _WorldBody, model: PartModel, comp: Any, board: Board) -
 
     The body piece is painted from ``bodies.BODY_STYLES`` rather than from the colour the
     model was drawn with -- see ``partmodels`` for why -- and every piece takes one of this
-    module's own materials.
+    module's own materials. ``marking_rgb``, when given, paints what is printed on the case
+    too: a diode's band is the one marking our table has an opinion about, and the 2D view
+    draws it in the style's accent.
     """
     x, y = _xy(board, comp.anchor)
     turn = (0.0, 0.0, -float(comp.rotation))
@@ -2367,10 +2386,16 @@ def _model_pieces(body: _WorldBody, model: PartModel, comp: Any, board: Board) -
     scale = (-1.0, 1.0, 1.0) if comp.mirrored else (1.0, 1.0, 1.0)
     pieces = []
     for piece in model.pieces:
+        if piece.is_body:
+            colour = body.style.fill
+        elif marking_rgb is not None and _is_marking(piece):
+            colour = marking_rgb
+        else:
+            colour = piece.color
         pieces.append(
             _Piece(
                 source=_mesh(str(piece.path)),
-                rgb=_rgb(body.style.fill if piece.is_body else piece.color),
+                rgb=_rgb(colour),
                 position=(x, y, 0.0),
                 orientation=turn,
                 scale=scale,
@@ -2378,6 +2403,19 @@ def _model_pieces(body: _WorldBody, model: PartModel, comp: Any, board: Board) -
             )
         )
     return pieces
+
+
+#: The materials a model's LEADS are made of. A piece that is neither the body nor one of
+#: these is something printed or moulded onto the case -- on a diode, its cathode band.
+_LEAD_MATERIALS = frozenset({"tinned", "steel", "plated"})
+
+
+def _is_marking(piece: ModelPiece) -> bool:
+    return not piece.is_body and piece.material not in _LEAD_MATERIALS
+
+
+def _has_marking(model: PartModel) -> bool:
+    return any(_is_marking(piece) for piece in model.pieces)
 
 
 def _header_model_pieces(body: _WorldBody, model: PartModel) -> list[_Piece]:
@@ -2485,7 +2523,13 @@ def _pieces_for(
     if footprint.body.archetype == "pin-header":
         header = header_pin_model()
         if header is not None:
-            return _header_model_pieces(body, header)
+            # The borrowed pin is cut at the board surface like every model, so the part of
+            # it that goes through the board is ours, square like the pin above it. Without
+            # it a header was the one part with nothing showing on the solder side.
+            return [
+                *_header_model_pieces(body, header),
+                *_through_hole_pieces(body, 0.0, blade=(_MODULE_PIN_MM, _MODULE_PIN_MM)),
+            ]
     model = _model_for(comp.footprint_id)
     if model is None and footprint.body.archetype == "screw-terminal" and len(body.pins) >= 2:
         # A terminal with no model of its own -- every length the library does not have,
@@ -2497,13 +2541,18 @@ def _pieces_for(
                 *_through_hole_pieces(body, 0.0),
             ]
     if model is not None:
+        axial = footprint.body.archetype == "axial-cylinder"
+        # A borrowed diode already has its cathode band, where the real part has it; ours
+        # at the very end of the barrel made two. Its band is kept and painted in the
+        # style's accent, which is the colour the 2D view draws it in.
+        banded = axial and body.polarity is not None and _has_marking(model)
         markings = (
-            _axial_markings(body, _barrel_of(model))
-            if footprint.body.archetype == "axial-cylinder"
-            else []
+            _axial_markings(body, _barrel_of(model), polarity_band=not banded) if axial else []
         )
         return [
-            *_model_pieces(body, model, comp, board),
+            *_model_pieces(
+                body, model, comp, board, marking_rgb=body.style.accent if banded else None
+            ),
             *markings,
             *_through_hole_pieces(body, 0.0),
         ]

@@ -38,6 +38,7 @@ from perfboard_studio.footprints import footprint_lookup
 from perfboard_studio.geometry import column_label
 from perfboard_studio.model import (
     Board,
+    ComponentInstance,
     HoleCoord,
     PerfDocument,
     SolderTraceConductor,
@@ -898,6 +899,64 @@ def test_a_borrowed_resistor_still_shows_its_colour_code() -> None:
     assert len(marks) == len(body.bands)
     for mark in marks:
         assert mark.source.GetRadius() > radius
+
+
+def _placed(footprint_id: str) -> ComponentInstance:
+    """One part at D5, on the default board."""
+    return ComponentInstance(
+        id="c1",
+        ref="X1",
+        value="",
+        footprint_id=footprint_id,
+        anchor=HoleCoord(4, 4),
+        rotation=0,
+        mirrored=False,
+        locked=False,
+    )
+
+
+@pytest.mark.parametrize("footprint_id", ["d-do41", "d-do35"])
+def test_a_borrowed_diode_has_one_cathode_band_in_the_colour_2d_draws(footprint_id: str) -> None:
+    """The KiCad mesh already has its band, where the real part has it, and another was
+    printed at the very end of the barrel: two bands, one of them in KiCad's colour."""
+    from perfboard_studio.commands import DEFAULT_BOARD
+    from perfboard_studio.ui import partmodels, view3d
+
+    lookup = footprint_lookup()
+    component = _placed(footprint_id)
+    body = view3d._world_body(lookup, component, DEFAULT_BOARD)
+    footprint = lookup(footprint_id)
+    model = partmodels.model_for(footprint_id)
+    assert body is not None and footprint is not None and model is not None
+
+    pieces = view3d._pieces_for(body, footprint, component, DEFAULT_BOARD)
+
+    colours = [piece.rgb for piece in pieces]
+    assert colours.count(view3d._rgb(body.style.accent)) == 1
+    kicad_band = next(p.color for p in model.pieces if view3d._is_marking(p))
+    assert view3d._rgb(kicad_band) not in colours
+
+
+def test_a_header_pin_goes_through_the_board() -> None:
+    """Every other part shows its leads trimmed on the solder side; a header's borrowed pin
+    is cut at the board surface, and nothing drew the rest of it."""
+    from perfboard_studio.commands import DEFAULT_BOARD
+    from perfboard_studio.ui import view3d
+
+    lookup = footprint_lookup()
+    component = _placed("hdr-1x8")
+    body = view3d._world_body(lookup, component, DEFAULT_BOARD)
+    footprint = lookup("hdr-1x8")
+    assert body is not None and footprint is not None
+
+    pieces = view3d._pieces_for(body, footprint, component, DEFAULT_BOARD)
+
+    below = [
+        piece
+        for piece in pieces
+        if len(piece.instances) == 8 and all(z < 0 for _x, _y, z in piece.instances)
+    ]
+    assert below, "no pin continues below the board's top face"
 
 
 def test_every_material_the_index_names_is_one_this_module_has() -> None:
@@ -2621,10 +2680,10 @@ def test_the_legend_on_the_underside_reads_the_right_way_round() -> None:
     faces were built from one set of glyphs at two different depths, so turning the board
     over in 3D showed the addresses written backwards.
 
-    Reflected about the HOLE SPAN, the axis everything else mirrors about, so A stays on
-    the hole A names. Checked on the geometry rather than on pixels: the two faces must
-    span the same width, and the bottom one must put A where the top one puts the last
-    column.
+    Each GLYPH is reflected about its own centre, and nothing else moves: A stays under the
+    hole A names, on both faces. The whole legend used to be reflected about the hole span
+    as well, on top of the camera turning the board over, which mirrored it twice -- the
+    underside's column A carried "AH". Checked on the geometry rather than on pixels.
     """
     import dataclasses
 
@@ -2633,28 +2692,32 @@ def test_the_legend_on_the_underside_reads_the_right_way_round() -> None:
 
     doc = _load_dense()
     board = dataclasses.replace(
-        doc.board, cols=6, rows=4, labels=BoardLabels(row_digits=2)
+        # One edge, so no row number stands beside the columns this looks at.
+        doc.board, cols=6, rows=4, labels=BoardLabels(row_digits=2, all_edges=False)
     )
     doc = dataclasses.replace(doc, board=board, components=(), conductors=())
-    span_w = (board.cols - 1) * board.pitch
 
     top, bottom = view3d.build_legend(doc)
 
-    def points(actor: object) -> set[tuple[float, float]]:
+    def glyph(actor: object, col: int) -> set[tuple[float, float]]:
+        """The points of the column letter printed above ``col``, along the top edge."""
         data = actor.GetMapper().GetInput()  # type: ignore[attr-defined]
+        found = [data.GetPoint(i)[:2] for i in range(data.GetNumberOfPoints())]
+        top_edge = max(y for _x, y in found) - 1.5
+        centre = col * board.pitch
         return {
-            (round(data.GetPoint(i)[0], 3), round(data.GetPoint(i)[1], 3))
-            for i in range(data.GetNumberOfPoints())
+            (round(x, 3), round(y, 3))
+            for x, y in found
+            if y > top_edge and abs(x - centre) < board.pitch * 0.45
         }
 
-    top_points = points(top)
-    bottom_points = points(bottom)
-    reflected = {(round(span_w - x, 3), y) for x, y in top_points}
-
-    assert bottom_points == reflected
-    # Not a vacuous assertion: A and R are different shapes, so an unreflected copy is a
-    # genuinely different point set. This is the comparison that fails if the flip goes.
-    assert bottom_points != top_points
+    # B and F are asymmetric, so a glyph left unreflected is a different point set, and a
+    # legend reflected about the span puts E's points over B and A's over F instead.
+    for col in (1, board.cols - 1):
+        centre = col * board.pitch
+        printed = glyph(top, col)
+        assert printed
+        assert glyph(bottom, col) == {(round(2 * centre - x, 3), y) for x, y in printed}
 
 
 def test_the_exploded_view_lifts_the_parts_and_leaves_the_board_alone() -> None:
