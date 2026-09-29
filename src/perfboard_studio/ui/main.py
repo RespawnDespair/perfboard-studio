@@ -37,6 +37,7 @@ from PySide6.QtCore import (
     QEvent,
     QEventLoop,
     QFileSystemWatcher,
+    QLibraryInfo,
     QMimeData,
     QObject,
     QPoint,
@@ -46,6 +47,7 @@ from PySide6.QtCore import (
     Qt,
     QThread,
     QTimer,
+    QTranslator,
     QUrl,
 )
 from PySide6.QtGui import (
@@ -11080,6 +11082,28 @@ def _apply_application_icon(app: QApplication) -> None:
         app.setWindowIcon(QIcon(str(icon_path)))
 
 
+def _install_qt_translations(app: QApplication) -> QTranslator | None:
+    """Qt's own words -- OK, Cancel, Close, Yes, the file dialogs -- in the window's language.
+
+    ``t()`` translates every string this application writes and none of the ones Qt writes
+    for it, so a dialog asked its question in Turkish and offered "OK" and "Cancel" under
+    it: the standard buttons of every QDialogButtonBox and QMessageBox in the window. Qt
+    ships those translations with PySide6; loading the one for the chosen language is all
+    it takes. Returned so the caller can keep it alive -- a QTranslator collected by
+    Python takes its strings with it. None, and English, when the file is not there: a
+    frozen build that left the translations out still starts.
+    """
+    code = current_language()
+    if code == "en":
+        return None
+    translator = QTranslator(app)
+    directory = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+    if not translator.load(f"qtbase_{code}", directory):
+        return None
+    app.installTranslator(translator)
+    return translator
+
+
 def main() -> int:
     # Answered before Qt is touched: --version has to work on a machine where the GUI
     # cannot start, since "it will not launch" is exactly when someone is asked which
@@ -11109,6 +11133,7 @@ def main() -> int:
 
     app = QApplication(sys.argv)
     _apply_application_icon(app)
+    qt_words = _install_qt_translations(app)  # noqa: F841 - held for the life of the app
     argv_paths = _document_arguments(sys.argv)
     path: Path | None
     if argv_paths:

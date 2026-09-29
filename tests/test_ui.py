@@ -2077,6 +2077,39 @@ def test_no_menu_tooltip_is_left_in_english_in_turkish() -> None:
         _close(turkish_window)
 
 
+def test_in_turkish_qt_says_its_own_buttons_in_turkish() -> None:
+    """Every dialog asked its question in Turkish and offered "OK" and "Cancel" under it:
+    ``t()`` translates what this application writes, and the standard buttons are Qt's.
+    Qt ships their translation; ``main()`` loads the one for the chosen language."""
+    from PySide6.QtWidgets import QApplication, QDialogButtonBox
+
+    from perfboard_studio.ui.i18n import language, set_language
+    from perfboard_studio.ui.main import _install_qt_translations
+
+    app = QApplication.instance()
+    assert isinstance(app, QApplication)
+    before = language()
+    set_language("tr")
+    translator = _install_qt_translations(app)
+    try:
+        assert translator is not None, "PySide6 ships qtbase_tr.qm; it was not found"
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        texts = {button.text().replace("&", "") for button in buttons.buttons()}
+        assert texts == {"Tamam", "İptal"}, texts
+        buttons.deleteLater()
+    finally:
+        if translator is not None:
+            app.removeTranslator(translator)
+        set_language(before)
+    set_language("en")
+    try:
+        assert _install_qt_translations(app) is None, "English needs no translator"
+    finally:
+        set_language(before)
+
+
 def test_in_turkish_the_guide_panel_is_in_turkish() -> None:
     """The panel is interface, even though the guide it lists is written by the engine.
     Phase headings and the summary were English in an otherwise Turkish window."""
