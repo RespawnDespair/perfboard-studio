@@ -158,6 +158,20 @@ REGISTRY: dict[str, Footprint] = standard_footprints()
 
 EXPECTED_COUNT = 61
 
+#: Footprints whose GEOMETRY deliberately differs from the TypeScript golden, and why. The
+#: golden proves the port reproduces the original; that cannot also mean the port may never
+#: correct it. Only the outline and the body's dimensions are excused -- every other field is
+#: still compared -- and each entry is pinned by its own test of the geometry it now has,
+#: rather than by the absence of a comparison. Hand-editing the .expected.json instead would
+#: make the next regeneration from the TypeScript engine silently disagree.
+DIVERGES_FROM_TYPESCRIPT = {
+    "xtal-hc49": (
+        "the original had the HC-49/U's can 4.65 x 3.5 mm -- its thickness along the leads "
+        "and a height across them -- where it is 11.05 x 4.65 mm on the board; pinned by "
+        "test_the_crystal_is_as_long_as_the_can"
+    ),
+}
+
 
 # ---------------------------------------------------------------------------
 # Registry-shape sanity
@@ -222,6 +236,7 @@ def test_footprint_matches_golden_field_by_field(footprint_id: str) -> None:
             f"[{footprint_id}] pins[{i}].name: {ap.name!r} != {expected_pin_name!r}"
         )
 
+    diverges = footprint_id in DIVERGES_FROM_TYPESCRIPT
     expected_outline = expected["bodyOutline"]
     assert len(actual.body_outline) == len(expected_outline), (
         f"[{footprint_id}] field 'bodyOutline': length {len(actual.body_outline)} != {len(expected_outline)}"
@@ -233,6 +248,8 @@ def test_footprint_matches_golden_field_by_field(footprint_id: str) -> None:
         default=1.0,
     )
     for i, (ao, eo) in enumerate(zip(actual.body_outline, expected_outline, strict=True)):
+        if diverges:
+            break  # see DIVERGES_FROM_TYPESCRIPT
         assert_coord(footprint_id, f"bodyOutline[{i}].x", ao.x, eo["x"], term_scale)
         assert_coord(footprint_id, f"bodyOutline[{i}].y", ao.y, eo["y"], term_scale)
 
@@ -253,6 +270,8 @@ def test_footprint_matches_golden_field_by_field(footprint_id: str) -> None:
     )
     for key, expected_value in expected_dims.items():
         actual_value = actual.body.dims[key]
+        if diverges:
+            continue  # see DIVERGES_FROM_TYPESCRIPT
         assert actual_value == expected_value, (
             f"[{footprint_id}] body.dims[{key!r}]: {actual_value!r} != {expected_value!r}"
         )
@@ -263,6 +282,30 @@ def test_footprint_matches_golden_field_by_field(footprint_id: str) -> None:
     assert actual.polarized == expected["polarized"], (
         f"[{footprint_id}] field 'polarized': {actual.polarized!r} != {expected['polarized']!r}"
     )
+
+
+def test_the_crystal_is_as_long_as_the_can() -> None:
+    """Pins the xtal-hc49 entry in DIVERGES_FROM_TYPESCRIPT by the geometry, not by the
+    absence of a comparison: an HC-49/U stands 11.05 mm along its leads and 4.65 mm across
+    them, centred between its two holes, and the courtyard holds all of it."""
+    from perfboard_studio.footprints import body_extent
+
+    crystal = REGISTRY["xtal-hc49"]
+    body = body_extent(crystal, 2.54)
+    assert (round(body.size_x, 2), round(body.size_y, 2)) == (11.05, 4.65)
+    assert round(body.centre_x, 2) == 2.54  # midway between pin 1 at 0 and pin 2 at 5.08
+    x0, x1 = body.centre_x - body.size_x / 2, body.centre_x + body.size_x / 2
+    y0, y1 = body.centre_y - body.size_y / 2, body.centre_y + body.size_y / 2
+    xs = [p.x for p in crystal.body_outline]
+    ys = [p.y for p in crystal.body_outline]
+    assert min(xs) <= x0 and max(xs) >= x1 and min(ys) <= y0 and max(ys) >= y1
+
+
+def test_the_divergences_are_real_ones() -> None:
+    """An entry that no longer differs from the golden is an excuse nobody needs."""
+    for footprint_id in DIVERGES_FROM_TYPESCRIPT:
+        golden = GOLDEN[footprint_id]
+        assert golden["body"]["dims"] != REGISTRY[footprint_id].body.dims
 
 
 # ---------------------------------------------------------------------------

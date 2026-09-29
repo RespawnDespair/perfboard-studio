@@ -179,7 +179,7 @@ tests pass". Three things depend on it:
 - `test_autoroute.py` — the golden routes reproduce only with the default cost table, so
   changing `DEFAULT_ROUTER_COSTS` is a deliberate act with fixture regeneration attached.
 
-**Two recorded divergences, both in `test_drc.py`, neither one a hole in the proof.** The
+**Three recorded divergences, none of them a hole in the proof.** The
 fixtures prove the port reproduces the original; that cannot also mean the port may never
 improve on it. Each is named, excluded from the comparison rather than edited into an
 `.expected.json` (those are dumps from the TypeScript engine, and hand-editing one makes
@@ -201,6 +201,11 @@ the next regeneration silently disagree), and pinned by its own test:
   courtyard where the boxes meet and the shapes do not. 41 body-overlap findings across
   the fixtures become 40. Adding to this dict needs a test asserting the GEOMETRY, not
   just the absence.
+- `DIVERGES_FROM_TYPESCRIPT` in `test_footprints.py` — `xtal-hc49`, whose can the original
+  had as 4.65 × 3.5 mm (its thickness along the leads and a height across them) where it
+  is 11.05 × 4.65 mm on the board, so a crystal stood on U1's pin on atmega328-relay and DRC
+  saw nothing. Only the outline and `dims` are excused; every other field is still
+  compared, and `test_the_crystal_is_as_long_as_the_can` pins the geometry.
 
 `persist.py` hand-rolls its JSON writer to match `JSON.stringify(x, null, 2)` byte for
 byte (whole-number floats print as `1`, not `1.0`), and every object's key order comes

@@ -71,6 +71,14 @@ closed without a bump.
 
 ### Fixed
 
+- **The HC-49 crystal's footprint was a third of its length.** It had the can as
+  4.65 × 3.5 mm — its thickness along the leads and a height across them — where an
+  HC-49/U is 11.05 × 4.65 mm on the board, so on `atmega328-relay` the crystal stood on
+  one of U1's pins and DRC said nothing (the 3D view, drawing the real part, showed it).
+  The footprint is the real size now, recorded as a divergence from the original engine's
+  golden with a test of its geometry, and the example's crystal moved two holes clear
+  with its four connections re-routed.
+
 - **A 9 mm resistor (`r-axial-6`) was drawn with a 6.3 mm body in 3D**, while KiCad's 9 mm
   model at its own pitch sat unused. It has that model now; `r-axial-5` keeps the 9 mm one
   because KiCad draws nothing shorter at 12.70 mm, and a test holds every axial model's

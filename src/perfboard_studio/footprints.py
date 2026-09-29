@@ -909,10 +909,18 @@ def crystal_hc49_footprint(
     """HC-49/U crystal, mounted standing upright on 2 leads, 2 holes apart (5.08 mm;
     the real lead pitch is 4.88 mm, close enough that this is the standard
     perfboard approximation).
+
+    THE CAN IS 11.05 x 4.65 mm ON THE BOARD, along its leads and across them. The original
+    engine had 4.65 x 3.5 -- the can's thickness along the leads, and a height (the low
+    HC-49/S is 3.5 mm tall) across them -- so the footprint, its courtyard and every check
+    reading them thought the part a third of its length. On atmega328-relay the crystal
+    stood on one of U1's pins and DRC saw nothing; the 3D view, drawing KiCad's real
+    HC-49/U, showed it. A recorded divergence from the TypeScript golden, pinned by
+    ``test_the_crystal_is_as_long_as_the_can`` in tests/test_footprints.py.
     """
     lead_diameter = 0.45 if lead_diameter_mm is None else lead_diameter_mm
     pins = (_make_pin("1", 0, 0), _make_pin("2", 2, 0))
-    outline = _rect_outline(_to_mm(pins), 4.65, 3.5, COURTYARD_MARGIN_MM)
+    outline = _rect_outline(_to_mm(pins), 11.05, 4.65, COURTYARD_MARGIN_MM)
     fp_id = id if id is not None else "xtal-hc49"
     fp_name = name if name is not None else "Crystal, HC-49/U"
     return Footprint(
@@ -921,7 +929,7 @@ def crystal_hc49_footprint(
         pins=pins,
         body_outline=outline,
         body_height=13.46,
-        body=BodySpec(archetype="crystal-hc49", dims={"width": 4.65, "depth": 3.5}),
+        body=BodySpec(archetype="crystal-hc49", dims={"width": 11.05, "depth": 4.65}),
         lead_diameter=lead_diameter,
         polarized=False,
     )
