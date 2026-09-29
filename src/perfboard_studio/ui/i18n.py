@@ -1795,6 +1795,15 @@ TURKISH: Mapping[str, str] = {
     "Add a Part…": "Parça Ekle…",
     "Choose a Board…": "Kart Seç…",
     "Connect the Pins": "Pinleri Bağla",
+    # -- the board dialogs' pictures and their one line of numbers -----------------
+    "The board as it will be drawn, component side up.": (
+        "Kart, çizileceği hâliyle, bileşen yüzü üstte."
+    ),
+    "{width} × {height} mm ({holes} holes)": "{width} × {height} mm ({holes} delik)",
+    "{gap} mm between pads": "pedler arası {gap} mm",
+    "{along} mm between pads along a row, {down} mm down a column": (
+        "pedler arası sıra boyunca {along} mm, sütun boyunca {down} mm"
+    ),
     "See the Findings": "Bulguları Gör",
     "Open the Build Guide": "Montaj Rehberini Aç",
     "no parts yet": "henüz parça yok",

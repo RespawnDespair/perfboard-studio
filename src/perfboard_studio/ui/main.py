@@ -251,6 +251,7 @@ from perfboard_studio.placer import (
     BoardSuggestion,
     PlacementOptions,
     PlacementPlan,
+    arrange,
     arrange_design,
     design_entries,
     plan_placement,
@@ -282,6 +283,7 @@ from .autosave import Autosave, disk_state
 from .boardcolors import SCHEMES as BOARD_SCHEMES
 from .boardcolors import choose as choose_board_colour
 from .boardcolors import chosen_key as chosen_board_colour
+from .boardpreview import render_board, with_arrangement, with_board
 from .clipboard import block_from_json, block_to_json, paste_payload, paste_position
 from .export_pdf import export_pdf
 from .export_schematic import SchematicRenderError, svg_to_pdf, svg_to_png
@@ -792,10 +794,26 @@ class BoardSetupDialog(QDialog):
         ("vertical", "Down a column"),
     )
 
-    def __init__(self, board: Board, parent: QWidget | None = None, title: str = "New Board") -> None:
+    #: The picture beside the questions. Tall rather than square: most stocked boards are
+    #: portrait, and the picture is what tells a 5 x 7 from a 7 x 9 before the numbers do.
+    PREVIEW = QSize(260, 320)
+
+    def __init__(
+        self,
+        board: Board,
+        parent: QWidget | None = None,
+        title: str = "New Board",
+        document: PerfDocument | None = None,
+        lookup: FootprintLookup | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setMinimumWidth(420)
+        #: What the preview draws the board under: the open document's own fingers and
+        #: corner holes while the board is still that size, so Board Setup on a starter
+        #: board shows the board as it is rather than a bare grid.
+        self._document = document
+        self._lookup = lookup
         # Assigned before any widget signal can fire: `_update_note` asks `board()` for
         # the pad gaps it prints, and `board()` builds its result from this.
         self._board = board
@@ -952,15 +970,75 @@ class BoardSetupDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
 
-        layout = QVBoxLayout(self)
-        layout.addLayout(self._chosen)
-        layout.addWidget(self.advanced_toggle)
-        layout.addWidget(self._advanced)
+        questions = QVBoxLayout()
+        questions.addLayout(self._chosen)
+        questions.addWidget(self.advanced_toggle)
+        questions.addWidget(self._advanced)
         # Outside Advanced on purpose: it is what the dialog has just decided, in
         # millimetres and holes, and it is the one line worth reading whichever way the
         # board was chosen.
-        layout.addWidget(self._size_note)
+        questions.addWidget(self._size_note)
+        questions.addStretch(1)
+
+        # THE BOARD, beside the questions about it: a product is recognised by looking at
+        # it, and "5 x 7 cm · 18 × 24" is a row in a list until it is a picture with its
+        # finger strips and corner holes where the one in the drawer has them. Drawn by
+        # the board view itself (``boardpreview``), so it is the board OK will give.
+        self.preview = QLabel()
+        self.preview.setFixedSize(self.PREVIEW)
+        self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.preview.setToolTip(t("The board as it will be drawn, component side up."))
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(60)
+        self._preview_timer.timeout.connect(self._draw_preview)
+        for signal in (
+            self.preset.currentIndexChanged,
+            self.board_type.currentIndexChanged,
+            self.pad_shape.currentIndexChanged,
+            self.pad_axis.currentIndexChanged,
+            self.material.currentIndexChanged,
+            self.cols.valueChanged,
+            self.rows.valueChanged,
+            self.legend.toggled,
+        ):
+            signal.connect(lambda *_args: self._preview_timer.start())
+
+        body = QHBoxLayout()
+        body.addLayout(questions, 1)
+        if lookup is not None:
+            body.addWidget(self.preview, 0, Qt.AlignmentFlag.AlignTop)
+            self._draw_preview()
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(body)
         layout.addWidget(buttons)
+
+    def preview_document(self) -> PerfDocument:
+        """What the preview draws: the dialog's board, with the fingers and corner holes a
+        chosen product brings -- or, still the open board's size, the ones it has."""
+        board = self.board()
+        base = self._document or PerfDocument(
+            meta=DocumentMeta(name="", created="", modified=""), board=board
+        )
+        base = dataclasses.replace(base, components=(), conductors=(), cuts=(), board_notes=())
+        features = self.preset_features()
+        if features is not None:
+            connectors, holes = features
+            return dataclasses.replace(
+                base, board=board, edge_connectors=connectors, mounting_holes=holes
+            )
+        if (
+            self._document is not None
+            and (board.cols, board.rows) == (self._document.board.cols, self._document.board.rows)
+        ):
+            return dataclasses.replace(base, board=board)
+        return dataclasses.replace(base, board=board, edge_connectors=(), mounting_holes=())
+
+    def _draw_preview(self) -> None:
+        if self._lookup is None:
+            return
+        self.preview.setPixmap(render_board(self.preview_document(), self._lookup, self.PREVIEW))
 
     def _on_advanced(self, shown: bool) -> None:
         """Fold the consequences away, and let the dialog shrink back to the question.
@@ -1027,8 +1105,8 @@ class BoardSetupDialog(QDialog):
         # they already own -- "80 columns" means nothing at the shop.
         width = self.cols.value() * self._pitch
         height = self.rows.value() * self._pitch
-        note = (
-            f"{width:.1f} × {height:.1f} mm ({self.cols.value() * self.rows.value()} holes)"
+        note = t("{width} × {height} mm ({holes} holes)").format(
+            width=f"{width:.1f}", height=f"{height:.1f}", holes=self.cols.value() * self.rows.value()
         )
         # The gap the R5' rule is about, quoted while the shape is being chosen rather
         # than only once DRC runs. On a round board the two numbers are the same and one
@@ -1036,9 +1114,11 @@ class BoardSetupDialog(QDialog):
         board = self.board()
         gaps = pad_edge_gap_mm(board, "horizontal"), pad_edge_gap_mm(board, "vertical")
         if abs(gaps[0] - gaps[1]) < 1e-9:
-            note += f" — {gaps[0]:.2f} mm between pads"
+            note += " — " + t("{gap} mm between pads").format(gap=f"{gaps[0]:.2f}")
         else:
-            note += f" — {gaps[0]:.2f} mm between pads along a row, {gaps[1]:.2f} mm down a column"
+            note += " — " + t(
+                "{along} mm between pads along a row, {down} mm down a column"
+            ).format(along=f"{gaps[0]:.2f}", down=f"{gaps[1]:.2f}")
         self._size_note.setText(f"<span style='color:{TEXT_DIM}'>{note}</span>")
 
     def preset_features(
@@ -2692,16 +2772,23 @@ class BoardSizeDialog(QDialog):
     somebody who has the 7 x 9 in a drawer is not helped by being told to buy the 5 x 7.
     """
 
+    #: How big each board's picture is. Big enough that the parts on it can be told apart
+    #: -- which is the point, since what separates two sizes is how the circuit sits on
+    #: them -- and small enough that the usual seven fit on a laptop screen in two rows.
+    THUMBNAIL = QSize(180, 180)
+
     def __init__(
         self,
         suggestions: Sequence[BoardSuggestion],
         current: Board,
         recommended: BoardSuggestion | None,
         parent: QWidget | None = None,
+        document: PerfDocument | None = None,
+        lookup: FootprintLookup | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(t("Which board is this going on?"))
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(640)
         self._suggestions = tuple(suggestions)
 
         layout = QVBoxLayout(self)
@@ -2716,14 +2803,46 @@ class BoardSizeDialog(QDialog):
         blurb.setStyleSheet(f"color: {TEXT_DIM};")
         layout.addWidget(blurb)
 
+        # A PICTURE PER BOARD, with the circuit on it, when there is a document to draw
+        # (``boardpreview``): the numbers say a board fits, the picture says HOW -- a
+        # packed corner of a big board and a full small one read differently at a glance
+        # and identically as percentages. Without a document the rows are words, as they
+        # always were, which is what a caller with only suggestions to hand gets.
+        pictures = document is not None and lookup is not None
         self.choices = QListWidget()
-        self.choices.setAlternatingRowColors(True)
+        if pictures:
+            self.choices.setViewMode(QListWidget.ViewMode.IconMode)
+            self.choices.setIconSize(self.THUMBNAIL)
+            self.choices.setResizeMode(QListWidget.ResizeMode.Adjust)
+            self.choices.setMovement(QListWidget.Movement.Static)
+            self.choices.setSpacing(8)
+            self.choices.setWordWrap(True)
+            self.choices.setGridSize(QSize(self.THUMBNAIL.width() + 40, self.THUMBNAIL.height() + 64))
+            self.choices.setMinimumHeight(2 * (self.THUMBNAIL.height() + 64) + 24)
+        else:
+            self.choices.setAlternatingRowColors(True)
+        self.choices.itemDoubleClicked.connect(lambda _item: self.accept())
         layout.addWidget(self.choices, 1)
 
-        keep = QListWidgetItem(
-            t("Keep the board I have  ·  {cols} × {rows}").format(cols=current.cols, rows=current.rows)
+        def picture(board_document: PerfDocument) -> QIcon:
+            assert lookup is not None
+            return QIcon(render_board(board_document, lookup, self.THUMBNAIL))
+
+        keep_text = t("Keep the board I have  ·  {cols} × {rows}").format(
+            cols=current.cols, rows=current.rows
         )
+        keep = QListWidgetItem(keep_text.replace("  ·  ", "\n") if pictures else keep_text)
         keep.setData(Qt.ItemDataRole.UserRole, -1)
+        if pictures:
+            assert document is not None and lookup is not None
+            keep.setIcon(
+                picture(
+                    with_arrangement(
+                        document,
+                        arrange(current, design_entries(document), document.nets, lookup),
+                    )
+                )
+            )
         self.choices.addItem(keep)
 
         for index, suggestion in enumerate(self._suggestions):
@@ -2736,18 +2855,35 @@ class BoardSizeDialog(QDialog):
                 note = t("too small — {count} part(s) will not fit").format(
                     count=len(suggestion.arrangement.unplaced)
                 )
-            label = f"{preset.name}  ·  {preset.cols} × {preset.rows}  ·  {note}"
-            if recommended is not None and suggestion.preset is recommended.preset:
-                label = t("Suggested:  ") + label
+            suggested = recommended is not None and suggestion.preset is recommended.preset
+            if pictures:
+                label = f"{preset.name}\n{preset.cols} × {preset.rows} · {note}"
+                if suggested:
+                    label = "★ " + t("Suggested:  ").strip() + " " + label
+            else:
+                label = f"{preset.name}  ·  {preset.cols} × {preset.rows}  ·  {note}"
+                if suggested:
+                    label = t("Suggested:  ") + label
             item = QListWidgetItem(label)
             item.setData(Qt.ItemDataRole.UserRole, index)
+            item.setToolTip(f"{preset.name}  ·  {preset.cols} × {preset.rows}  ·  {note}")
+            if pictures:
+                assert document is not None
+                item.setIcon(
+                    picture(
+                        with_arrangement(
+                            with_board(document, suggestion.board, preset),
+                            suggestion.arrangement,
+                        )
+                    )
+                )
             if not suggestion.fits:
                 # Left visible rather than hidden: "the 4 x 6 is too small" is the useful
                 # half of the answer, and a list that silently starts at the 6 x 8 looks
                 # like the small boards do not exist.
                 item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
             self.choices.addItem(item)
-            if recommended is not None and suggestion.preset is recommended.preset:
+            if suggested:
                 self.choices.setCurrentItem(item)
 
         if self.choices.currentRow() < 0:
@@ -2759,6 +2895,8 @@ class BoardSizeDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+        if pictures:
+            self.resize(4 * (self.THUMBNAIL.width() + 40) + 60, 2 * (self.THUMBNAIL.height() + 64) + 160)
 
     def chosen(self) -> BoardSuggestion | None:
         """The board to switch to, or None to keep the one the document already has."""
@@ -6747,7 +6885,12 @@ class MainWindow(QMainWindow):
         if not suggestions:
             return self.on_board_setup() if always else True
         dialog = BoardSizeDialog(
-            suggestions, document.board, recommended_board(suggestions), self
+            suggestions,
+            document.board,
+            recommended_board(suggestions),
+            self,
+            document=document,
+            lookup=self.lookup,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return False
@@ -9151,7 +9294,9 @@ class MainWindow(QMainWindow):
         starter = create_starter_document(
             DocumentMeta(name=UNTITLED_NAME, created=_now_iso(), modified=_now_iso())
         )
-        dialog = BoardSetupDialog(starter.board, self, title=t("New Board"))
+        dialog = BoardSetupDialog(
+            starter.board, self, title=t("New Board"), document=starter, lookup=self.lookup
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         # The fingers and corner holes come with the board, as they do in Board Setup.
@@ -9193,7 +9338,13 @@ class MainWindow(QMainWindow):
         part hanging off the new edge comes back as a refusal naming the part, rather
         than silently stranding it.
         """
-        dialog = BoardSetupDialog(self.bus.document.board, self, title=t("Board Setup"))
+        dialog = BoardSetupDialog(
+            self.bus.document.board,
+            self,
+            title=t("Board Setup"),
+            document=self.bus.document,
+            lookup=self.lookup,
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return False
         board = dialog.board()
@@ -9372,7 +9523,13 @@ class MainWindow(QMainWindow):
         starter = create_starter_document(
             DocumentMeta(name=name.strip(), created=_now_iso(), modified=_now_iso())
         )
-        dialog = BoardSetupDialog(starter.board, self, title=t("Board for {name}").format(name=name.strip()))
+        dialog = BoardSetupDialog(
+            starter.board,
+            self,
+            title=t("Board for {name}").format(name=name.strip()),
+            document=starter,
+            lookup=self.lookup,
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         document = create_empty_document(

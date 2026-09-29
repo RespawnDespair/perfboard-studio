@@ -7439,6 +7439,67 @@ def test_the_board_size_dialog_offers_the_stock_sizes_and_the_board_you_have() -
     _close(window)
 
 
+def test_the_board_size_dialog_shows_each_board_with_the_circuit_on_it() -> None:
+    """"fits, 29 % full" is a number; the picture says HOW -- a packed corner of a big
+    board and a full small one read the same as percentages. Given the document, every
+    row is the board with the design arranged on it, drawn by the board view."""
+    from perfboard_studio.model import SchematicPart
+    from perfboard_studio.placer import design_entries, recommended_board, suggest_boards
+    from perfboard_studio.ui.main import BoardSizeDialog
+
+    window = _blank_window()
+    try:
+        document = dataclasses.replace(
+            window.bus.document,
+            parts=tuple(
+                SchematicPart(id=f"p{i}", ref=f"R{i}", value="10k", footprint_id="r-axial-4")
+                for i in range(3)
+            ),
+        )
+        suggestions = suggest_boards(
+            document.board, design_entries(document), document.nets, window.lookup
+        )
+        dialog = BoardSizeDialog(
+            suggestions,
+            document.board,
+            recommended_board(suggestions),
+            window,
+            document=document,
+            lookup=window.lookup,
+        )
+        assert dialog.choices.count() == len(suggestions) + 1
+        for row in range(dialog.choices.count()):
+            item = dialog.choices.item(row)
+            assert item is not None and not item.icon().isNull(), item.text()
+        dialog.deleteLater()
+    finally:
+        _close(window)
+
+
+def test_the_board_dialog_draws_the_board_it_describes() -> None:
+    """A product is recognised by looking at it. Picking a size redraws the picture beside
+    the questions, finger strips and corner holes included."""
+    from perfboard_studio.geometry import STANDARD_PRESETS
+    from perfboard_studio.ui.main import BoardSetupDialog
+
+    window = _blank_window()
+    try:
+        dialog = BoardSetupDialog(
+            window.bus.document.board, window, document=window.bus.document, lookup=window.lookup
+        )
+        first = dialog.preview.pixmap().toImage()
+        assert not first.isNull()
+        bigger = max(STANDARD_PRESETS, key=lambda p: p.cols * p.rows)
+        dialog.preset.setCurrentIndex(dialog.preset.findData(bigger.key))
+        dialog._draw_preview()
+        assert dialog.preview_document().board.cols == bigger.cols
+        assert dialog.preview_document().edge_connectors == dialog.preset_features()[0]
+        assert dialog.preview.pixmap().toImage() != first
+        dialog.deleteLater()
+    finally:
+        _close(window)
+
+
 def test_placing_with_nothing_left_in_the_design_says_so_rather_than_doing_nothing() -> None:
     window = _blank_window()
     _keep_the_board(window)

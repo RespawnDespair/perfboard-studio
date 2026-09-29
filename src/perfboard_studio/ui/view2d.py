@@ -2194,6 +2194,9 @@ class ComponentItem(QGraphicsItem):
         self.side = side
         #: Print the part's pin names beside its pins (View > Show Pin Names).
         self.show_pin_names = show_pin_names
+        #: Print the part's reference above it. Off only in a board PICTURE
+        #: (``boardpreview``), where a label held at a pixel size is most of a thumbnail.
+        self.show_reference = True
         #: Where they go, as the scene laid them out against the rest of the board.
         self.pin_names = pin_names
         self.pending_anchor: HoleCoord = comp.anchor
@@ -2371,7 +2374,7 @@ class ComponentItem(QGraphicsItem):
         # invisible against dark green FR4 -- so in practice no part was labelled at all.
         # Skipped when zoomed out far enough that the text would be an unreadable smear.
         scale = painter.transform().m11() or 1.0
-        if scale >= 3.0:
+        if scale >= 3.0 and self.show_reference:
             rect = self._local_outline().boundingRect()
             anchor = QPointF(rect.left(), rect.top())
             align = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom
@@ -2461,10 +2464,12 @@ class BoardScene(QGraphicsScene):
         show_rulers: bool = True,
         hatch_far_side: bool = True,
         show_pin_names: bool = True,
+        show_references: bool = True,
     ) -> None:
         super().__init__()
         self.lookup = lookup
         self.show_pin_names = show_pin_names
+        self.show_references = show_references
         self.side = side
         self.bus = bus
         self.hatch_far_side = hatch_far_side
@@ -2817,6 +2822,7 @@ class BoardScene(QGraphicsScene):
                 pin_names=names.labels.get(comp.id, ()),
                 names_left_off=names.left_off.get(comp.id, ()),
             )
+            item.show_reference = self.show_references
             self.addItem(item)
             self.component_items[comp.id] = item
             if comp.id in previously_selected:
