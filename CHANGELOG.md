@@ -31,6 +31,13 @@ closed without a bump.
 
 ### Fixed
 
+- **Pressing Board on the toolbar closed the board.** The Board, Schematic and 3D buttons,
+  and Ctrl+1–4, were the panels' own open/close switches, lit while a panel was open
+  rather than in front. The board and the sheet start stacked in one tab group, so both
+  were lit, and pressing Board to get to the board put it away. They now bring their view
+  forward and never close it; opening and closing a view is View ▸ Panels, where a check
+  mark says which are open.
+
 - **Copper on the far face was hard to follow in 2D.** On the component side -- the side
   the editor opens on, and so most of the copper on most boards -- a run was drawn only as
   thin hatch strokes over a busy grid of pads, and zoomed out it thinned to nothing. A faint

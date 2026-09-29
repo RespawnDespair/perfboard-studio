@@ -3995,46 +3995,62 @@ class MainWindow(QMainWindow):
         # Board, schematic, 3D, guide -- the things this application is FOR -- then the
         # three panels that describe them. The board and the sheet used to be the two with
         # no number at all, because they were the two that were not panels.
-        self.act_board_panel = self.dock_board.toggleViewAction()
-        self.act_board_panel.setText(t("Show &Board"))
-        self.act_board_panel.setShortcut(QKeySequence("Ctrl+1"))
-        self.act_board_panel.setToolTip(
+        #
+        # EACH ONE BRINGS ITS VIEW FORWARD AND NEVER PUTS IT AWAY. They were the docks' own
+        # toggleViewActions, lit while the panel was open -- and open is not in front: the
+        # board and the sheet start stacked in one tab group, so both buttons were lit, and
+        # pressing Board to get to the board CLOSED it. Ctrl+1, labelled "Show Board", did
+        # the same. Opening and closing a view is the Panels submenu below, where a check
+        # mark says which are open; a view panel that is not tabbed also has its close box.
+        def view_action(text: str, key: str, tip: str, show: Callable[[], None]) -> QAction:
+            action = QAction(text, self)
+            action.setShortcut(QKeySequence(key))
+            action.setToolTip(tip)
+            action.triggered.connect(lambda _checked=False: show())
+            view_menu.addAction(action)
+            return action
+
+        self.act_show_board = view_action(
+            t("Show &Board"),
+            "Ctrl+1",
             t(
                 "The board itself (Ctrl+1). A panel like every other one: drag it beside "
                 "the schematic, or out of the window altogether."
-            )
+            ),
+            self.show_board,
         )
-        view_menu.addAction(self.act_board_panel)
-        self.act_schematic = self.dock_schematic.toggleViewAction()
-        self.act_schematic.setText(t("Show &Schematic"))
-        self.act_schematic.setShortcut(QKeySequence("Ctrl+2"))
-        self.act_schematic.setToolTip(
+        self.act_show_schematic = view_action(
+            t("Show &Schematic"),
+            "Ctrl+2",
             t(
                 "The circuit (Ctrl+2). Clicking a symbol selects that part on the board; "
                 "clicking a wire highlights its net."
-            )
+            ),
+            self.show_schematic,
         )
-        view_menu.addAction(self.act_schematic)
-        self.act_3d = self.dock_3d.toggleViewAction()
-        self.act_3d.setText(t("Show &3D View"))
-        self.act_3d.setShortcut(QKeySequence("Ctrl+3"))
-        self.act_3d.setToolTip(
+        self.act_show_3d = view_action(
+            t("Show &3D View"),
+            "Ctrl+3",
             t(
                 "Open the 3D board view (Ctrl+3). Closed by default: it is the "
                 "most expensive thing in the window to keep up to date."
-            )
+            ),
+            lambda: self._raise_view(self.dock_3d),
         )
-        view_menu.addAction(self.act_3d)
-        self.act_guide_panel = self.dock_guide.toggleViewAction()
-        self.act_guide_panel.setText(t("Show &Build Guide"))
-        self.act_guide_panel.setShortcut(QKeySequence("Ctrl+4"))
-        self.act_guide_panel.setToolTip(
+        self.act_show_guide = view_action(
+            t("Show &Build Guide"),
+            "Ctrl+4",
             t(
                 "The soldering order, in the window: shortest part first, jumpers before "
                 "whatever stands on them, ICs last. Picking a step shows it on the board."
-            )
+            ),
+            lambda: self._raise_view(self.dock_guide),
         )
-        view_menu.addAction(self.act_guide_panel)
+        # The switches themselves, which say which views are open and put one away.
+        self.act_board_panel = self.dock_board.toggleViewAction()
+        self.act_schematic = self.dock_schematic.toggleViewAction()
+        self.act_3d = self.dock_3d.toggleViewAction()
+        self.act_guide_panel = self.dock_guide.toggleViewAction()
         view_menu.addSeparator()
         # The three that describe the design rather than draw it. Closing one from its
         # title bar used to leave no route back but a right-click on the menu bar, which
@@ -4052,6 +4068,10 @@ class MainWindow(QMainWindow):
         self.act_drc_panel.setShortcut(QKeySequence("Ctrl+7"))
         view_menu.addAction(self.act_drc_panel)
         view_menu.addSeparator()
+        panels = view_menu.addMenu(t("Panels"))
+        panels.setToolTipsVisible(True)
+        for toggle in (self.act_board_panel, self.act_schematic, self.act_3d, self.act_guide_panel):
+            panels.addAction(toggle)
         act_reset_layout = view_menu.addAction(t("&Reset the Panel Layout"))
         act_reset_layout.setToolTip(
             t(
@@ -4191,9 +4211,9 @@ class MainWindow(QMainWindow):
             (self.act_delete, t("Delete")),
             (self.act_flip, t("Flip")),
             (self.act_ratsnest, t("Ratsnest")),
-            (self.act_board_panel, t("Board")),
-            (self.act_schematic, t("Schematic")),
-            (self.act_3d, t("3D")),
+            (self.act_show_board, t("Board")),
+            (self.act_show_schematic, t("Schematic")),
+            (self.act_show_3d, t("3D")),
             (self.act_fit, t("Fit")),
         ):
             action.setIconText(short)
@@ -4243,18 +4263,18 @@ class MainWindow(QMainWindow):
         bar.addAction(self.act_ratsnest)
         bar.addAction(self.act_fit)
 
-        # THE PANELS, LAST AND TOGETHER. Each is its dock's own toggleViewAction, so the
-        # button is checkable, it is lit while the panel is open, and pressing it does
-        # exactly what the View menu entry and the panel's own close button do -- one
-        # switch per panel rather than three ways of asking for the same thing that can
-        # disagree about whether it happened.
+        # THE VIEWS, LAST AND TOGETHER, and each button brings its view to the front --
+        # the same action as Ctrl+1..3 and the View menu's Show entries. They used to be
+        # the docks' toggleViewActions, which are lit while a panel is OPEN rather than in
+        # front, so with the board and the sheet stacked both were lit and pressing Board
+        # closed the board. See the View menu for where opening and closing went.
         bar.addSeparator()
-        self.act_board_panel.setIcon(icons.icon("board"))
-        self.act_schematic.setIcon(icons.icon("schematic"))
-        self.act_3d.setIcon(icons.icon("3d"))
-        bar.addAction(self.act_board_panel)
-        bar.addAction(self.act_schematic)
-        bar.addAction(self.act_3d)
+        self.act_show_board.setIcon(icons.icon("board"))
+        self.act_show_schematic.setIcon(icons.icon("schematic"))
+        self.act_show_3d.setIcon(icons.icon("3d"))
+        bar.addAction(self.act_show_board)
+        bar.addAction(self.act_show_schematic)
+        bar.addAction(self.act_show_3d)
 
         # The menu entries carry the same pictures. A toolbar that teaches one icon and a
         # menu that shows another teaches nothing.

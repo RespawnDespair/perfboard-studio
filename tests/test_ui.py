@@ -4014,7 +4014,7 @@ def test_the_empty_board_names_the_key_that_really_opens_the_schematic() -> None
     stamp = "2026-01-01T00:00:00.000Z"
     window = _window_on(create_starter_document(DocumentMeta(name="t", created=stamp, modified=stamp)))
 
-    key = window.act_schematic.shortcut().toString()
+    key = window.act_show_schematic.shortcut().toString()
     assert key
     assert f"({key})" in window.view.empty_hint.text()
     _close(window)
@@ -5635,6 +5635,62 @@ def test_the_board_and_the_sheet_are_both_panels() -> None:
     assert window.dock_schematic in window.tabifiedDockWidgets(window.dock_board)
     # ...and the board is the one in front.
     assert window.schematic_is_showing() is False
+    _close(window)
+
+
+def test_the_view_buttons_bring_a_view_forward_and_never_put_it_away() -> None:
+    """They were the docks' toggleViewActions, lit while a panel was OPEN. The board and
+    the sheet start stacked in one tab group, so both were lit, and pressing Board to get to
+    the board closed it; Ctrl+1, labelled "Show Board", did the same."""
+    window = _window_on(_golden_document("ne555"))
+    window.show_schematic()
+    assert window.schematic_is_showing()
+
+    window.act_show_board.trigger()
+
+    assert not window.dock_board.isHidden()
+    assert window._raised_dock is window.dock_board
+    assert not window.dock_schematic.isHidden(), "bringing one forward closed the other"
+
+    # Pressed again, in front already: still there.
+    window.act_show_board.trigger()
+    assert not window.dock_board.isHidden()
+
+    window.act_show_schematic.trigger()
+    assert window.schematic_is_showing()
+    assert window.act_show_board.shortcut().toString() == "Ctrl+1"
+    assert window.act_show_schematic.shortcut().toString() == "Ctrl+2"
+    assert not window.act_show_board.isCheckable()
+    _close(window)
+
+
+def test_a_view_is_put_away_from_the_panels_submenu() -> None:
+    """Closing did not go away with the buttons: it is a switch that says which views are
+    open, and a tabbed view has no title bar of its own to close it from."""
+    from PySide6.QtWidgets import QApplication
+
+    from perfboard_studio.ui import i18n
+
+    window = _window_on(_golden_document("ne555"))
+    submenus = [
+        entry.menu()
+        for top in window.menuBar().actions()
+        if top.menu() is not None
+        for entry in top.menu().actions()
+        if entry.menu() is not None
+    ]
+    panels = next(menu for menu in submenus if menu.title() == i18n.t("Panels"))
+    toggles = panels.actions()
+    assert window.act_board_panel in toggles and window.act_schematic in toggles
+    assert all(toggle.isCheckable() for toggle in toggles)
+    # A dock's switch says whether it is VISIBLE, which a window never shown is not.
+    window.show()
+    QApplication.processEvents()
+    assert window.act_schematic.isChecked()
+
+    window.act_schematic.trigger()
+
+    assert window.dock_schematic.isHidden()
     _close(window)
 
 

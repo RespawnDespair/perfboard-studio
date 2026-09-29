@@ -473,6 +473,7 @@ TURKISH: Mapping[str, str] = {
         "sürükleyin ya da tamamen pencerenin dışına çıkarın."
     ),
     "&Reset the Panel Layout": "Panel Düzenini Sıfı&rla",
+    "Panels": "Paneller",
     "Put every panel back where it opens on a new installation. A window "
     "rearranged into a corner has no other way back.": (
         "Her paneli yeni bir kurulumda açıldığı yere geri koyar. Bir köşeye sıkıştırılmış "

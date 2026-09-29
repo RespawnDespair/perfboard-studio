@@ -1048,9 +1048,15 @@ Six things follow, and each has a test:
   straight back when the cap comes off.
 - **A tabbed panel drops its own title bar** (`_sync_dock_titlebars`). Qt draws both the tab
   bar for the group and the current dock's title under it — the same word twice, on two
-  rows, above a view that wanted the height. Dragging the tab moves the panel and the
-  toolbar button closes it, so nothing is lost; the title bar comes back the moment the
+  rows, above a view that wanted the height. Dragging the tab moves the panel and
+  View ▸ Panels closes it, so nothing is lost; the title bar comes back the moment the
   panel is pulled out beside another and is the only handle it has.
+- **The view buttons and Ctrl+1–4 bring a view FORWARD and never put it away**
+  (`act_show_board` and its three siblings). They were the docks' toggleViewActions, lit
+  while a panel was OPEN, and open is not in front: with the board and the sheet stacked
+  both buttons were lit, and pressing Board to reach the board closed it. The dock
+  toggles (`act_board_panel`, …) live in View ▸ Panels, where a check mark is the honest
+  thing for them to show.
 - **`WINDOW_STATE_VERSION` is bumped when a dock is added or removed.** `restoreState` puts
   back the docks it knows and leaves the ones it has never heard of wherever the constructor
   put them, which landed the board and the sheet off the side of the window for anybody with
