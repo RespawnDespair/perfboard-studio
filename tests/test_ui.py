@@ -968,6 +968,57 @@ def test_apply_default_camera_is_the_only_thing_that_reframes() -> None:
     assert renderer.GetActiveCamera().GetPosition() == pytest.approx(default)
 
 
+@requires_offscreen_gl
+@pytest.mark.parametrize(
+    ("board", "size"),
+    [
+        ("examples/atmega328-relay.perf", (1400, 950)),  # portrait board, landscape window
+        ("tools/diffcheck/golden/dense.perf", (600, 900)),  # landscape board, tall panel
+    ],
+)
+@pytest.mark.parametrize("flipped", [False, True])
+def test_the_default_camera_keeps_the_whole_board_in_the_frame(
+    board: str, size: tuple[int, int], flipped: bool
+) -> None:
+    """It used to fit a bounding sphere, zoom in by a fixed 1.35 and then tilt, in a window
+    it had not been given yet: every portrait board lost its near edge off the bottom of the
+    frame (atmega328-relay's corners landed at y -87..914 in 950 px), and its far edge off
+    the top when flipped. Measured by projecting the substrate's four corners."""
+    import vtk
+
+    from perfboard_studio.geometry import board_outline_mm
+    from perfboard_studio.ui import view3d
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    document = persist.parse_document_or_throw((root / board).read_text(encoding="utf-8"))
+    renderer, _stats = view3d.build_renderer(document, footprint_lookup(), flipped=flipped)
+    window = vtk.vtkRenderWindow()
+    window.SetOffScreenRendering(1)
+    window.AddRenderer(renderer)
+    window.SetSize(*size)
+    view3d.apply_default_camera(renderer, flipped)
+    window.Render()
+
+    outline = board_outline_mm(document.board)
+    point = vtk.vtkCoordinate()
+    point.SetCoordinateSystemToWorld()
+    xs: list[float] = []
+    ys: list[float] = []
+    for x in (outline.x, outline.x + outline.width):
+        for y in (-outline.y, -(outline.y + outline.height)):
+            point.SetValue(x, y, 0.0)
+            px, py = point.GetComputedDoubleDisplayValue(renderer)
+            xs.append(px)
+            ys.append(py)
+    window.Finalize()
+
+    width, height = size
+    assert min(xs) >= 0 and max(xs) <= width, (xs, size)
+    assert min(ys) >= 0 and max(ys) <= height, (ys, size)
+    # ...and not fitted by making it tiny: it fills most of whichever side limits it.
+    assert max((max(xs) - min(xs)) / width, (max(ys) - min(ys)) / height) > 0.6
+
+
 # ---------------------------------------------------------------------------
 # Selection survives the rebuild every command causes
 # ---------------------------------------------------------------------------
@@ -2768,6 +2819,8 @@ def test_a_step_looks_the_same_whichever_face_was_drawn_before_it(monkeypatch) -
     win.SetOffScreenRendering(1)
     win.AddRenderer(ren)
     win.SetSize(*size)
+    # Framed in the window's shape, as render_step_images frames it (a component-side step).
+    view3d.apply_default_camera(ren, False)
     view3d.populate_renderer(ren, document_at_step(doc, guide, index), lookup, highlight=focus)
     win.Render()
     grab = vtk.vtkWindowToImageFilter()

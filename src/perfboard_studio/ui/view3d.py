@@ -3453,19 +3453,48 @@ def apply_default_camera(ren: vtk.vtkRenderer, flipped: bool = False) -> None:
     a further 32 degrees from wherever that left it -- so "Reset Camera" would move the view
     without resetting it, and would land somewhere different every time it was pressed.
     These three values are vtkCamera's own defaults, so a first call is unaffected.
+
+    THE BOARD IS FITTED ON SCREEN, AFTER THE TILT, IN THE WINDOW'S OWN SHAPE. It used to be
+    ``ResetCamera`` and then a fixed ``Zoom(1.35)``: that fits a bounding SPHERE by the
+    vertical view angle alone, the zoom then cuts it to three quarters, and the tilt brings
+    the near edge of a tall board towards the camera -- so every portrait board had its
+    near edge off the bottom of the frame (atmega328-relay: corners at y -87..914 in a
+    950 px window) and its far edge off the top when flipped. ``ResetCameraScreenSpace``
+    fits what is actually drawn, as projected, to ``_FRAME_FILL`` of the viewport.
+
+    It needs the viewport's size to do that, so a renderer with no window yet is only
+    ``ResetCamera``-ed, which VTK leaves alone rather than guessing. Every caller that
+    shows a picture therefore calls this once the window has its size: ``render_offscreen``
+    and ``render_step_images`` after ``SetSize``, and the panel on its first real resize.
     """
     cam = ren.GetActiveCamera()
     cam.SetPosition(0.0, 0.0, 1.0)
     cam.SetFocalPoint(0.0, 0.0, 0.0)
     cam.SetViewUp(0.0, 1.0, 0.0)
 
-    ren.ResetCamera()
     if flipped:
         cam.Elevation(180)
     cam.Elevation(-32)
     cam.Azimuth(18)
-    cam.Zoom(1.35)
+    cam.OrthogonalizeViewUp()
+    ren.ResetCamera()
+    if _has_viewport(ren):
+        ren.ResetCameraScreenSpace(_FRAME_FILL)
     ren.ResetCameraClippingRange()
+
+
+#: How much of the viewport the board fills once framed: enough margin that the orbit
+#: handle is not the board's own corner, little enough that the parts are worth looking at.
+_FRAME_FILL = 0.9
+
+
+def _has_viewport(ren: vtk.vtkRenderer) -> bool:
+    """Whether ``ren`` is in a window that has been given a size."""
+    window = ren.GetRenderWindow()
+    if window is None:
+        return False
+    width, height = window.GetSize()
+    return bool(width > 1 and height > 1)
 
 
 # ---------------------------------------------------------------------------
@@ -3863,6 +3892,8 @@ def render_offscreen(
     win.SetOffScreenRendering(1)
     win.AddRenderer(ren)
     win.SetSize(width, height)
+    # Framed again now that the window has a shape to frame it in -- see apply_default_camera.
+    apply_default_camera(ren, flipped)
     win.Render()
 
     w2i = vtk.vtkWindowToImageFilter()
@@ -3946,16 +3977,17 @@ def render_step_images(
         return {}
 
     ren, _stats = build_renderer(doc, lookup)
+    win = vtk.vtkRenderWindow()
+    win.SetOffScreenRendering(1)
+    win.AddRenderer(ren)
+    win.SetSize(width, height)
+    # The window first: the cameras are fitted to its shape (see apply_default_camera).
     cameras: dict[bool, vtk.vtkCamera] = {}
     for flipped in (False, True):
         apply_default_camera(ren, flipped)
         camera = vtk.vtkCamera()
         camera.DeepCopy(ren.GetActiveCamera())
         cameras[flipped] = camera
-    win = vtk.vtkRenderWindow()
-    win.SetOffScreenRendering(1)
-    win.AddRenderer(ren)
-    win.SetSize(width, height)
 
     images: dict[str, bytes] = {}
     for index, step in enumerate(steps):

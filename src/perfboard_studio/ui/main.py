@@ -34,9 +34,11 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from PySide6.QtCore import (
+    QEvent,
     QEventLoop,
     QFileSystemWatcher,
     QMimeData,
+    QObject,
     QPoint,
     QPointF,
     QSettings,
@@ -2543,6 +2545,32 @@ def assembly_step_for(value: int, maximum: int) -> int | None:
     return value - 1
 
 
+class _FrameOnFirstSize(QObject):
+    """Frames the 3D panel once, when its render window first has a size to frame it in.
+
+    ``view3d.apply_default_camera`` fits the board to the viewport's own shape, and the
+    panel is built before Qt has laid it out -- so the camera ``build_renderer`` sets is only
+    a rough one. The first resize is when the shape exists. An event filter sees it BEFORE
+    the widget's own handler has handed the size to VTK, so the framing is queued behind it.
+    """
+
+    def __init__(self, widget: QWidget, frame: Callable[[], None]) -> None:
+        super().__init__(widget)
+        self._frame = frame
+        widget.installEventFilter(self)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if (
+            event.type() == QEvent.Type.Resize
+            and isinstance(watched, QWidget)
+            and watched.width() > 1
+            and watched.height() > 1
+        ):
+            watched.removeEventFilter(self)
+            QTimer.singleShot(0, self._frame)
+        return False
+
+
 class MainWindow(QMainWindow):
     def __init__(self, document: PerfDocument, path: Path | None = None) -> None:
         super().__init__()
@@ -3133,6 +3161,7 @@ class MainWindow(QMainWindow):
             # and is not something a user would think to go and change.
             style = view3d.trackball_style()
             widget.GetRenderWindow().GetInteractor().SetInteractorStyle(style)
+            _FrameOnFirstSize(widget, self.on_reset_3d_camera)
             self._vtk_renderer = ren
             self._vtk_style = style
             self.vtk_widget = widget

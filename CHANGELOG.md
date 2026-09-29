@@ -40,6 +40,14 @@ closed without a bump.
   one — and no golden route moves. The random-netlist property test, which only ever asked
   the default style (the one that never hops), now runs all four.
 
+- **The 3D view cut the board off.** The camera fitted a bounding sphere, zoomed in by a
+  fixed 1.35 and then tilted, in a window it had not been given yet, so every portrait board
+  lost its near edge off the bottom of the frame and its far edge off the top when flipped
+  (`atmega328-relay`'s corners landed at y −87…914 in a 950 px picture). It now fits what is
+  drawn, after the tilt, to nine tenths of the window's own shape: the panel on its first
+  real resize, the offscreen render and the guide's step images once their window has a
+  size.
+
 ## [0.13.0] - 2026-09-26
 
 ### Added
