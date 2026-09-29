@@ -941,6 +941,10 @@ class _State:
     strip_entries: dict[int, list[tuple[int, int]]] = field(default_factory=dict)
     strip_conflict_of: dict[int, int] = field(default_factory=dict)
     strip_conflicts: int = 0
+    #: Each part's pin holes as :meth:`pins` last worked them out, dropped by
+    #: :meth:`set_placement` -- the only thing that moves a part. Asked for four times per
+    #: moved part per move, and a million and a half times in one placement of a large board.
+    pin_cache: dict[int, tuple[tuple[int, int], ...]] = field(default_factory=dict)
 
     def lane_mm(self) -> float:
         """Extra lanes the parts are spread over, in mm.
@@ -986,9 +990,14 @@ class _State:
                 self.set_placement(index, snap[0][index], snap[1][index], snap[2][index])
 
     def pins(self, index: int) -> tuple[tuple[int, int], ...]:
+        cached = self.pin_cache.get(index)
+        if cached is not None:
+            return cached
         part = self.parts[index]
         c, r = self.col[index], self.row[index]
-        return tuple((c + dc, r + dr) for dc, dr in part.pin_offsets[self.rot[index]])
+        holes = tuple((c + dc, r + dr) for dc, dr in part.pin_offsets[self.rot[index]])
+        self.pin_cache[index] = holes
+        return holes
 
     def set_placement(self, index: int, col: int, row: int, rot: int) -> None:
         """Move one part, keeping the shared-hole and strip bookkeeping exact."""
@@ -1007,6 +1016,7 @@ class _State:
         self.col[index] = col
         self.row[index] = row
         self.rot[index] = rot
+        self.pin_cache.pop(index, None)
 
         self._join_lanes(index)
 
@@ -1352,8 +1362,6 @@ class _Scorer:
         corridor_b = part_b.rel_entry[state.rot[b]]
         if corridor_a is None and corridor_b is None:
             return 0
-        if not (self._on_grid(state, a) and self._on_grid(state, b)):
-            return 0
         ax = state.col[a] * self.board_pitch
         ay = state.row[a] * self.board_pitch
         bx = state.col[b] * self.board_pitch
@@ -1371,6 +1379,10 @@ class _Scorer:
                 (bx + corridor_b.min_x, bx + corridor_b.max_x, by + corridor_b.min_y, by + corridor_b.max_y),
                 (ax + body_a.min_x, ax + body_a.max_x, ay + body_a.min_y, ay + body_a.max_y),
             )
+        # Asked last because it walks both parts' pins, and a pair nothing blocks -- nearly
+        # every pair a terminal is in -- is zero either way.
+        if count and not (self._on_grid(state, a) and self._on_grid(state, b)):
+            return 0
         return count
 
     def _on_grid(self, state: _State, position: int) -> bool:
@@ -1535,20 +1547,57 @@ class _Scorer:
             if self.entry_inward(state, position):
                 total += weights.entry_faces_in
 
-        count = len(state.parts)
+        # Most pairs on a board are nowhere near each other, and for those every pair term
+        # is EXACTLY zero -- no courtyard overlap, no heat pair, no wire entry -- so they
+        # are not asked. Skipping a zero is exact: ``total + 0.0`` is ``total``, which is
+        # what keeps every golden placement where it was. The box test below is the one
+        # ``pair_terms`` makes, written as comparisons (``min(p, q) - max(r, s) > 0`` is
+        # ``min(p, q) > max(r, s)``), and anything it lets through is asked in full.
+        # Measured on atmega328-relay: three million pair evaluations per placement, and
+        # the placement a fifth faster without them.
+        parts = state.parts
+        pitch = self.board_pitch
+        count = len(parts)
         for a in positions:
+            part_a = parts[a]
+            rot_a = state.rot[a]
+            box_a = part_a.rel_box[rot_a]
+            a_entry = part_a.rel_entry[rot_a] is not None
+            a_source = part_a.heat_source
+            a_sensitive = part_a.heat_sensitive
+            if box_a is not None:
+                ax = state.col[a] * pitch
+                ay = state.row[a] * pitch
+                a_x0, a_x1 = box_a.min_x + ax, box_a.max_x + ax
+                a_y0, a_y1 = box_a.min_y + ay, box_a.max_y + ay
             for b in range(count):
                 if b == a or (b in moved and b < a):
                     continue  # The pair (a, b) with both moved is counted once, at min(a, b).
-                touching, overlap, heat = self.pair_terms(state, a, b)
-                total += (
-                    weights.overlap_pair * touching
-                    + weights.overlap_area * overlap
-                    + weights.heat * heat
-                )
-                blocked = self.entry_pair(state, a, b)
-                if blocked:
-                    total += weights.entry_blocked * blocked
+                part_b = parts[b]
+                rot_b = state.rot[b]
+                ask = (a_source and part_b.heat_sensitive) or (part_b.heat_source and a_sensitive)
+                if not ask and box_a is not None:
+                    box_b = part_b.rel_box[rot_b]
+                    if box_b is not None:
+                        bx = state.col[b] * pitch
+                        by = state.row[b] * pitch
+                        ask = (
+                            a_x1 > box_b.min_x + bx
+                            and box_b.max_x + bx > a_x0
+                            and a_y1 > box_b.min_y + by
+                            and box_b.max_y + by > a_y0
+                        )
+                if ask:
+                    touching, overlap, heat = self.pair_terms(state, a, b)
+                    total += (
+                        weights.overlap_pair * touching
+                        + weights.overlap_area * overlap
+                        + weights.heat * heat
+                    )
+                if a_entry or part_b.rel_entry[rot_b] is not None:
+                    blocked = self.entry_pair(state, a, b)
+                    if blocked:
+                        total += weights.entry_blocked * blocked
 
         return total
 

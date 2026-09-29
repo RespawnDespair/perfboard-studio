@@ -66,7 +66,7 @@ from .commands import (
 from .connectivity import FootprintLookup, PhysicalPinRef
 from .geometry import format_hole, path_length_mm
 from .model import ConductorId, HoleCoord, NetClass, NetId, PerfDocument
-from .ratsnest import NetRatsnest, RatsnestLink, ratsnest
+from .ratsnest import NetRatsnest, RatsnestLink, net_ratsnest, ratsnest
 from .router import (
     DEFAULT_ROUTER_OPTIONS,
     RouteRequest,
@@ -613,7 +613,7 @@ def _route_in_order(
     outcomes: dict[NetId, NetOutcome] = {}
 
     for net_id in order:
-        entry = next((n for n in ratsnest(working, lookup) if n.net_id == net_id), None)
+        entry = net_ratsnest(working, lookup, net_id)
         if entry is None:
             continue
 
@@ -763,7 +763,7 @@ def _chain_net(
     refused: set[tuple[PhysicalPinRef, PhysicalPinRef]] = set()
 
     while True:
-        current = next((n for n in ratsnest(working, lookup) if n.net_id == net_id), None)
+        current = net_ratsnest(working, lookup, net_id)
         if current is None:
             break
         # Shortest first: a short hop has few alternatives and should claim its ground

@@ -35,7 +35,7 @@ from dataclasses import dataclass
 
 from .connectivity import FootprintLookup, PhysicalPinRef, extract_physical_nets
 from .geometry import path_length_mm, pin_hole
-from .model import Board, ComponentInstance, HoleCoord, NetClass, NetId, PerfDocument
+from .model import Board, ComponentInstance, HoleCoord, Net, NetClass, NetId, PerfDocument
 
 # ---------------------------------------------------------------------------
 # Public types
@@ -100,56 +100,79 @@ def ratsnest(doc: PerfDocument, lookup: FootprintLookup) -> tuple[NetRatsnest, .
     showing "3 of 11 nets left" needs the total as much as the remainder, and filtering
     is one comprehension away.
     """
-    physical_nets = extract_physical_nets(doc, lookup)
-    pin_to_physical_net_id: dict[tuple[str, str], str] = {}
-    for pn in physical_nets:
-        for pin in pn.pins:
-            pin_to_physical_net_id[(pin.component_ref, pin.pin)] = pn.id
+    where = _PinIndex.of(doc, lookup)
+    return tuple(_net_ratsnest(net, where, doc, lookup) for net in doc.nets)
 
-    # First component wins on a duplicate ref, matching lvs.run_lvs -- the two must
-    # agree about which hardware a schematic ref refers to or their reports contradict.
-    components_by_ref: dict[str, ComponentInstance] = {}
-    for component in doc.components:
-        components_by_ref.setdefault(component.ref, component)
 
-    result: list[NetRatsnest] = []
+def net_ratsnest(doc: PerfDocument, lookup: FootprintLookup, net_id: NetId) -> NetRatsnest | None:
+    """``ratsnest`` for ONE net, or None when the document has no net by that id.
 
-    for net in doc.nets:
-        resolved: list[_ResolvedPin] = []
-        unresolved: list[PhysicalPinRef] = []
+    The same entry the whole-board call returns for it -- a net's links depend on where
+    its own pins stand and nothing else -- without working out every other net's on the
+    way. The autorouter asks for one net at a time, after every connection it lays, and
+    asking for all of them was a fifth of the time it took to route a large board.
+    """
+    net = next((candidate for candidate in doc.nets if candidate.id == net_id), None)
+    if net is None:
+        return None
+    return _net_ratsnest(net, _PinIndex.of(doc, lookup), doc, lookup)
 
-        for node in net.nodes:
-            ref = PhysicalPinRef(component_ref=node.component_ref, pin=node.pin)
-            placed = components_by_ref.get(ref.component_ref)
-            footprint = lookup(placed.footprint_id) if placed is not None else None
-            hole = (
-                pin_hole(placed, footprint, ref.pin)
-                if placed is not None and footprint is not None
-                else None
-            )
-            physical_net_id = pin_to_physical_net_id.get((ref.component_ref, ref.pin))
-            if hole is None or physical_net_id is None:
-                unresolved.append(ref)
-                continue
-            resolved.append(_ResolvedPin(pin=ref, hole=hole, physical_net_id=physical_net_id))
 
-        groups = _group_by_physical_net(resolved)
-        links = _spanning_links(net.id, net.name, net.net_class, groups, doc)
+@dataclass(frozen=True, slots=True)
+class _PinIndex:
+    """Which physical net each pin sits in, and which component a reference names."""
 
-        pin_holes = sorted({(entry.hole.col, entry.hole.row) for entry in resolved})
-        result.append(
-            NetRatsnest(
-                net_id=net.id,
-                net_name=net.name,
-                net_class=net.net_class,
-                links=links,
-                pin_holes=tuple(HoleCoord(col=col, row=row) for col, row in pin_holes),
-                unresolved_pins=tuple(sorted(unresolved)),
-                group_count=len(groups),
-            )
+    physical_net_of: dict[tuple[str, str], str]
+    components_by_ref: dict[str, ComponentInstance]
+
+    @staticmethod
+    def of(doc: PerfDocument, lookup: FootprintLookup) -> _PinIndex:
+        physical_net_of: dict[tuple[str, str], str] = {}
+        for pn in extract_physical_nets(doc, lookup):
+            for pin in pn.pins:
+                physical_net_of[(pin.component_ref, pin.pin)] = pn.id
+        # First component wins on a duplicate ref, matching lvs.run_lvs -- the two must
+        # agree about which hardware a schematic ref refers to or their reports contradict.
+        components_by_ref: dict[str, ComponentInstance] = {}
+        for component in doc.components:
+            components_by_ref.setdefault(component.ref, component)
+        return _PinIndex(physical_net_of=physical_net_of, components_by_ref=components_by_ref)
+
+
+def _net_ratsnest(
+    net: Net, where: _PinIndex, doc: PerfDocument, lookup: FootprintLookup
+) -> NetRatsnest:
+    resolved: list[_ResolvedPin] = []
+    unresolved: list[PhysicalPinRef] = []
+
+    for node in net.nodes:
+        ref = PhysicalPinRef(component_ref=node.component_ref, pin=node.pin)
+        placed = where.components_by_ref.get(ref.component_ref)
+        footprint = lookup(placed.footprint_id) if placed is not None else None
+        hole = (
+            pin_hole(placed, footprint, ref.pin)
+            if placed is not None and footprint is not None
+            else None
         )
+        physical_net_id = where.physical_net_of.get((ref.component_ref, ref.pin))
+        if hole is None or physical_net_id is None:
+            unresolved.append(ref)
+            continue
+        resolved.append(_ResolvedPin(pin=ref, hole=hole, physical_net_id=physical_net_id))
 
-    return tuple(result)
+    groups = _group_by_physical_net(resolved)
+    links = _spanning_links(net.id, net.name, net.net_class, groups, doc)
+
+    pin_holes = sorted({(entry.hole.col, entry.hole.row) for entry in resolved})
+    return NetRatsnest(
+        net_id=net.id,
+        net_name=net.name,
+        net_class=net.net_class,
+        links=links,
+        pin_holes=tuple(HoleCoord(col=col, row=row) for col, row in pin_holes),
+        unresolved_pins=tuple(sorted(unresolved)),
+        group_count=len(groups),
+    )
 
 
 def _group_by_physical_net(resolved: list[_ResolvedPin]) -> list[list[_ResolvedPin]]:

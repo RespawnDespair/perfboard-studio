@@ -13,7 +13,14 @@ dependency, and the two files are free to diverge as each grows.
 
 from __future__ import annotations
 
+import dataclasses
+from pathlib import Path
+
+import pytest
+
+from perfboard_studio import persist
 from perfboard_studio.connectivity import FootprintLookup, PhysicalPinRef
+from perfboard_studio.footprints import footprint_lookup
 from perfboard_studio.model import (
     Board,
     BodySpec,
@@ -30,7 +37,7 @@ from perfboard_studio.model import (
     SolderTraceConductor,
     WireConductor,
 )
-from perfboard_studio.ratsnest import all_links, ratsnest, summarize
+from perfboard_studio.ratsnest import all_links, net_ratsnest, ratsnest, summarize
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -339,3 +346,23 @@ def test_a_net_with_no_declared_pins_produces_nothing() -> None:
 
     assert (result.links, result.group_count, result.unresolved_pins) == ((), 0, ())
     assert summarize((result,)).closed_nets == 0  # No pins is not "closed".
+
+
+_BOARDS = sorted((Path(__file__).resolve().parents[1] / "examples").glob("*.perf")) + sorted(
+    (Path(__file__).resolve().parents[1] / "tools" / "diffcheck" / "golden").glob("*.perf")
+)
+
+
+@pytest.mark.parametrize("path", _BOARDS, ids=lambda path: path.stem)
+def test_one_net_is_what_the_whole_board_says_about_it(path: Path) -> None:
+    """The autorouter asks for one net at a time, after every connection it lays. The
+    answer has to be the whole-board answer's entry for that net, link for link -- on the
+    boards as they are routed and as they are before anything is."""
+    doc = persist.deserialize_document(path.read_text(encoding="utf-8")).document
+    lookup = footprint_lookup()
+    for board in (doc, dataclasses.replace(doc, conductors=())):
+        whole = ratsnest(board, lookup)
+        assert whole, "a board with no nets would prove nothing"
+        for entry in whole:
+            assert net_ratsnest(board, lookup, entry.net_id) == entry
+    assert net_ratsnest(doc, lookup, "no-such-net") is None

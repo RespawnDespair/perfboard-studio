@@ -87,12 +87,16 @@ closed without a bump.
   The DRC, LVS and to-route counts on the status bar open the panel that explains them,
   and the DRC count no longer carries its run time, which is in its tooltip.
 
-- **Routing is a fifth faster, and auto-place a tenth**, with every route and placement
-  unchanged: the trace searches' open list is a heap that pops exactly the node the
-  original's linear scan did (lowest f, then earliest pushed), and the physical nets of
-  a document are remembered for the last one asked about, which the autorouter asked
-  about twice per connection. `atmega328-relay`: autoroute 2.6 → 2.1 s, auto-place 24 →
-  22 s.
+- **Routing takes a third less time, and auto-place two fifths less**, with every route
+  and placement exactly what it was. The trace searches' open list is a heap that pops exactly
+  the node the original's linear scan did (lowest f, then earliest pushed); a document's
+  physical nets are remembered for the last one asked about; the autorouter asks for the
+  ratsnest of the one net it is routing instead of the whole board's, after every
+  connection it lays; and whether a trace may pass a hole is worked out once per route.
+  The placer no longer scores the pairs of parts nowhere near each other, whose every term
+  is exactly zero — three million evaluations per placement of a large board. Measured on
+  one machine against the code before the first of these changes: `atmega328-relay` autoroute
+  1.75 → 1.16 s and auto-place 16.4 → 9.4 s, `nano-relay` 0.63 → 0.40 s and 6.1 → 3.8 s.
 
 - **The Turkish interface has one word for routing.** "Route" and "Trace" were both
   "Yol" — a menu and a drawing tool named alike — the Autoroute button read "Oto-yol"

@@ -1951,3 +1951,100 @@ def test_the_arrangement_keeps_off_them_before_the_annealer_runs() -> None:
         ),
     )
     assert not (pins_of(on_board, registry) & dead)
+
+
+# ---------------------------------------------------------------------------
+# The fast paths score exactly what the slow ones did
+# ---------------------------------------------------------------------------
+
+EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "examples"
+
+
+def _every_pair_local(scorer, state, positions) -> float:
+    """``_Scorer.local`` as it was before it skipped the pairs nowhere near each other: the
+    same sum, asking EVERY pair. The reference the fast path is held to."""
+    moved = set(positions)
+    weights = scorer.weights
+    total = 0.0
+    seen_nets: set[int] = set()
+    for position in positions:
+        for net_id in scorer.nets_of[position]:
+            if net_id in seen_nets:
+                continue
+            seen_nets.add(net_id)
+            net_hpwl, net_align = scorer.net_terms(state, net_id)
+            total += weights.hpwl * net_hpwl + weights.alignment * net_align
+    for position in positions:
+        off, dead, edge = scorer.part_terms(state, position)
+        total += weights.off_board * off + weights.dead_hole * dead + weights.edge * edge
+        over, overhang = scorer.overhang_terms(state, position)
+        if over:
+            total += weights.overhang_part * over + weights.overhang * overhang
+        run = scorer.entry_run(state, position)
+        if run:
+            total += weights.entry * run
+        if scorer.entry_inward(state, position):
+            total += weights.entry_faces_in
+    for a in positions:
+        for b in range(len(state.parts)):
+            if b == a or (b in moved and b < a):
+                continue
+            touching, overlap, heat = scorer.pair_terms(state, a, b)
+            total += (
+                weights.overlap_pair * touching
+                + weights.overlap_area * overlap
+                + weights.heat * heat
+            )
+            blocked = scorer.entry_pair(state, a, b)
+            if blocked:
+                total += weights.entry_blocked * blocked
+    return total
+
+
+@pytest.mark.parametrize("name", ["atmega328-relay", "nano-relay", "lm317-supply"])
+def test_a_move_is_scored_exactly_as_asking_every_pair_would_score_it(name: str) -> None:
+    """``local`` does not ask about a pair whose courtyards are apart, that is no heat pair
+    and that has no wire entry, because every term of such a pair is exactly zero -- and
+    skipping a zero leaves the sum bit for bit where it was, which is what keeps every
+    placement the placer has ever produced where it was. Held to the float, on boards with
+    terminals, a regulator beside capacitors and round courtyards, over moves that overlap
+    parts as often as they separate them."""
+    doc = persist.deserialize_document(
+        (EXAMPLES_DIR / f"{name}.perf").read_text(encoding="utf-8")
+    ).document
+    lookup = footprint_lookup()
+    parts = _build_parts(doc, lookup)
+    nets, nets_of, pin_nets = _build_nets(doc, parts)
+    strips = _build_strips(doc, parts, pin_nets)
+    state = _initial_state(doc, parts, strips)
+    scorer = _make_scorer(
+        doc.board, DEFAULT_PLACEMENT_OPTIONS.weights, nets, nets_of, strips, _dead_hole_keys(doc)
+    )
+    movable = [position for position, part in enumerate(state.parts) if part.movable]
+    rng = random.Random(7)
+    checked = 0
+    for _ in range(400):
+        proposal = _propose(rng, state, movable, 6, DEFAULT_PLACEMENT_OPTIONS)
+        if proposal is None:
+            continue
+        positions, placements = proposal
+        assert scorer.local(state, positions) == _every_pair_local(scorer, state, positions)
+        for position, (col, row, rot) in zip(positions, placements, strict=True):
+            state.set_placement(position, col, row, rot)
+        assert scorer.local(state, positions) == _every_pair_local(scorer, state, positions)
+        checked += 1
+    assert checked > 300
+
+
+def test_a_parts_pins_follow_it_when_it_moves() -> None:
+    """The pin holes are remembered between moves, so the one thing that moves a part has
+    to forget them -- a stale answer here is a collision counted in the wrong hole."""
+    doc = golden_document("ne555")
+    parts = _build_parts(doc, footprint_lookup())
+    state = _initial_state(doc, parts)
+    before = state.pins(0)
+    col, row, rot = state.col[0], state.row[0], state.rot[0]
+    state.set_placement(0, col + 2, row + 1, rot)
+    assert state.pins(0) == tuple((c + 2, r + 1) for c, r in before)
+    state.set_placement(0, col, row, rot)
+    assert state.pins(0) == before

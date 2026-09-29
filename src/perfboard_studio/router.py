@@ -645,6 +645,11 @@ class _RouteContext:
     #: neighbour that leads to it. The million calls above were about 2,000 distinct
     #: questions per search, asked over and over.
     risky_holes: dict[tuple[int, int, int, int, int, int], bool] = field(default_factory=dict)
+    #: Whether a solder trace may pass through a hole (``_is_traversable_by_trace``), by
+    #: hole. Fixed for the life of the context like the two above, and asked by every
+    #: search this context runs -- the plain trace, the hopping one -- once per neighbour
+    #: that leads to the hole: 880,000 questions in one auto-place of atmega328-relay.
+    traversable: dict[tuple[int, int], bool] = field(default_factory=dict)
     #: For a wire laid along the grid: which of ``blocked_segments`` have a bounding box
     #: covering each hole, so a step between two neighbours is tested against the few
     #: segments near it rather than every one on the board. Empty for straight wires.
@@ -1155,6 +1160,15 @@ def _find_solder_trace_path(
 
 def _is_traversable_by_trace(ctx: _RouteContext, hole: HoleCoord) -> bool:
     """A trace may pass through a hole that is empty, or already on the net being routed."""
+    key = (hole.col, hole.row)
+    remembered = ctx.traversable.get(key)
+    if remembered is None:
+        remembered = ctx.traversable[key] = _traversable(ctx, hole)
+    return remembered
+
+
+def _traversable(ctx: _RouteContext, hole: HoleCoord) -> bool:
+    """The answer :func:`_is_traversable_by_trace` remembers."""
     if ctx.occupancy.is_copper_blocked(hole, "bottom"):
         return False
     # Also refuse holes an existing WIRE lies across. Occupancy indexes a wire by its two
