@@ -663,6 +663,50 @@ def test_a_bare_wire_is_still_offered_when_it_crosses_nothing() -> None:
     assert "bare-wire" in [a.strategy for a in result.alternatives]
 
 
+def _board_with_a_wire_joint_on_the_direct_row() -> PerfDocument:
+    """A and B on row 4, and an insulated wire from another net soldered down at D4, the hole
+    exactly between them. Nothing else marks D4: it is not a pin, and an insulated wire does
+    not block the copper plane, so only its being a JOINT says anything is there."""
+    joint = WireConductor(
+        id="w-other", path=(h(4, 1), h(4, 4)), kind="insulated-wire", side="bottom"
+    )
+    return doc((comp("a", "A", h(2, 4)), comp("b", "B", h(6, 4))), (joint,))
+
+
+def test_a_solder_trace_does_not_run_through_another_wires_soldered_end() -> None:
+    """How the solder style shorted +5V into XTAL1 on atmega328-relay: two insulated hops met
+    on an empty pad, and the next net's trace went straight through it. LVS saw the short;
+    DRC, judging by physical net, could not.
+
+    With R5' priced the search happens to detour round D4 anyway, which is exactly why the
+    solder style (R5' at 2) found the hole and the default never did. Priced at nothing, the
+    straight row is the shortest path, and only knowing D4 is a joint keeps the trace off it.
+    """
+    board = _board_with_a_wire_joint_on_the_direct_row()
+    unpriced = RouterOptions(costs=dataclasses.replace(DEFAULT_ROUTER_COSTS, proximity_risk=0))
+
+    result = route_connection(
+        board, _lookup, RouteRequest(from_=h(2, 4), to=h(6, 4)), unpriced
+    )
+
+    traces = [a for a in result.alternatives if a.strategy.startswith("solder-trace")]
+    assert traces, [a.strategy for a in result.alternatives]
+    for candidate in traces:
+        for conductor in candidate.conductors:
+            if conductor.kind.startswith("solder-trace"):
+                assert h(4, 4) not in conductor.path, candidate.explanation
+
+
+def test_a_bare_wire_is_refused_over_another_wires_soldered_end() -> None:
+    board = _board_with_a_wire_joint_on_the_direct_row()
+
+    result = route_connection(board, _lookup, RouteRequest(from_=h(2, 4), to=h(6, 4)))
+
+    assert "bare-wire" not in [a.strategy for a in result.alternatives]
+    # Insulation is what lets a wire pass over a joint, so that one is still offered.
+    assert "insulated-wire" in [a.strategy for a in result.alternatives]
+
+
 def test_a_hopped_route_is_offered_over_an_obstacle() -> None:
     """A wall of foreign copper across the direct path, with clear board either side. A solder
     trace cannot pass through it and a whole insulated wire is more wire than the job needs;

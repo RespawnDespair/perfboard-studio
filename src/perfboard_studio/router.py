@@ -464,6 +464,7 @@ def route_connection(
         ),
         blocked_segments=_blocked_segments(doc),
         swept_blocked_holes=_trace_blocked_holes(doc),
+        wire_joint_holes=_wire_joint_holes(doc),
         unusable_holes=dead,
         opts_from_pin=request.from_pin,
         wire_gauge_awg=_declared_wire_gauge(doc, request.net_id),
@@ -557,6 +558,9 @@ class _RouteContext:
     #: Hole keys those segments sweep across, including the ones a wire merely passes over.
     #: Precomputed so the trace search can reject them in constant time.
     swept_blocked_holes: frozenset[tuple[int, int]] = frozenset()
+    #: Holes where an insulated wire or a top jumper is soldered down. See
+    #: :func:`_wire_joint_holes` for why neither of the two sets above contains them.
+    wire_joint_holes: frozenset[tuple[int, int]] = frozenset()
     #: Holes nothing can be soldered into at all -- a mounting bore has taken the pad, or
     #: an edge-connector finger is solid copper with no bore. See geometry.unusable_holes,
     #: which is the same set drc.py reports a run on as an error.
@@ -649,6 +653,28 @@ def _trace_blocked_holes(doc: PerfDocument) -> frozenset[tuple[int, int]]:
         for index in range(len(conductor.path) - 1):
             for hole in holes_under_line(conductor.path[index], conductor.path[index + 1]):
                 keys.add(_key(hole))
+    return frozenset(keys)
+
+
+def _wire_joint_holes(doc: PerfDocument) -> frozenset[tuple[int, int]]:
+    """Holes where an insulated wire or a top jumper is soldered to its pad.
+
+    The insulation stops at the two ends: each is a bare solder joint on the solder side,
+    exactly like a pin. But neither kind is ``is_crossing_blocked``, so occupancy does not
+    block those holes, and a joint that is not also a pin was blocked by nothing at all.
+    Two insulated hops meeting on an empty pad (``_emit_trace_run`` lays no trace for a
+    one-hole run) left that pad free, and the next net's trace ran straight through it: a
+    short that LVS reported and DRC did not. The same hole under a bare wire or a bent lead
+    is the same short.
+
+    Every golden route already avoids these holes, which is why blocking them moves none.
+    """
+    keys: set[tuple[int, int]] = set()
+    for conductor in doc.conductors:
+        if is_crossing_blocked(conductor) or len(conductor.path) < 2:
+            continue
+        keys.add(_key(conductor.path[0]))
+        keys.add(_key(conductor.path[-1]))
     return frozenset(keys)
 
 
@@ -1077,6 +1103,10 @@ def _is_traversable_by_trace(ctx: _RouteContext, hole: HoleCoord) -> bool:
     # one function both of them share.
     if _key(hole) in ctx.unusable_holes:
         return False
+    # A wire's soldered end is a joint like a pin, and gets the same treatment below: a
+    # hole the caller declared this net's own may be run through, anything else may not.
+    if _key(hole) in ctx.wire_joint_holes and _key(hole) not in ctx.net_holes:
+        return False
     pin = ctx.occupancy.pin_at(hole)
     # A foreign pin in the way is a hard stop: soldering across it would short it in. A pin
     # the caller has declared part of this same net is the opposite -- running the trace
@@ -1185,6 +1215,8 @@ def _lead_bend_candidate(
             return None
         if ctx.occupancy.pin_at(hole):
             return None
+        if _key(hole) in ctx.wire_joint_holes:
+            return None
     if _crosses_existing(ctx, from_, to):
         return None
 
@@ -1226,6 +1258,8 @@ def _straight_wire_candidate(
             if ctx.occupancy.is_copper_blocked(hole, "bottom"):
                 return None
             if ctx.occupancy.pin_at(hole):
+                return None
+            if _key(hole) in ctx.wire_joint_holes:
                 return None
         # ...and it cannot lie ACROSS one either. The hole checks above only see copper the
         # line lands on; two runs at an angle cross between holes, touching none in common.

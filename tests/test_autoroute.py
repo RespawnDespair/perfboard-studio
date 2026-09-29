@@ -74,6 +74,7 @@ from perfboard_studio.router import (
     DEFAULT_ROUTER_OPTIONS,
     RouterCosts,
     RouterOptions,
+    RoutingStyle,
     options_for_style,
 )
 
@@ -678,9 +679,10 @@ def _random_board_and_netlist(seed: int) -> PerfDocument:
     return make_doc(components=tuple(components), nets=tuple(nets), board=board)
 
 
+@pytest.mark.parametrize("style", ALL_ROUTING_STYLES)
 @pytest.mark.parametrize("seed", range(40))
 def test_property_random_netlist_autoroutes_without_shorts_and_reports_every_gap(
-    seed: int,
+    seed: int, style: RoutingStyle
 ) -> None:
     """PLAN.md M3: a random netlist, autorouted, must satisfy LVS.
 
@@ -695,12 +697,19 @@ def test_property_random_netlist_autoroutes_without_shorts_and_reports_every_gap
          plan's own failure report. This is the property that rules out PLAN.md Sec 13's
          trap of "routed most of it and left four connections" -- the router is allowed
          to fail, and is not allowed to fail quietly.
+
+    Over EVERY style, not just the default. Seed 36 under "solder" once shorted two nets
+    through a pad where two insulated hops met, and nothing noticed, because this test only
+    ever asked the style that never hops.
     """
     doc = _random_board_and_netlist(seed)
     if not doc.nets:
         pytest.skip("degenerate generated case: no nets")
 
-    plan = plan_autoroute(doc, LOOKUP, DEFAULT_AUTOROUTE_OPTIONS)
+    options = dataclasses.replace(
+        DEFAULT_AUTOROUTE_OPTIONS, router=options_for_style(style)
+    )
+    plan = plan_autoroute(doc, LOOKUP, options)
     result = run_lvs(plan.document, LOOKUP)
 
     assert result.summary.shorts == 0, [
