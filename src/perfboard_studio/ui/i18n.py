@@ -1762,6 +1762,11 @@ TURKISH: Mapping[str, str] = {
     "Add a Part…": "Parça Ekle…",
     "Choose a Board…": "Kart Seç…",
     "Connect the Pins": "Pinleri Bağla",
+    # -- a net's class and state in the Nets panel -------------------------------------
+    "signal": "sinyal",
+    "ground": "toprak",
+    "power": "güç",
+    "not placed": "yerleşmedi",
     "Connect {pin} to {net}": "{pin} pinini {net} netine bağla",
     "Connect {pin} to a Net by Name…": "{pin} pinini adıyla bir nete bağla…",
     # -- the empty board --------------------------------------------------------------

@@ -2665,6 +2665,14 @@ def _shortcut_rows(actions: Any) -> list[tuple[str, str]]:
     ]
 
 
+def net_class_word(net_class: str) -> str:
+    """A net's class as the window's language says it -- the Nets panel's column showed
+    the engine's own id, "ground", in a Turkish window."""
+    return {"signal": t("signal"), "ground": t("ground"), "power": t("power")}.get(
+        net_class, net_class
+    )
+
+
 def _plain(label: str) -> str:
     """A menu label as a person reads it: no accelerator marker, no trailing ellipsis."""
     return label.replace("&", "").removesuffix("…").strip()
@@ -8094,12 +8102,21 @@ class MainWindow(QMainWindow):
             if needle and not self._net_matches(entry, nodes_by_net.get(entry.net_id, ()), needle):
                 continue
             remaining = len(entry.links)
+            # "done" only when there is a board to be done ON. A net whose pins are in the
+            # design and not on the board has nothing left to route because it has nothing
+            # placed, and it used to say "done" beside every net of a circuit freshly drawn.
+            if remaining:
+                left = str(remaining)
+            elif entry.unresolved_pins:
+                left = t("not placed")
+            else:
+                left = t("done")
             item = QTreeWidgetItem(
                 [
                     entry.net_name,
-                    entry.net_class,
+                    net_class_word(entry.net_class),
                     str(len(entry.pin_holes) + len(entry.unresolved_pins)),
-                    t("done") if remaining == 0 else str(remaining),
+                    left,
                 ]
             )
             item.setData(0, ROLE_NET_ID, entry.net_id)
@@ -8143,8 +8160,14 @@ class MainWindow(QMainWindow):
         is "what is U1 pin 3 on" rather than "where is GND" -- and the pin rows are right
         there under the net now.
         """
+        # The class in both languages: "toprak" finds GND as "ground" does.
         haystack = " ".join(
-            [entry.net_name, entry.net_class, *(f"{n.component_ref}.{n.pin}" for n in nodes)]
+            [
+                entry.net_name,
+                entry.net_class,
+                net_class_word(entry.net_class),
+                *(f"{n.component_ref}.{n.pin}" for n in nodes),
+            ]
         ).lower()
         return needle in haystack
 

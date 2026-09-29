@@ -4429,6 +4429,24 @@ def test_renaming_a_net_to_gnd_makes_it_a_ground_net(monkeypatch) -> None:
     _close(window)
 
 
+def test_a_net_of_parts_not_yet_placed_is_not_done() -> None:
+    """A circuit freshly drawn, or imported, listed every net as "done": nothing was left to
+    route because nothing was placed. It says so now, and the class column speaks the
+    window's language rather than the engine's ids."""
+    window = _blank_window()
+    try:
+        _add(window, "R1", "r-axial-3")
+        _add(window, "R2", "r-axial-3")
+        _wire(window, "OUT", ("R1", "1"), ("R2", "2"))
+        window._refresh_nets_panel(window._last_ratsnest)
+        row = window.nets_tree.topLevelItem(0)
+        assert row is not None
+        assert row.text(3) == "not placed"
+        assert row.text(1) == "signal"
+    finally:
+        _close(window)
+
+
 def test_the_nets_panel_lists_each_nets_pins_so_they_can_be_taken_off_it() -> None:
     """The panel was a readout; a pin has to be visible to be selected, and selectable to
     be disconnected."""
