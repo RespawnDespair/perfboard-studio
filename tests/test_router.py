@@ -26,6 +26,7 @@ on it.
 from __future__ import annotations
 
 import dataclasses
+import itertools
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +40,7 @@ from perfboard_studio.geometry import (
     coord_to_hole_ref,
     hole_key,
     hole_ref_to_coord,
+    holes_under_line,
     segments_touch,
     validate_orthogonal_chain,
 )
@@ -745,6 +747,139 @@ def test_the_hop_beats_a_whole_wire_on_a_short_run() -> None:
     # Cheaper than running wire the whole way, which is the claim.
     whole_wire = next(a for a in result.alternatives if a.strategy == "insulated-wire")
     assert result.best.cost < whole_wire.cost
+
+
+# ---------------------------------------------------------------------------
+# Wires laid along the grid (RouterOptions.wire_path "grid")
+# ---------------------------------------------------------------------------
+
+GRID = RouterOptions(wire_path="grid")
+
+
+def _wire(result: Any, kind: str) -> WireConductor:
+    candidate = next(a for a in result.alternatives if a.strategy == kind)
+    (conductor,) = candidate.conductors
+    return conductor
+
+
+def _square(path: tuple[HoleCoord, ...]) -> bool:
+    return all(a.col == b.col or a.row == b.row for a, b in itertools.pairwise(path))
+
+
+def test_a_wire_on_the_grid_turns_once_between_two_holes_that_share_no_row() -> None:
+    """The ordinary case, on an empty board: an L. Its path is the ends and the corner."""
+    board = doc((comp("a", "A", h(2, 2)), comp("b", "B", h(8, 6))))
+
+    result = route_connection(board, _lookup, RouteRequest(from_=h(2, 2), to=h(8, 6)), GRID)
+
+    for kind in ("bare-wire", "insulated-wire"):
+        wire = _wire(result, kind)
+        assert len(wire.path) == 3, wire.path
+        assert _square(wire.path)
+        assert (wire.path[0], wire.path[-1]) == (h(2, 2), h(8, 6))
+
+
+def test_the_default_is_still_one_straight_run() -> None:
+    """Every golden route is a straight wire, so the engine's default must stay one."""
+    board = doc((comp("a", "A", h(2, 2)), comp("b", "B", h(8, 6))))
+
+    result = route_connection(board, _lookup, RouteRequest(from_=h(2, 2), to=h(8, 6)))
+
+    assert _wire(result, "bare-wire").path == (h(2, 2), h(8, 6))
+
+
+def test_a_bare_wire_on_the_grid_goes_round_a_foreign_pin() -> None:
+    """X sits on the row between A and B. A straight bare wire is refused outright; one on the
+    grid steps round it, and never lies on the pin."""
+    board = doc((comp("a", "A", h(2, 4)), comp("b", "B", h(8, 4)), comp("x", "X", h(5, 4))))
+
+    straight = route_connection(board, _lookup, RouteRequest(from_=h(2, 4), to=h(8, 4)))
+    grid = route_connection(board, _lookup, RouteRequest(from_=h(2, 4), to=h(8, 4)), GRID)
+
+    assert "bare-wire" not in [a.strategy for a in straight.alternatives]
+    wire = _wire(grid, "bare-wire")
+    assert _square(wire.path)
+    assert h(5, 4) not in {
+        hole for a, b in itertools.pairwise(wire.path) for hole in holes_under_line(a, b)
+    }
+
+
+def test_a_bare_wire_on_the_grid_never_lies_on_another_wires_soldered_end() -> None:
+    board = _board_with_a_wire_joint_on_the_direct_row()
+
+    result = route_connection(board, _lookup, RouteRequest(from_=h(2, 4), to=h(6, 4)), GRID)
+
+    wire = _wire(result, "bare-wire")
+    lies_on = {
+        hole for a, b in itertools.pairwise(wire.path) for hole in holes_under_line(a, b)
+    }
+    assert h(4, 4) not in lies_on
+
+
+def test_a_bare_wire_on_the_grid_does_not_cross_a_diagonal_one_between_holes() -> None:
+    """An existing diagonal bare wire across the way, at a slope that takes it midway between
+    two holes of every odd column. The grid wire goes round it and never across, judged by
+    segments_touch -- the definition DRC's conductor-crossing uses. (holes_under_line counts
+    both holes either side of such a gap, so the holes alone already wall it off; the step
+    test is there so the router and the checker ask the one question.)"""
+    existing = wire("w-existing", (h(0, 3), h(8, 7)))
+    board = doc((comp("a", "A", h(3, 1)), comp("b", "B", h(3, 9))), (existing,))
+
+    result = route_connection(board, _lookup, RouteRequest(from_=h(3, 1), to=h(3, 9)), GRID)
+
+    (new,) = next(a for a in result.alternatives if a.strategy == "bare-wire").conductors
+    for a, b in itertools.pairwise(new.path):
+        assert not segments_touch(a, b, *existing.path), new.path
+
+
+def test_an_insulated_wire_on_the_grid_may_pass_over_a_pin() -> None:
+    """That is what insulation is for, so the direct row is taken."""
+    board = doc((comp("a", "A", h(2, 4)), comp("b", "B", h(8, 4)), comp("x", "X", h(5, 4))))
+
+    result = route_connection(board, _lookup, RouteRequest(from_=h(2, 4), to=h(8, 4)), GRID)
+
+    assert _wire(result, "insulated-wire").path == (h(2, 4), h(8, 4))
+
+
+def test_a_bend_is_priced() -> None:
+    """Two runs of equal length, one straight and one with a bend: the bend costs extra."""
+    straight = route_connection(
+        doc((comp("a", "A", h(2, 2)), comp("b", "B", h(8, 2)))),
+        _lookup, RouteRequest(from_=h(2, 2), to=h(8, 2)), GRID,
+    )
+    bent = route_connection(
+        doc((comp("a", "A", h(2, 2)), comp("b", "B", h(5, 5)))),
+        _lookup, RouteRequest(from_=h(2, 2), to=h(5, 5)), GRID,
+    )
+
+    straight_cost = next(a.cost for a in straight.alternatives if a.strategy == "bare-wire")
+    bent_cost = next(a.cost for a in bent.alternatives if a.strategy == "bare-wire")
+    assert bent_cost == pytest.approx(straight_cost + DEFAULT_ROUTER_COSTS.wire_bend)
+
+
+def test_a_wire_on_the_grid_does_not_lie_along_another_where_a_free_row_will_do() -> None:
+    """Two wires stacked down one row are legal and hide each other from above. An insulated
+    wire along row 4 is already there; the second takes the next row rather than its top."""
+    lying = WireConductor(
+        id="w-lying", path=(h(1, 4), h(9, 4)), kind="insulated-wire", side="bottom"
+    )
+    board = doc((comp("a", "A", h(2, 5)), comp("b", "B", h(8, 5))), (lying,))
+
+    result = route_connection(board, _lookup, RouteRequest(from_=h(2, 5), to=h(8, 5)), GRID)
+
+    wire = _wire(result, "insulated-wire")
+    assert all(hole.row != 4 for hole in wire.path)
+
+
+def test_a_top_jumper_stays_straight_on_the_grid() -> None:
+    """A component-side link is a straight piece of wire between two holes by definition.
+    Between two empty holes, because the router refuses a jumper ending under a part's body."""
+    board = doc(())
+    options = RouterOptions(wire_path="grid", allow_top_jumper=True)
+
+    result = route_connection(board, _lookup, RouteRequest(from_=h(2, 2), to=h(8, 6)), options)
+
+    assert _wire(result, "top-jumper").path == (h(2, 2), h(8, 6))
 
 
 def test_the_wire_policy_offers_no_hop() -> None:

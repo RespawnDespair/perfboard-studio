@@ -20,6 +20,7 @@ catch the two failure modes this rewiring exists to prevent:
 from __future__ import annotations
 
 import dataclasses
+import itertools
 import os
 import pathlib
 import sys
@@ -4533,6 +4534,46 @@ def test_a_closed_window_hands_its_layout_to_the_next_one() -> None:
     assert second.act_style["solder"].isChecked() is True
     _close(second)
     choose_colour(None)
+
+
+def test_the_window_lays_wires_along_the_grid_and_remembers_when_it_should_not() -> None:
+    """On in the window, off in the engine: the engine's default is what every golden route
+    records, and square wires are what somebody building the board wants handed to them.
+    It is how a wire is laid, not which primitive, so it reaches the "best" sweep too."""
+    first = _window_on(_load_dense())
+    assert first.act_grid_wires.isChecked()
+    assert first._autoroute_options().router.wire_path == "grid"
+    first.on_routing_style("best")
+    assert first._autoroute_options().router.wire_path == "grid"
+
+    first.act_grid_wires.setChecked(False)
+    assert first._autoroute_options().router.wire_path == "straight"
+    _close(first)
+
+    second = _window_on(_load_dense())
+    assert second.act_grid_wires.isChecked() is False
+    assert second._autoroute_options().router.wire_path == "straight"
+    _close(second)
+
+
+def test_autorouting_from_the_window_lays_no_diagonal_wire() -> None:
+    """End to end, through the same planner the Route menu runs."""
+    from perfboard_studio.autoroute import plan_autoroute
+
+    root = pathlib.Path(__file__).resolve().parents[1]
+    document = persist.parse_document_or_throw(
+        (root / "examples" / "ne555-astable.perf").read_text(encoding="utf-8")
+    )
+    stripped = dataclasses.replace(document, conductors=())
+    window = _window_on(stripped)
+
+    plan = plan_autoroute(stripped, window.lookup, window._autoroute_options())
+
+    wires = [c for c in plan.document.conductors if c.kind in ("bare-wire", "insulated-wire")]
+    assert wires
+    for conductor in wires:
+        assert all(a.col == b.col or a.row == b.row for a, b in itertools.pairwise(conductor.path))
+    _close(window)
 
 
 def test_a_close_the_user_backed_out_of_records_nothing(monkeypatch) -> None:

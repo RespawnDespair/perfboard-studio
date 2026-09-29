@@ -131,6 +131,18 @@ TURKISH: Mapping[str, str] = {
     "Bend component &legs where possible": "Mümkün olan her yerde &bacak bük",
     "Preferred connection": "Tercih edilen bağlantı",
     "applies to the next route": "bir sonraki yönlendirmede geçerli olur",
+    "Lay Wires Along the &Grid": "Telleri &Izgara Boyunca Döşe",
+    "Run every wire square to the grid, along the rows and columns of holes, "
+    "with as few bends as the board allows -- the way wire is dressed on "
+    "perfboard. Off, a wire is one straight run at whatever angle, which is "
+    "shorter and crosses everything near it.": (
+        "Her teli ızgaraya dik olarak, delik satırları ve sütunları boyunca, kartın izin "
+        "verdiği en az bükümle döşer -- perfboard'da tel böyle döşenir. Kapalıyken tel, "
+        "açısı ne olursa olsun tek bir düz parçadır; daha kısadır ve yakınındaki her şeyi "
+        "keser."
+    ),
+    "on": "açık",
+    "off": "kapalı",
     # -- view ----------------------------------------------------------------
     "Flip Board (component / solder side)": "Kartı Çevir (komponent / lehim yüzü)",
     "&Fit Board": "Karta &Sığdır",

@@ -25,6 +25,7 @@ for the differential proof they were built for, and useless as routing targets.
 from __future__ import annotations
 
 import dataclasses
+import itertools
 import random
 from pathlib import Path
 
@@ -76,6 +77,7 @@ from perfboard_studio.router import (
     RouterCosts,
     RouterOptions,
     RoutingStyle,
+    WirePath,
     options_for_style,
 )
 
@@ -680,10 +682,11 @@ def _random_board_and_netlist(seed: int) -> PerfDocument:
     return make_doc(components=tuple(components), nets=tuple(nets), board=board)
 
 
+@pytest.mark.parametrize("wire_path", ["straight", "grid"])
 @pytest.mark.parametrize("style", ALL_ROUTING_STYLES)
 @pytest.mark.parametrize("seed", range(40))
 def test_property_random_netlist_autoroutes_without_shorts_and_reports_every_gap(
-    seed: int, style: RoutingStyle
+    seed: int, style: RoutingStyle, wire_path: WirePath
 ) -> None:
     """PLAN.md M3: a random netlist, autorouted, must satisfy LVS.
 
@@ -708,7 +711,8 @@ def test_property_random_netlist_autoroutes_without_shorts_and_reports_every_gap
         pytest.skip("degenerate generated case: no nets")
 
     options = dataclasses.replace(
-        DEFAULT_AUTOROUTE_OPTIONS, router=options_for_style(style)
+        DEFAULT_AUTOROUTE_OPTIONS,
+        router=dataclasses.replace(options_for_style(style), wire_path=wire_path),
     )
     plan = plan_autoroute(doc, LOOKUP, options)
     result = run_lvs(plan.document, LOOKUP)
@@ -718,9 +722,19 @@ def test_property_random_netlist_autoroutes_without_shorts_and_reports_every_gap
     ]
     # The short LVS cannot see: bare copper lying across a joint joins nothing in the
     # netlist. The router refuses to lay it, and DRC must agree that it never did.
+    # ...and nothing the checker calls a crossing either: one definition, two consumers.
     assert [
-        v.message for v in run_drc(plan.document, LOOKUP) if v.rule == "wire-over-joint"
+        v.message
+        for v in run_drc(plan.document, LOOKUP)
+        if v.rule in ("wire-over-joint", "conductor-crossing", "crossing-conductors")
     ] == []
+    if wire_path == "grid":
+        for conductor in plan.document.conductors:
+            if conductor.kind in ("bare-wire", "insulated-wire"):
+                assert all(
+                    a.col == b.col or a.row == b.row
+                    for a, b in itertools.pairwise(conductor.path)
+                ), conductor.path
 
     reported_failures = {item.link.net_name for item in unrouted_links(plan)}
     lvs_gaps = {

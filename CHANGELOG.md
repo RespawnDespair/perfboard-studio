@@ -22,6 +22,16 @@ closed without a bump.
 
 ### Added
 
+- **Wires laid along the grid.** Every wire the router laid was one straight run between
+  its two ends, so a routed board was a cat's cradle of diagonals crossing each other, and
+  a straight bare wire could pass 0.2 mm from another net's pad. Route ▸ *Lay Wires Along
+  the Grid* (on by default) runs them square to the rows and columns of holes with as few
+  bends as the board allows, keeps a bare wire off every pin, joint and run of copper, and
+  keeps wires from lying on top of one another. On the shipped examples, stripped and
+  routed again: no diagonal wire, nothing unrouted, no short, no DRC error, for about a
+  fifth more wire. The engine's default stays straight, so every golden route is
+  unchanged; `RouterOptions.wire_path` chooses.
+
 - **DRC: `wire-over-joint`.** A bare wire or a bent lead lying across a pin of another net,
   or across the soldered end of an insulated wire, is a short at the bench that neither the
   netlist nor LVS can see, because a wire is joined only at its two ends. The router already

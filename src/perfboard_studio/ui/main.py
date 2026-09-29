@@ -258,7 +258,7 @@ from perfboard_studio.placer import (
 from perfboard_studio.project import DOCUMENT_SUFFIX, document_in, project_name
 from perfboard_studio.ratsnest import NetRatsnest, ratsnest, summarize
 from perfboard_studio.recovery import RecoveryRecord, is_worth_offering
-from perfboard_studio.router import RoutingStyle, options_for_style
+from perfboard_studio.router import RouterOptions, RoutingStyle, options_for_style
 from perfboard_studio.schematic import build_schematic, snap_to_grid
 from perfboard_studio.schematic_export import drawing_to_svg
 from perfboard_studio.stripboard import is_stripboard
@@ -403,6 +403,7 @@ RATSNEST_KEY = "session/showRatsnest"
 RULERS_KEY = "session/showRulers"
 HATCH_KEY = "session/hatchFarSide"
 ROUTING_STYLE_KEY = "session/routingStyle"
+GRID_WIRES_KEY = "session/gridWires"
 LANGUAGE_KEY = "session/language"
 #: Whether this person has ever placed a part. The blank-board guidance is for the first
 #: launch, and repeating it forever is the application explaining its own front door to
@@ -2627,6 +2628,10 @@ class MainWindow(QMainWindow):
         #: Which primitive the router should reach for first. See router.RoutingStyle, and
         #: StylePreference for the extra "best" value that measures rather than assumes.
         self._routing_style: StylePreference = "balanced"
+        #: Whether the router lays its wires along the grid (router.WirePath). On here and
+        #: off in the engine: the engine's default is what every golden route records, and
+        #: this is what somebody building the board wants to be handed.
+        self._grid_wires = True
         #: The hole under the pointer, kept because Paste lands there. Starts off the
         #: board on purpose: before the pointer has been over the board at all there is
         #: no such hole, and (0, 0) would be a lie that pasted a block into A1.
@@ -3879,6 +3884,21 @@ class MainWindow(QMainWindow):
             action.setToolTip(tip)
             action.triggered.connect(lambda _checked, s=style: self.on_routing_style(s))
             self.act_style[style] = action
+
+        # HOW a wire is laid, which is a separate question from WHICH primitive is chosen
+        # and applies to every style: a wire style still wants its wires square.
+        self.act_grid_wires = route_menu.addAction(t("Lay Wires Along the &Grid"))
+        self.act_grid_wires.setCheckable(True)
+        self.act_grid_wires.setChecked(self._grid_wires)
+        self.act_grid_wires.setToolTip(
+            t(
+                "Run every wire square to the grid, along the rows and columns of holes, "
+                "with as few bends as the board allows -- the way wire is dressed on "
+                "perfboard. Off, a wire is one straight run at whatever angle, which is "
+                "shorter and crosses everything near it."
+            )
+        )
+        self.act_grid_wires.toggled.connect(self.on_grid_wires)
 
         route_menu.addSeparator()
         # Rip-up and re-route is a SEPARATE verb from autoroute, and deliberately not what
@@ -7453,15 +7473,27 @@ class MainWindow(QMainWindow):
             8000,
         )
 
+    def on_grid_wires(self, checked: bool) -> None:
+        """Lay wires along the grid, or straight. Like the style, it applies to the next route."""
+        self._grid_wires = checked
+        self.statusBar().showMessage(
+            f"{self.act_grid_wires.text().replace('&', '')}: "
+            f"{t('on') if checked else t('off')} — {t('applies to the next route')}",
+            8000,
+        )
+
     def _autoroute_options(self) -> AutorouteOptions:
         """Options for a single planned route.
 
         Under "best" the sweep applies each style itself, so this hands it the UNSTYLED
         defaults -- picking one here would prime every variant with another's cost table.
+        How a wire is laid is not part of a style, so it goes to the sweep as well, which
+        keeps what it is handed for everything the style does not set.
         """
+        base = RouterOptions(wire_path="grid" if self._grid_wires else "straight")
         if self._routing_style == "best":
-            return AutorouteOptions()
-        return AutorouteOptions(router=options_for_style(self._routing_style))
+            return AutorouteOptions(router=base)
+        return AutorouteOptions(router=options_for_style(self._routing_style, base))
 
     def on_reroute_selection(self) -> None:
         net_ids = self._selected_net_ids()
@@ -9602,6 +9634,7 @@ class MainWindow(QMainWindow):
         settings.setValue(RULERS_KEY, self.act_rulers.isChecked())
         settings.setValue(HATCH_KEY, self.act_hatch.isChecked())
         settings.setValue(ROUTING_STYLE_KEY, self._routing_style)
+        settings.setValue(GRID_WIRES_KEY, self._grid_wires)
 
     def _restore_session(self) -> None:
         """Put the window back where it was, quietly.
@@ -9654,6 +9687,7 @@ class MainWindow(QMainWindow):
             self._routing_style = cast("StylePreference", style)
             for name, action in self.act_style.items():
                 action.setChecked(name == style)
+        self.act_grid_wires.setChecked(_stored_bool(settings, GRID_WIRES_KEY, True))
 
     def _restore_update_strip(self) -> None:
         """Keep the update strip's toolbar in step with the bar inside it after a restore.

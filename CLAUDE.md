@@ -1378,6 +1378,21 @@ the numbers are in the module docstring) and neither may change a route: `hole_k
 the one encoding for everything that crosses a module boundary — occupancy, connectivity,
 DRC — all of which have golden output. `tests/test_router.py` pins both properties.
 
+**A wire is laid straight or along the grid (`RouterOptions.wire_path`), and the engine's
+default is straight while the window's is the grid.** Straight is what the original engine
+did and what every golden route records; along the grid is what anybody building the board
+does — a straight bare wire passes within 0.2 mm of foreign pads and the finished board is a
+cat's cradle of diagonals. `_find_grid_wire_path` is an A* over (hole, heading) so a bend can
+be priced (`RouterCosts.wire_bend`), with `wire_over_copper` and `wire_along_copper` keeping
+wires off each other — two wires stacked down one row are legal and hide each other from
+above. A bare wire on the grid is refused over a pin, a wire's soldered end, blocked copper,
+or the holes an existing bare wire lies across, and each step is judged by `segments_touch`
+as DRC's crossing rule is. The path records the ends and the CORNERS only, and nothing
+downstream learned anything: a wire is joined at its ends, and occupancy, DRC and both views
+already read a wire as the runs between its points. It uses a heap, not the trace search's
+linear scan, because no golden route was ever laid on the grid. The random-netlist property
+test runs every style both ways.
+
 ### i18n
 
 `ui/i18n.py` is a plain dict whose **keys are the English strings**, wrapped at each call

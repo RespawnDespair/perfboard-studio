@@ -68,6 +68,8 @@ of route quality, and a caller who needs the shorter route can already pick it o
 from __future__ import annotations
 
 import dataclasses
+import heapq
+import itertools
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -146,9 +148,40 @@ class RouterCosts:
     #: two-or-three-hole offcut. Pricing them the same would mean a run needing one crossing
     #: might as well be wire end to end, which is the opposite of what a builder wants.
     insulated_hop_fixed: float = 10
+    #: One bend in a wire laid along the grid (``RouterOptions.wire_path`` "grid"): a corner
+    #: somebody forms with pliers, and one the eye has to follow afterwards. About six
+    #: millimetres of bare wire, so the search takes one bend over a long detour and a
+    #: straight run over a dog-leg. Unused by a straight wire, which is every golden route.
+    wire_bend: float = 1
+    #: Per hole a wire laid along the grid passes over that another conductor already lies
+    #: across or ends on: what crossing one costs. Kept small, because an insulated wire
+    #: crossing another is what insulation is for. Unused when straight.
+    wire_over_copper: float = 1
+    #: Per step a wire laid along the grid runs ALONG another conductor, on top of it. Two
+    #: wires stacked down one row are legal and hide each other completely from above, so
+    #: this is priced well past the two bends and two holes of a detour onto a free row --
+    #: measured on atmega328-relay, where two insulated wires shared three holes of row 18
+    #: at the crossing price alone. Unused when straight.
+    wire_along_copper: float = 3
 
 
 DEFAULT_ROUTER_COSTS = RouterCosts()
+
+
+#: How a wire is laid between its two ends.
+#:
+#:   "straight"  One straight run, whatever the angle. What the original engine did and what
+#:               every golden route records, so it stays the engine's default.
+#:   "grid"      Square to the grid, along the rows and columns of holes, with as few bends
+#:               as the board allows -- how a person actually dresses wire on perfboard. A
+#:               diagonal wire is shorter and is the one thing nobody builds: it crosses
+#:               everything near it at an angle, lies across pads it has no business near
+#:               (a straight bare wire passed 0.2 mm from a foreign pad on arduino-io-shield)
+#:               and turns a finished board into a cat's cradle. A bare wire on the grid lies
+#:               over pad centres and is refused where any of them is a pin, a joint or
+#:               copper; an insulated one may pass over anything, and is laid square only so
+#:               the board can be read.
+type WirePath = Literal["straight", "grid"]
 
 
 #: What the router may do when a connection cannot be made without crossing something that
@@ -241,6 +274,9 @@ class RouterOptions:
     #: hole and a trace two or three; past that the obstacle is a wall, not something to step
     #: over, and the search should go round it instead.
     max_hop_holes: int = 3
+    #: See :data:`WirePath`. Top jumpers stay straight either way: a component-side link is
+    #: a straight piece of wire between two holes by definition, and a hop is already square.
+    wire_path: WirePath = "straight"
 
 
 DEFAULT_ROUTER_OPTIONS = RouterOptions()
@@ -452,6 +488,7 @@ def route_connection(
 
     occupancy = build_occupancy(doc, lookup)
     net_at = _build_net_index(doc, lookup)
+    blocked_segments = _blocked_segments(doc)
     ctx = _RouteContext(
         doc=doc,
         occupancy=occupancy,
@@ -462,12 +499,17 @@ def route_connection(
         declared_own_nets=frozenset(
             net_id for net_id in (net_at(hole) for hole in request.net_holes) if net_id is not None
         ),
-        blocked_segments=_blocked_segments(doc),
+        blocked_segments=blocked_segments,
         swept_blocked_holes=_trace_blocked_holes(doc),
         wire_joint_holes=_wire_joint_holes(doc),
         unusable_holes=dead,
         opts_from_pin=request.from_pin,
         wire_gauge_awg=_declared_wire_gauge(doc, request.net_id),
+        segment_cells=(
+            _segment_cells(blocked_segments) if options.wire_path == "grid" else {}
+        ),
+        covered_holes=_covered_holes(doc) if options.wire_path == "grid" else frozenset(),
+        covered_steps=_covered_steps(doc) if options.wire_path == "grid" else frozenset(),
     )
 
     candidates: list[RouteCandidate] = []
@@ -488,10 +530,11 @@ def route_connection(
         if hopped is not None:
             candidates.append(hopped)
     if policy != "refuse":
-        bare = _straight_wire_candidate(ctx, from_, to, "bare-wire")
+        wire = _grid_wire_candidate if options.wire_path == "grid" else _straight_wire_candidate
+        bare = wire(ctx, from_, to, "bare-wire")
         if bare is not None:
             candidates.append(bare)
-        insulated = _straight_wire_candidate(ctx, from_, to, "insulated-wire")
+        insulated = wire(ctx, from_, to, "insulated-wire")
         if insulated is not None:
             candidates.append(insulated)
         if options.allow_top_jumper:
@@ -593,6 +636,21 @@ class _RouteContext:
     #: neighbour that leads to it. The million calls above were about 2,000 distinct
     #: questions per search, asked over and over.
     risky_holes: dict[tuple[int, int, int, int, int, int], bool] = field(default_factory=dict)
+    #: For a wire laid along the grid: which of ``blocked_segments`` have a bounding box
+    #: covering each hole, so a step between two neighbours is tested against the few
+    #: segments near it rather than every one on the board. Empty for straight wires.
+    segment_cells: dict[tuple[int, int], tuple[int, ...]] = field(default_factory=dict)
+    #: For a wire laid along the grid: every hole some solder-side conductor already lies
+    #: across or ends on, whatever it is -- see ``RouterCosts.wire_over_copper``.
+    covered_holes: frozenset[tuple[int, int]] = frozenset()
+    #: ...and every step between two neighbouring holes that one of them already runs along,
+    #: smaller hole first -- see ``RouterCosts.wire_along_copper``.
+    covered_steps: frozenset[tuple[tuple[int, int], tuple[int, int]]] = frozenset()
+    #: Whether a step between two neighbouring holes lies across blocked copper, asked once
+    #: per step and remembered -- the search asks about the same step from several states.
+    blocked_edges: dict[tuple[tuple[int, int], tuple[int, int]], bool] = field(
+        default_factory=dict
+    )
 
 
 def _dead_hole_keys(doc: PerfDocument) -> frozenset[tuple[int, int]]:
@@ -1324,6 +1382,249 @@ def _straight_wire_candidate(
         explanation=explanation,
         risk_holes=(),
     )
+
+
+# ---------------------------------------------------------------------------
+# Strategies 2-3, laid along the grid
+# ---------------------------------------------------------------------------
+
+#: The four steps along the grid, and which of them turns straight back on each.
+_GRID_STEPS: tuple[tuple[int, int], ...] = ((1, 0), (-1, 0), (0, 1), (0, -1))
+_REVERSE = (1, 0, 3, 2)
+
+
+def _grid_wire_candidate(
+    ctx: _RouteContext,
+    from_: HoleCoord,
+    to: HoleCoord,
+    kind: Literal["bare-wire", "insulated-wire", "top-jumper"],
+) -> RouteCandidate | None:
+    """A wire laid square to the grid, with as few bends as the board allows.
+
+    Its ``path`` is the two ends and the CORNERS between them, and nothing else has to
+    learn anything for that to be right: a wire is joined only at its ends
+    (``model.contacts_every_path_hole``), and occupancy, DRC and both views already read a
+    wire as the straight runs between consecutive points of its path. A top jumper stays
+    straight -- see ``RouterOptions.wire_path``.
+    """
+    if kind == "top-jumper":
+        return _straight_wire_candidate(ctx, from_, to, kind)
+    bare = kind == "bare-wire"
+    costs = ctx.opts.costs
+    per_mm = costs.bare_wire_per_mm if bare else costs.insulated_wire_per_mm
+    fixed = costs.bare_wire_fixed if bare else costs.insulated_wire_fixed
+    found = _find_grid_wire_path(ctx, from_, to, bare=bare, per_mm=per_mm)
+    if found is None:
+        return None
+    holes, laying = found
+    path = _corners(holes)
+    bends = len(path) - 2
+    length_mm = path_length_mm(path, ctx.doc.board)
+
+    conductor: NewConductor = NewWireConductor(
+        path=path,
+        kind=kind,
+        side="bottom",
+        gauge_awg=ctx.wire_gauge_awg,
+        color=None,
+        net_id=ctx.own_net_id,
+        layer_z=0 if bare else 1,
+    )
+    note = (
+        "along the grid on the solder side, clear of every other net's pad"
+        if bare
+        else "insulated, so it may pass over other conductors"
+    )
+    return RouteCandidate(
+        strategy=kind,
+        conductors=(conductor,),
+        # The search's own total -- length, bends, and what it lies over and along -- so a
+        # wire that had to lie on top of another is priced as such against the other kinds.
+        cost=fixed + laying,
+        explanation=(
+            f"{kind.replace('-', ' ', 1).capitalize()}: {length_mm:.1f} mm from "
+            f"{format_hole(from_)} to {format_hole(to)} with {bends} bend(s) — {note}."
+        ),
+        risk_holes=(),
+    )
+
+
+def _find_grid_wire_path(
+    ctx: _RouteContext, from_: HoleCoord, to: HoleCoord, *, bare: bool, per_mm: float
+) -> tuple[list[HoleCoord], float] | None:
+    """A* over (hole, heading), so a bend can be priced: the holes the wire lies over, in
+    order, and what laying it costs.
+
+    A heap keyed on (f, insertion order) rather than the trace search's linear scan. That
+    scan is kept for the TypeScript engine's tie-breaking, which forty-five golden routes
+    depend on; no golden route was ever laid along the grid, so there is nothing here to
+    agree with, and insertion order breaks ties just as deterministically.
+    """
+    board = ctx.doc.board
+    step = board.pitch * per_mm
+    bend = ctx.opts.costs.wire_bend
+    over = ctx.opts.costs.wire_over_copper
+    along = ctx.opts.costs.wire_along_copper
+    start = _key(from_)
+    goal = _key(to)
+
+    def estimate(col: int, row: int) -> float:
+        # Admissible: the Manhattan length is unavoidable, and so is one bend whenever
+        # the two ends share neither a row nor a column.
+        d_col, d_row = abs(col - goal[0]), abs(row - goal[1])
+        return (d_col + d_row) * step + (bend if d_col and d_row else 0.0)
+
+    # A state is (col, row, heading), heading -1 at the start where there is none yet.
+    best: dict[tuple[int, int, int], float] = {(start[0], start[1], -1): 0.0}
+    came_from: dict[tuple[int, int, int], tuple[int, int, int]] = {}
+    heap: list[tuple[float, int, float, int, int, int]] = [
+        (estimate(*start), 0, 0.0, start[0], start[1], -1)
+    ]
+    order = 0
+    expanded = 0
+    while heap:
+        _f, _order, g, col, row, heading = heapq.heappop(heap)
+        state = (col, row, heading)
+        if g > best.get(state, math.inf):
+            continue
+        if (col, row) == goal:
+            holes = [HoleCoord(col=col, row=row)]
+            while state in came_from:
+                state = came_from[state]
+                holes.append(HoleCoord(col=state[0], row=state[1]))
+            holes.reverse()
+            return holes, g
+        expanded += 1
+        # The ceiling counts HOLES, and this search may visit each one in four headings.
+        if expanded > ctx.opts.max_expanded_nodes * len(_GRID_STEPS):
+            return None
+        for turn, (d_col, d_row) in enumerate(_GRID_STEPS):
+            if heading != -1 and turn == _REVERSE[heading]:
+                continue
+            nxt = (col + d_col, row + d_row)
+            if not (0 <= nxt[0] < board.cols and 0 <= nxt[1] < board.rows):
+                continue
+            if nxt != goal and not _wire_may_lie_over(ctx, nxt, bare=bare):
+                continue
+            if bare and _step_crosses_copper(ctx, (col, row), nxt):
+                continue
+            cost = g + step + (bend if heading not in (-1, turn) else 0.0)
+            if nxt != goal and nxt in ctx.covered_holes:
+                cost += over
+            if (min((col, row), nxt), max((col, row), nxt)) in ctx.covered_steps:
+                cost += along
+            next_state = (nxt[0], nxt[1], turn)
+            if cost >= best.get(next_state, math.inf):
+                continue
+            best[next_state] = cost
+            came_from[next_state] = state
+            order += 1
+            heapq.heappush(heap, (cost + estimate(*nxt), order, cost, nxt[0], nxt[1], turn))
+    return None
+
+
+def _wire_may_lie_over(ctx: _RouteContext, key: tuple[int, int], *, bare: bool) -> bool:
+    """Whether a wire may pass over this hole on its way somewhere else.
+
+    Nothing may lie over a hole that has no pad -- a bore or a finger. A BARE wire touches
+    every pad it lies on, so it is also refused wherever something is soldered: a pin, a
+    wire's end, another conductor's copper, or the holes a straight bare wire already lies
+    across -- the same four the straight bare wire and the trace search refuse.
+    """
+    if key in ctx.unusable_holes:
+        return False
+    if not bare:
+        return True
+    hole = HoleCoord(col=key[0], row=key[1])
+    return not (
+        ctx.occupancy.is_copper_blocked(hole, "bottom")
+        or ctx.occupancy.pin_at(hole)
+        or key in ctx.wire_joint_holes
+        or key in ctx.swept_blocked_holes
+    )
+
+
+def _step_crosses_copper(ctx: _RouteContext, a: tuple[int, int], b: tuple[int, int]) -> bool:
+    """Would a bare wire stepping from ``a`` to its neighbour ``b`` lie across blocked copper?
+
+    The holes themselves are ``_wire_may_lie_over``'s business; this is copper crossing
+    BETWEEN them. ``holes_under_line`` already counts both holes either side of such a gap,
+    so on every board measured this refuses nothing the hole test had not -- it is here so
+    a step is judged by ``segments_touch``, the one definition DRC's conductor-crossing
+    uses, rather than by a sampling that happens to agree. Remembered per step, and asked
+    only of the segments whose bounding box covers one of the two holes.
+    """
+    edge = (a, b) if a <= b else (b, a)
+    known = ctx.blocked_edges.get(edge)
+    if known is not None:
+        return known
+    near = set(ctx.segment_cells.get(a, ())) | set(ctx.segment_cells.get(b, ()))
+    start, end = HoleCoord(col=a[0], row=a[1]), HoleCoord(col=b[0], row=b[1])
+    crosses = any(
+        segments_touch(start, end, *ctx.blocked_segments[index]) for index in sorted(near)
+    )
+    ctx.blocked_edges[edge] = crosses
+    return crosses
+
+
+def _covered_holes(doc: PerfDocument) -> frozenset[tuple[int, int]]:
+    """Every hole a solder-side conductor lies across or ends on -- see ``wire_over_copper``."""
+    keys: set[tuple[int, int]] = set()
+    for conductor in doc.conductors:
+        if conductor.side != "bottom":
+            continue
+        for index in range(len(conductor.path) - 1):
+            for hole in holes_under_line(conductor.path[index], conductor.path[index + 1]):
+                keys.add(_key(hole))
+    return frozenset(keys)
+
+
+def _covered_steps(doc: PerfDocument) -> frozenset[tuple[tuple[int, int], tuple[int, int]]]:
+    """Every step between neighbouring holes a solder-side conductor runs along.
+
+    Only a run square to the grid has any: a diagonal one crosses a grid step, which is
+    ``wire_over_copper``'s business, and never lies along one.
+    """
+    steps: set[tuple[tuple[int, int], tuple[int, int]]] = set()
+    for conductor in doc.conductors:
+        if conductor.side != "bottom":
+            continue
+        for a, b in itertools.pairwise(conductor.path):
+            if a.col != b.col and a.row != b.row:
+                continue
+            d_col = (b.col > a.col) - (b.col < a.col)
+            d_row = (b.row > a.row) - (b.row < a.row)
+            here = (a.col, a.row)
+            while here != (b.col, b.row):
+                there = (here[0] + d_col, here[1] + d_row)
+                steps.add((min(here, there), max(here, there)))
+                here = there
+    return frozenset(steps)
+
+
+def _segment_cells(
+    segments: tuple[tuple[HoleCoord, HoleCoord], ...],
+) -> dict[tuple[int, int], tuple[int, ...]]:
+    """Which segments' bounding boxes cover each hole -- see ``_step_crosses_copper``."""
+    cells: dict[tuple[int, int], list[int]] = {}
+    for index, (a, b) in enumerate(segments):
+        for col in range(min(a.col, b.col), max(a.col, b.col) + 1):
+            for row in range(min(a.row, b.row), max(a.row, b.row) + 1):
+                cells.setdefault((col, row), []).append(index)
+    return {cell: tuple(indices) for cell, indices in cells.items()}
+
+
+def _corners(holes: list[HoleCoord]) -> tuple[HoleCoord, ...]:
+    """The two ends and every hole where the run turns: what a wire's ``path`` records."""
+    kept = [holes[0]]
+    for before, here, after in zip(holes, holes[1:], holes[2:], strict=False):
+        if (here.col - before.col, here.row - before.row) != (
+            after.col - here.col,
+            after.row - here.row,
+        ):
+            kept.append(here)
+    kept.append(holes[-1])
+    return tuple(kept)
 
 
 # ---------------------------------------------------------------------------
