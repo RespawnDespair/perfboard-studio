@@ -1003,7 +1003,7 @@ TURKISH: Mapping[str, str] = {
     "Cancelled.": "İptal edildi.",
     "Add a Part": "Parça Ekle",
     "Edit a Part": "Parçayı Düzenle",
-    "Filter parts…  (resistor, dip-8, TO-220)": "Parça filtrele…  (direnç, dip-8, TO-220)",
+    "Filter parts…  (555, BC547, resistor, dip-8)": "Parçaları süz…  (555, BC547, direnç, dip-8)",
     "The designator this part is known by, on the schematic and on the board. "
     "It has to be free on both — the two are one namespace.": (
         "Bu parçanın hem şemada hem kartta bilindiği ad. İkisinde de boş olmalı — "

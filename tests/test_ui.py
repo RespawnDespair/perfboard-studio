@@ -8118,6 +8118,40 @@ def test_a_custom_part_can_be_placed_and_shows_up_on_the_board() -> None:
         _close(window)
 
 
+def test_adding_a_555_from_the_dialog_brings_its_pin_names() -> None:
+    """The dialog offered the sixty-one PACKAGES, a crystal first and Y1 in the reference,
+    while the Parts panel beside it had the catalog -- so a 555 added from it was a numbered
+    box on the sheet. The catalog comes first now, and choosing a part in it fills in its
+    value, its pin names and its reference letter; a package and a typed value that names a
+    catalog part in THAT package does the same."""
+    from perfboard_studio.ui.main import ROLE_CATALOG_ID, AddPartDialog
+
+    document = _load_dense()
+    dialog = AddPartDialog(document)
+    # Unfiltered, nothing is chosen for the user, and OK waits for a choice.
+    assert dialog.chosen_footprint_id() is None
+    assert dialog.values() is None
+
+    dialog.filter.setText("555")
+    item = dialog.tree.currentItem()
+    assert item is not None and item.data(0, ROLE_CATALOG_ID) == "ne555"
+    ref, value, footprint_id = dialog.values() or ("", "", "")
+    assert (ref[0], value, footprint_id) == ("U", "NE555", "dip-8")
+    names, _symbol = dialog.pinout()
+    assert dict(names)["3"] == "OUT"
+
+    # A bare package takes the catalog's value back, and its names with it.
+    dialog.select_footprint("dip-8")
+    assert dialog.value.text() == ""
+    assert dialog.pinout()[0] == ()
+
+    # ... and typing the part's name onto that package brings them back.
+    dialog.value.setText("NE555")
+    dialog.value.editingFinished.emit()
+    assert dict(dialog.pinout()[0])["3"] == "OUT"
+    dialog.deleteLater()
+
+
 def test_editing_a_custom_part_does_not_turn_it_into_a_resistor() -> None:
     """``select_footprint`` puts a part the library does not have into its own list first.
 

@@ -240,6 +240,7 @@ from perfboard_studio.netlist_import import import_placements
 from perfboard_studio.parsers.kicad import infer_net_class, parse_kicad_netlist
 from perfboard_studio.parsers.kicad_parts import (  # noqa: F401 - guess_footprint_id re-exported
     NetlistPlan,
+    catalog_part_for,
     guess_footprint_id,
     plan_import,
 )
@@ -566,6 +567,125 @@ def _catalog_tooltip(part: CatalogPart) -> str:
     if part.source:
         lines.append(f"{t('Source')}: {part.source}")
     return "\n".join(lines)
+
+
+def populate_part_tree(tree: QTreeWidget, text: str, custom: dict[str, Footprint]) -> None:
+    """Fill a two-column part tree: this board's own parts, the catalog, then the packages.
+
+    ONE TREE, TWO PLACES. The Parts panel and the Add a Part dialog ask the same question --
+    which part is this -- and the dialog used to answer it with a flat list of the sixty-one
+    PACKAGES, a crystal first and "Y1" in the reference box, while the panel beside it had
+    the catalog: NE555, BC547, 7805, each with its pinout. A part added from the dialog was
+    therefore a numbered box on the sheet however well known it was.
+
+    Every leaf carries its footprint in ``ROLE_FOOTPRINT_ID``, and a catalog part its id in
+    ``ROLE_CATALOG_ID`` as well; group headings carry neither and cannot be selected.
+    """
+    needle = text.strip().lower()
+    tree.clear()
+    by_archetype: dict[BodyArchetype, list[Footprint]] = {}
+    for footprint in sorted(standard_footprints().values(), key=lambda f: f.name):
+        # In either language, as the catalog rows are: "direnç" finds a resistor as
+        # "resistor" does.
+        haystack = (
+            f"{footprint.id} {footprint.name} {footprint_label(footprint.name)} "
+            f"{footprint.body.archetype}"
+        ).lower()
+        if needle and needle not in haystack:
+            continue
+        by_archetype.setdefault(footprint.body.archetype, []).append(footprint)
+
+    # In a group of their own rather than filed under their archetype, and first. A
+    # custom DIP-22 among the library's DIPs is the one part in the dock that cannot be
+    # found by knowing what it is, because the only thing that distinguishes it is that
+    # the library does not have it.
+    if custom:
+        ordered = sorted(custom.values(), key=lambda f: f.name)
+        group = QTreeWidgetItem([t("this board"), ""])
+        group.setFlags(group.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+        group.setIcon(0, icons.part_icon(ordered[0]))
+        tree.addTopLevelItem(group)
+        for footprint in ordered:
+            leaf = QTreeWidgetItem(
+                [footprint_label(footprint.name), str(len(footprint.pins))]
+            )
+            leaf.setData(0, ROLE_FOOTPRINT_ID, footprint.id)
+            leaf.setIcon(0, icons.part_icon(footprint))
+            leaf.setToolTip(
+                0,
+                f"{footprint_label(footprint.name)}\n{footprint.id} — "
+                + t("{count} pin(s)").format(count=len(footprint.pins)),
+            )
+            group.addChild(leaf)
+        group.setExpanded(True)
+
+    # REAL PARTS, before the packages: what somebody holding a BC547 looks for is
+    # "BC547", not "to92". Each row places a part with its value, pin names and symbol
+    # already given -- see ``perfboard_studio.catalog``.
+    headings = _catalog_headings()
+    for category in CATEGORY_ORDER:
+        parts = [
+            part
+            for part in CATALOG
+            if part.category == category
+            and (
+                not needle
+                # In either language: "regülatör" finds a 7805 as "regulator" does.
+                or needle
+                in f"{part.id} {part.name} {part.summary} {t(part.summary)} "
+                f"{category} {headings[category]}".lower()
+            )
+        ]
+        if not parts:
+            continue
+        group = QTreeWidgetItem([headings[category], ""])
+        group.setFlags(group.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+        first = get_footprint(parts[0].footprint_id)
+        if first is not None:
+            group.setIcon(0, icons.part_icon(first))
+        tree.addTopLevelItem(group)
+        for part in parts:
+            packaged = get_footprint(part.footprint_id)
+            leaf = QTreeWidgetItem(
+                [part.name, str(len(packaged.pins)) if packaged is not None else ""]
+            )
+            leaf.setData(0, ROLE_FOOTPRINT_ID, part.footprint_id)
+            leaf.setData(0, ROLE_CATALOG_ID, part.id)
+            if packaged is not None:
+                leaf.setIcon(0, icons.part_icon(packaged))
+            leaf.setToolTip(0, _catalog_tooltip(part))
+            group.addChild(leaf)
+        group.setExpanded(bool(needle))
+
+    families = _archetype_headings()
+    order = list(families)
+    for archetype in sorted(by_archetype, key=order.index):
+        group = QTreeWidgetItem([families[archetype], ""])
+        group.setFlags(group.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+        # The group takes the picture of its first member, which is the archetype's
+        # picture: every part under it is that shape in that colour.
+        group.setIcon(0, icons.part_icon(by_archetype[archetype][0]))
+        tree.addTopLevelItem(group)
+        for footprint in by_archetype[archetype]:
+            leaf = QTreeWidgetItem(
+                [footprint_label(footprint.name), str(len(footprint.pins))]
+            )
+            leaf.setData(0, ROLE_FOOTPRINT_ID, footprint.id)
+            # In the colours the board draws it in, so finding the part you picked is
+            # recognition rather than reading -- see the note in icons.py.
+            leaf.setIcon(0, icons.part_icon(footprint))
+            # The NAME first, because the column it sits in is the one that gets
+            # elided: "Film capa…" in a 300 px dock is the string a tooltip has to
+            # finish, and the id alone was no help at all with that.
+            leaf.setToolTip(
+                0,
+                f"{footprint_label(footprint.name)}\n{footprint.id} — "
+                + t("{count} pin(s)").format(count=len(footprint.pins)),
+            )
+            group.addChild(leaf)
+        # Expanded only when the filter has narrowed things down, otherwise the twenty-eight
+        # pin headers bury everything else.
+        group.setExpanded(bool(needle) or len(by_archetype[archetype]) <= 4)
 
 
 class PartTree(QTreeWidget):
@@ -2102,20 +2222,24 @@ class CustomPartDialog(QDialog):
 class AddPartDialog(QDialog):
     """Pick a part for the schematic: what it is, what it is called, what it is worth.
 
-    A footprint and not a "symbol", which looks like the wrong question to ask on a
-    schematic and is the right one here. This tool generates the symbol FROM the footprint
-    (``schematic.symbol_kind_for``), and the footprint is what the board, the guide, the
-    3D view and the BOM all need anyway — so asking for a symbol now would mean asking for
-    the footprint again at placement, and leaving room for the two to disagree.
+    THE CATALOG FIRST, THE PACKAGES AFTER, from the same tree the Parts panel shows
+    (``populate_part_tree``). What somebody adding a 555 looks for is "555", not "DIP-8";
+    choosing the catalog's NE555 gives the part its value, its pin names (TRIG, OUT, RESET...)
+    and its reference letter at once, so it is drawn with named pins rather than as a box.
+    A bare package is still there for everything the catalog does not have -- a resistor
+    is a package and a value -- and a value typed onto one that names a catalog part in that
+    same package ("NE555" on a DIP-8) brings the catalog's pin names with it.
 
-    The reference is filled in from the footprint the moment one is picked, counting the
-    board AND the design, so the common case is: type two letters, press Enter twice.
+    The footprint is still what is chosen underneath, which looks like the wrong question
+    on a schematic and is the right one here: this tool generates the symbol FROM the
+    footprint (``schematic.symbol_kind_for``), and the footprint is what the board, the
+    guide, the 3D view and the BOM all need anyway.
     """
 
     def __init__(self, document: PerfDocument, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle(t("Add a Part"))
-        self.resize(460, 520)
+        self.resize(520, 640)
         self._document = document
         #: Every reference this dialog has proposed, so it can tell its own suggestion
         #: from something the user typed. A set rather than one value: scrolling the list
@@ -2123,6 +2247,10 @@ class AddPartDialog(QDialog):
         #: shared one would remember the last dialog's suggestions and overwrite a typed
         #: reference that happened to match.
         self._suggestions: set[str] = set()
+        #: The value the chosen catalog part filled in, so choosing a different part can
+        #: take it back -- a TO-92 picked after a BC547 is not a BC547 -- while a value the
+        #: user typed stays. The same rule the Parts panel follows.
+        self._catalog_value = ""
         #: Parts described in this dialog, plus any the document already uses that the
         #: library does not have. Not saved anywhere: the id is the definition, so the
         #: document is already carrying everything there is to keep.
@@ -2139,11 +2267,19 @@ class AddPartDialog(QDialog):
         }
 
         self.filter = QLineEdit()
-        self.filter.setPlaceholderText(t("Filter parts…  (resistor, dip-8, TO-220)"))
+        self.filter.setPlaceholderText(t("Filter parts…  (555, BC547, resistor, dip-8)"))
+        self.filter.setClearButtonEnabled(True)
         self.filter.textChanged.connect(self._refilter)
-        self.list = QListWidget()
-        self.list.currentItemChanged.connect(lambda _now, _then: self._suggest_reference())
-        self.list.itemDoubleClicked.connect(lambda _item: self.accept())
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels([t("Part"), t("Pins")])
+        self.tree.setRootIsDecorated(True)
+        self.tree.setIconSize(QSize(icons.PART_SIZE, icons.PART_SIZE))
+        self.tree.setIndentation(12)
+        header = self.tree.header()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.tree.currentItemChanged.connect(lambda _now, _then: self._on_choice())
+        self.tree.itemDoubleClicked.connect(self._on_double_click)
 
         self.ref = QLineEdit()
         self.ref.setToolTip(
@@ -2160,25 +2296,21 @@ class AddPartDialog(QDialog):
                 "step text and a resistor's colour bands in 3D, so it is worth filling in."
             )
         )
+        self.value.editingFinished.connect(self._on_value_typed)
 
         form = QFormLayout()
         form.addRow(t("Reference"), self.ref)
         form.addRow(t("Value"), self.value)
 
-        # What the part is and what it calls its leads. Rebuilt whenever the footprint in
-        # the list changes, because the rows ARE the footprint's pins.
+        # What the part is and what it calls its leads. Rebuilt whenever the choice in the
+        # tree changes, because the rows ARE the footprint's pins.
         self.pinout_editor = PinoutEditor()
-        self.list.currentItemChanged.connect(
-            lambda _now, _then: self.pinout_editor.set_footprint(
-                get_footprint(self.chosen_footprint_id() or "")
-            )
-        )
 
-        buttons = QDialogButtonBox(
+        self.buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
         )
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
 
         self.custom = QPushButton(t("Custom Part…"))
         self.custom.setToolTip(
@@ -2191,11 +2323,11 @@ class AddPartDialog(QDialog):
 
         layout = QVBoxLayout()
         layout.addWidget(self.filter)
-        layout.addWidget(self.list, 1)
+        layout.addWidget(self.tree, 1)
         layout.addWidget(self.custom)
         layout.addLayout(form)
         layout.addWidget(self.pinout_editor)
-        layout.addWidget(buttons)
+        layout.addWidget(self.buttons)
         self.setLayout(layout)
         self._refilter("")
         self.filter.setFocus()
@@ -2211,32 +2343,77 @@ class AddPartDialog(QDialog):
         self._refilter(self.filter.text())
         self.select_footprint(footprint.id)
 
-    def _refilter(self, text: str) -> None:
-        needle = text.strip().lower()
-        self.list.clear()
-        # Custom parts first and never filtered out: one was just described, or is already
-        # on this board, and burying it under sixty-one library parts would make the
-        # dialog's own answer the hardest thing in it to find.
-        offered = list(self._custom.values()) + sorted(
-            standard_footprints().values(), key=lambda f: f.name
-        )
-        for footprint in offered:
-            custom = footprint.id in self._custom
-            haystack = (
-                f"{footprint.id} {footprint.name} {footprint_label(footprint.name)} "
-                f"{footprint.body.archetype}"
-            ).lower()
-            if needle and not custom and needle not in haystack:
+    def _leaves(self) -> list[QTreeWidgetItem]:
+        found: list[QTreeWidgetItem] = []
+        for index in range(self.tree.topLevelItemCount()):
+            group = self.tree.topLevelItem(index)
+            if group is None:
                 continue
-            item = QListWidgetItem(
-                f"{footprint_label(footprint.name)}  ·  "
-                + t("{count} pin(s)").format(count=len(footprint.pins))
+            found.extend(
+                child
+                for child in (group.child(row) for row in range(group.childCount()))
+                if child is not None
             )
-            item.setData(Qt.ItemDataRole.UserRole, footprint.id)
-            item.setIcon(icons.part_icon(footprint))
-            self.list.addItem(item)
-        if self.list.count():
-            self.list.setCurrentRow(0)
+        return found
+
+    def _refilter(self, text: str) -> None:
+        populate_part_tree(self.tree, text, self._custom)
+        # Narrowed down, the first match is the answer more often than not, so Enter takes
+        # it. Unfiltered, nothing is chosen for the user: the first row of the whole
+        # library is not a suggestion, and it used to be a crystal.
+        leaves = self._leaves()
+        if text.strip() and leaves:
+            self.tree.setCurrentItem(leaves[0])
+        self._on_choice()
+
+    def _on_double_click(self, item: QTreeWidgetItem, _column: int) -> None:
+        if item.data(0, ROLE_FOOTPRINT_ID):
+            self.accept()
+
+    def chosen_catalog_part(self) -> CatalogPart | None:
+        item = self.tree.currentItem()
+        chosen = item.data(0, ROLE_CATALOG_ID) if item is not None else None
+        return catalog_part(chosen) if isinstance(chosen, str) else None
+
+    def _on_choice(self) -> None:
+        footprint_id = self.chosen_footprint_id()
+        ok = self.buttons.button(QDialogButtonBox.StandardButton.Ok)
+        if ok is not None:
+            ok.setEnabled(footprint_id is not None)
+        if footprint_id is None:
+            return
+        footprint = get_footprint(footprint_id)
+        part = self.chosen_catalog_part()
+        typed = self.value.text().strip()
+        if part is not None:
+            if not typed or typed == self._catalog_value:
+                self.value.setText(part.placed_value)
+            self._catalog_value = part.placed_value
+            self.pinout_editor.set_part(footprint, part.pin_names, part.symbol)
+        else:
+            if self._catalog_value and typed == self._catalog_value:
+                self.value.clear()
+            self._catalog_value = ""
+            self.pinout_editor.set_part(footprint, (), None)
+        self._suggest_reference()
+
+    def _on_value_typed(self) -> None:
+        """A value that names a catalog part in the package already chosen brings its pinout.
+
+        "NE555" typed onto a DIP-8 is the NE555 as surely as picking it from the catalog --
+        but only in the SAME package, and only onto a part whose pins nobody has named: a
+        value is not allowed to overwrite a declaration somebody typed.
+        """
+        if self.chosen_catalog_part() is not None:
+            return
+        footprint_id = self.chosen_footprint_id()
+        part = catalog_part_for(self.value.text())
+        if part is None or footprint_id != part.footprint_id:
+            return
+        if self.pinout_editor.names_dict():
+            return
+        self.pinout_editor.set_part(get_footprint(footprint_id), part.pin_names, part.symbol)
+        self._suggest_reference()
 
     def _suggest_reference(self) -> None:
         """Refill the reference whenever the kind of part changes.
@@ -2248,7 +2425,9 @@ class AddPartDialog(QDialog):
         footprint_id = self.chosen_footprint_id()
         if footprint_id is None:
             return
-        suggested = next_reference(self._document, footprint_id)
+        part = self.chosen_catalog_part() or catalog_part_for(self.value.text())
+        prefix = part.reference_prefix if part is not None else None
+        suggested = next_reference(self._document, footprint_id, prefix)
         if self.ref.text().strip() in ("", *self._suggestions):
             self.ref.setText(suggested)
         self._suggestions.add(suggested)
@@ -2259,25 +2438,34 @@ class AddPartDialog(QDialog):
         A part whose footprint is a custom one is not in the library list, so it is put
         there first. Without that, opening the properties of a part the library does not
         have would silently land on whatever happened to be first -- and pressing OK would
-        change the part into a resistor.
+        change the part into a resistor. The PACKAGE's row is the one chosen, never a catalog
+        part in that package: a DIP-8 being edited is not thereby an NE555.
         """
         if footprint_id not in self._custom and footprint_id not in standard_footprints():
             found = get_footprint(footprint_id)
             if found is not None:
                 self._custom[footprint_id] = found
-                self._refilter(self.filter.text())
-        for index in range(self.list.count()):
-            item = self.list.item(index)
-            if item is not None and item.data(Qt.ItemDataRole.UserRole) == footprint_id:
-                self.list.setCurrentRow(index)
+        if self.filter.text():
+            self.filter.clear()  # refilters
+        else:
+            self._refilter("")
+        for leaf in self._leaves():
+            if leaf.data(0, ROLE_FOOTPRINT_ID) == footprint_id and not leaf.data(
+                0, ROLE_CATALOG_ID
+            ):
+                parent = leaf.parent()
+                if parent is not None:
+                    parent.setExpanded(True)
+                self.tree.setCurrentItem(leaf)
+                self.tree.scrollToItem(leaf)
                 return
 
     def chosen_footprint_id(self) -> str | None:
-        item = self.list.currentItem()
+        item = self.tree.currentItem()
         if item is None:
             return None
-        chosen = item.data(Qt.ItemDataRole.UserRole)
-        return str(chosen) if chosen is not None else None
+        chosen = item.data(0, ROLE_FOOTPRINT_ID)
+        return str(chosen) if isinstance(chosen, str) and chosen else None
 
     def values(self) -> tuple[str, str, str] | None:
         """``(reference, value, footprint id)``, or None if nothing was chosen."""
@@ -4811,114 +4999,9 @@ class MainWindow(QMainWindow):
                     return
 
     def _refresh_library(self) -> None:
-        needle = self.library_filter.text().strip().lower()
         tree = self.library_tree
         tree.blockSignals(True)
-        tree.clear()
-        by_archetype: dict[BodyArchetype, list[Footprint]] = {}
-        custom = self.custom_footprints()
-        for footprint in sorted(standard_footprints().values(), key=lambda f: f.name):
-            # In either language, as the catalog rows are: "direnç" finds a resistor as
-            # "resistor" does.
-            haystack = (
-                f"{footprint.id} {footprint.name} {footprint_label(footprint.name)} "
-                f"{footprint.body.archetype}"
-            ).lower()
-            if needle and needle not in haystack:
-                continue
-            by_archetype.setdefault(footprint.body.archetype, []).append(footprint)
-
-        # In a group of their own rather than filed under their archetype, and first. A
-        # custom DIP-22 among the library's DIPs is the one part in the dock that cannot be
-        # found by knowing what it is, because the only thing that distinguishes it is that
-        # the library does not have it.
-        if custom:
-            ordered = sorted(custom.values(), key=lambda f: f.name)
-            group = QTreeWidgetItem([t("this board"), ""])
-            group.setFlags(group.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            group.setIcon(0, icons.part_icon(ordered[0]))
-            tree.addTopLevelItem(group)
-            for footprint in ordered:
-                leaf = QTreeWidgetItem(
-                    [footprint_label(footprint.name), str(len(footprint.pins))]
-                )
-                leaf.setData(0, ROLE_FOOTPRINT_ID, footprint.id)
-                leaf.setIcon(0, icons.part_icon(footprint))
-                leaf.setToolTip(
-                    0,
-                    f"{footprint_label(footprint.name)}\n{footprint.id} — "
-                    + t("{count} pin(s)").format(count=len(footprint.pins)),
-                )
-                group.addChild(leaf)
-            group.setExpanded(True)
-
-        # REAL PARTS, before the packages: what somebody holding a BC547 looks for is
-        # "BC547", not "to92". Each row places a part with its value, pin names and symbol
-        # already given -- see ``perfboard_studio.catalog``.
-        headings = _catalog_headings()
-        for category in CATEGORY_ORDER:
-            parts = [
-                part
-                for part in CATALOG
-                if part.category == category
-                and (
-                    not needle
-                    # In either language: "regülatör" finds a 7805 as "regulator" does.
-                    or needle
-                    in f"{part.id} {part.name} {part.summary} {t(part.summary)} "
-                    f"{category} {headings[category]}".lower()
-                )
-            ]
-            if not parts:
-                continue
-            group = QTreeWidgetItem([headings[category], ""])
-            group.setFlags(group.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            first = get_footprint(parts[0].footprint_id)
-            if first is not None:
-                group.setIcon(0, icons.part_icon(first))
-            tree.addTopLevelItem(group)
-            for part in parts:
-                packaged = get_footprint(part.footprint_id)
-                leaf = QTreeWidgetItem(
-                    [part.name, str(len(packaged.pins)) if packaged is not None else ""]
-                )
-                leaf.setData(0, ROLE_FOOTPRINT_ID, part.footprint_id)
-                leaf.setData(0, ROLE_CATALOG_ID, part.id)
-                if packaged is not None:
-                    leaf.setIcon(0, icons.part_icon(packaged))
-                leaf.setToolTip(0, _catalog_tooltip(part))
-                group.addChild(leaf)
-            group.setExpanded(bool(needle))
-
-        families = _archetype_headings()
-        order = list(families)
-        for archetype in sorted(by_archetype, key=order.index):
-            group = QTreeWidgetItem([families[archetype], ""])
-            group.setFlags(group.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            # The group takes the picture of its first member, which is the archetype's
-            # picture: every part under it is that shape in that colour.
-            group.setIcon(0, icons.part_icon(by_archetype[archetype][0]))
-            tree.addTopLevelItem(group)
-            for footprint in by_archetype[archetype]:
-                leaf = QTreeWidgetItem(
-                    [footprint_label(footprint.name), str(len(footprint.pins))]
-                )
-                leaf.setData(0, ROLE_FOOTPRINT_ID, footprint.id)
-                # In the colours the board draws it in, so finding the part you picked is
-                # recognition rather than reading -- see the note in icons.py.
-                leaf.setIcon(0, icons.part_icon(footprint))
-                # The NAME first, because the column it sits in is the one that gets
-                # elided: "Film capa…" in a 300 px dock is the string a tooltip has to
-                # finish, and the id alone was no help at all with that.
-                leaf.setToolTip(
-                    0,
-                    f"{footprint_label(footprint.name)}\n{footprint.id} — "
-                    + t("{count} pin(s)").format(count=len(footprint.pins)),
-                )
-                group.addChild(leaf)
-            # Expanded only when the filter has narrowed things down, otherwise the twenty-eight
-            # pin headers bury everything else.
-            group.setExpanded(bool(needle) or len(by_archetype[archetype]) <= 4)
+        populate_part_tree(tree, self.library_filter.text(), self.custom_footprints())
         tree.blockSignals(False)
 
     def _on_placement_value_changed(self, text: str) -> None:
