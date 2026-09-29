@@ -107,6 +107,13 @@ closed without a bump.
 
 ### Fixed
 
+- **A part dragged onto the board had no shadow where it would land.** Dragging from the
+  Parts panel or the sheet showed only the list's icon, at a fixed size and centred on the
+  pointer, while the drop puts the part's first pin in the hole under the pointer — so the
+  picture was neither where the part landed nor its size. The board now draws the part at
+  its real size and way round, in the holes it will take and red where it cannot go, and
+  the picture travels beside the pointer instead of over it.
+
 - **Pressing Autoroute or Auto-place a second time did nothing.** Autoroute on a finished
   board said there was nothing to route, so changing the connection style or the crossings
   and pressing it again changed nothing; it now plans the board's routing again with the

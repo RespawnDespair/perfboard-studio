@@ -119,6 +119,7 @@ from perfboard_studio.model import (
     PerfDocument,
     PinNames,
     Point2,
+    Rotation,
     TrackCut,
     contacts_every_path_hole,
 )
@@ -1198,11 +1199,23 @@ class PlacementGhostItem(QGraphicsItem):
     show exactly which holes it will occupy.
     """
 
-    def __init__(self, footprint: Footprint, board: Board, side: BoardSide) -> None:
+    def __init__(
+        self,
+        footprint: Footprint,
+        board: Board,
+        side: BoardSide,
+        rotation: int = 0,
+        mirrored: bool = False,
+    ) -> None:
         super().__init__()
         self.fp = footprint
         self.board = board
         self.side = side
+        #: Turned and flipped as the part will be: a part already on the board keeps its
+        #: own orientation when it is dragged back onto it from the sheet. Not ``rotation``,
+        #: which is QGraphicsItem's own and turns the whole item about its origin.
+        self.part_rotation = rotation
+        self.part_mirrored = mirrored
         self.anchor = HoleCoord(0, 0)
         self.blocked = False
         self.setZValue(120)
@@ -1232,6 +1245,11 @@ class PlacementGhostItem(QGraphicsItem):
         # part. Without it the ghost showed a DIP's pins running one way while the
         # placement put them the other, which is the one thing a ghost exists to prevent.
         if self.side == "bottom":
+            painter.scale(-1, 1)
+        # Then the part's own turn and flip, in ComponentItem._apply_local_transform's order,
+        # so the ghost and the part it becomes cannot disagree about which way round it is.
+        painter.rotate(float(self.part_rotation))
+        if self.part_mirrored:
             painter.scale(-1, 1)
 
         painter.setBrush(QBrush(QColor(style.fill)))
@@ -2491,6 +2509,9 @@ class BoardScene(QGraphicsScene):
         #: or a keyboard zoom can re-read what is under a pointer that has not moved.
         self._last_hole: HoleCoord | None = None
         self._ghost: PlacementGhostItem | None = None
+        #: The part being dragged in from the Parts panel or the sheet -- see
+        #: ``show_drop_ghost``. Separate from ``_ghost``, which belongs to an armed tool.
+        self._drop_ghost: PlacementGhostItem | None = None
         #: Whether the last placement landed somewhere already occupied. Read by the host to
         #: say so, since the bus allows it and only DRC objects.
         self.last_placement_overlapped = False
@@ -2670,6 +2691,8 @@ class BoardScene(QGraphicsScene):
         self._risk_item = None
         self._ratsnest_item = None
         self._ghost = None
+        # Destroyed with the rest and not re-created: the next drag move draws it again.
+        self._drop_ghost = None
         self._draw_preview = None
         # The pin markers are RE-created rather than merely forgotten, because a rebuild
         # happens on every command and the mode survives one: a half-collected net whose
@@ -3503,6 +3526,68 @@ class BoardScene(QGraphicsScene):
             self.removeItem(self._ghost)
             self._ghost = None
 
+    def show_drop_ghost(
+        self,
+        footprint: Footprint,
+        anchor: HoleCoord,
+        rotation: int = 0,
+        mirrored: bool = False,
+        moving: str | None = None,
+    ) -> None:
+        """The part being dragged onto the board, drawn at the size and in the holes it
+        will take -- red where it cannot go.
+
+        A DROP HAD NOTHING ON THE BOARD, only the picture under the pointer: a list icon
+        at a fixed size, centred on the pointer, while the drop puts the part's FIRST PIN
+        in the hole under it. So what was carried was not where the part landed, and was
+        not the size of the part either. This is the same ghost a part picked from the list
+        gets, with the orientation it will actually go down in. ``moving`` is the part
+        itself when it is already on the board, so its own holes do not count against it.
+        """
+        ghost = self._drop_ghost
+        if ghost is None or ghost.fp is not footprint or (
+            ghost.part_rotation,
+            ghost.part_mirrored,
+        ) != (rotation, mirrored):
+            self.clear_drop_ghost()
+            ghost = PlacementGhostItem(footprint, self.document.board, self.side, rotation, mirrored)
+            self.addItem(ghost)
+            self._drop_ghost = ghost
+        ghost.set_anchor(anchor, self._drop_blocked(footprint, anchor, rotation, mirrored, moving))
+
+    def clear_drop_ghost(self) -> None:
+        if self._drop_ghost is not None:
+            self.removeItem(self._drop_ghost)
+            self._drop_ghost = None
+
+    def _drop_blocked(
+        self,
+        footprint: Footprint,
+        anchor: HoleCoord,
+        rotation: int,
+        mirrored: bool,
+        moving: str | None,
+    ) -> bool:
+        """``_placement_blocked``'s three questions, for a part that may be turned and may
+        already be on the board."""
+        board = self.document.board
+        occupied = {
+            (hole.col, hole.row)
+            for comp in self.document.components
+            if comp.id != moving
+            for _pin, hole in _pin_holes_of(comp, self.lookup)
+        }
+        for pin in footprint.pins:
+            d_col, d_row = transform_pin_offset(
+                pin.d_col, pin.d_row, cast(Rotation, rotation), mirrored
+            )
+            hole = HoleCoord(anchor.col + d_col, anchor.row + d_row)
+            if not is_inside_board(hole, board):
+                return True
+            if (hole.col, hole.row) in occupied or hole_key(hole) in self._unusable_holes:
+                return True
+        return False
+
     def _placement_holes(self, anchor: HoleCoord) -> list[HoleCoord]:
         """Where the armed footprint's pins would land, anchored here."""
         footprint = self._armed_footprint
@@ -3946,6 +4031,29 @@ PART_MIME = "application/x-perfboard-studio-part"
 #: the payload to find out which it was would be a target that could get it wrong.
 FOOTPRINT_MIME = "application/x-perfboard-studio-footprint"
 
+#: How far below and to the right of the pointer a dragged part's picture is carried.
+DRAG_PICTURE_OFFSET_PX = 18
+
+
+def picture_beside_the_pointer(picture: QPixmap) -> QPixmap:
+    """``picture`` with transparent room above and to its left, to be dragged with its hot
+    spot at the top-left corner -- so it travels BESIDE the pointer instead of under it.
+
+    Centred on the pointer, the picture covered the very holes the drop was aimed at, and
+    on the board it covered the ghost that now shows where the part will really land.
+    """
+    offset = DRAG_PICTURE_OFFSET_PX
+    ratio = picture.devicePixelRatio()
+    padded = QPixmap(
+        round(picture.width() + offset * ratio), round(picture.height() + offset * ratio)
+    )
+    padded.setDevicePixelRatio(ratio)
+    padded.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(padded)
+    painter.drawPixmap(QPointF(offset, offset), picture)
+    painter.end()
+    return padded
+
 
 class BoardView(QGraphicsView):
     #: Gap between the top of the viewport and the mode banner.
@@ -4035,14 +4143,43 @@ class BoardView(QGraphicsView):
         # is "which hole is this going into" and the answer is otherwise invisible.
         hole = self._hole_under(event.position().toPoint())
         self.show_mode(f"{what} \u2192 {format_hole(hole)}")
+        landing = self._landing_of(event)
+        if landing is not None:
+            footprint, rotation, mirrored, moving = landing
+            self.board_scene.show_drop_ghost(footprint, hole, rotation, mirrored, moving)
         event.acceptProposedAction()
+
+    def _landing_of(
+        self, event: QDropEvent | QDragMoveEvent
+    ) -> tuple[Footprint, int, bool, str | None] | None:
+        """What a drag would put down, and how: the footprint, its turn and flip, and the
+        id of the part itself when it is already on the board. The same split the window
+        makes on the drop -- ``component.move`` keeps a placed part's orientation, and
+        ``part.place`` and a footprint from the list put one down unturned."""
+        scene = self.board_scene
+        ref = self._dropped_ref(event)
+        if ref is not None:
+            placed = next((c for c in scene.document.components if c.ref == ref), None)
+            if placed is not None:
+                footprint = scene.lookup(placed.footprint_id)
+                if footprint is None:
+                    return None
+                return footprint, int(placed.rotation), placed.mirrored, placed.id
+            part = next((p for p in scene.document.parts if p.ref == ref), None)
+            footprint = scene.lookup(part.footprint_id) if part is not None else None
+            return (footprint, 0, False, None) if footprint is not None else None
+        footprint_id = self._dropped_footprint(event)
+        footprint = scene.lookup(footprint_id) if footprint_id is not None else None
+        return (footprint, 0, False, None) if footprint is not None else None
 
     def dragLeaveEvent(self, event: QDragLeaveEvent) -> None:
         self.show_mode("")
+        self.board_scene.clear_drop_ghost()
         super().dragLeaveEvent(event)
 
     def dropEvent(self, event: QDropEvent) -> None:
         self.show_mode("")
+        self.board_scene.clear_drop_ghost()
         hole = self._hole_under(event.position().toPoint())
         ref = self._dropped_ref(event)
         if ref is not None:

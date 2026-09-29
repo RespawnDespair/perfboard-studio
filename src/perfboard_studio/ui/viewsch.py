@@ -86,7 +86,7 @@ from .scenetext import draw_label
 
 # The drag formats live with the board, which is what receives one of them and which
 # already owns the vocabulary a drop lands in (screen_to_hole). Two constants, three views.
-from .view2d import FOOTPRINT_MIME, PART_MIME
+from .view2d import FOOTPRINT_MIME, PART_MIME, picture_beside_the_pointer
 
 #: Which tool has the left button on the sheet.
 #:
@@ -1387,8 +1387,9 @@ class SchematicView(QGraphicsView):
         drag.setMimeData(data)
         picture = self._symbol_pixmap(ref)
         if picture is not None:
-            drag.setPixmap(picture)
-            drag.setHotSpot(picture.rect().center())
+            # Beside the pointer: over the board the ghost is what shows where it lands.
+            drag.setPixmap(picture_beside_the_pointer(picture))
+            drag.setHotSpot(QPoint(0, 0))
         drag.exec(Qt.DropAction.CopyAction)
 
     #: How big the picture under the pointer may get while a symbol is being dragged. A

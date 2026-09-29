@@ -5980,6 +5980,92 @@ def test_a_row_dragged_out_of_the_parts_panel_carries_a_footprint() -> None:
     _close(window)
 
 
+def _drag_over_board(window, fmt: str, payload: str, hole):
+    """A drag moving over the board with ``payload`` on board hole ``hole``, as Qt delivers
+    one: the view's own handler, handed the event."""
+    from PySide6.QtCore import QMimeData, Qt
+    from PySide6.QtGui import QDragMoveEvent
+
+    from perfboard_studio.ui.view2d import hole_to_screen
+
+    data = QMimeData()
+    data.setData(fmt, payload.encode("utf-8"))
+    data.setText(payload)
+    scene = window.scene
+    point = window.view.mapFromScene(hole_to_screen(hole, scene.document.board, scene.side))
+    event = QDragMoveEvent(
+        point, Qt.DropAction.CopyAction, data, Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    window.view.dragMoveEvent(event)
+    return scene._drop_ghost
+
+
+def test_a_part_dragged_over_the_board_is_drawn_where_it_will_land() -> None:
+    """The report was "its shadow on the board does not look right". There was none: a drop
+    showed only the list's icon, at a fixed size and CENTRED on the pointer, while the drop
+    puts the part's first pin in the hole under it -- so the picture was neither where the
+    part landed nor its size. Now the ghost a part picked from the list gets is drawn there,
+    red where it cannot go."""
+    from perfboard_studio.model import HoleCoord
+    from perfboard_studio.ui.view2d import FOOTPRINT_MIME
+
+    window = _blank_window()
+    ghost = _drag_over_board(window, FOOTPRINT_MIME, "dip-8", HoleCoord(6, 4))
+    assert ghost is not None
+    assert ghost.anchor == HoleCoord(6, 4), "pin 1 in the hole under the pointer, as a drop"
+    assert not ghost.blocked
+    window._on_footprint_dropped("dip-8", HoleCoord(6, 4))
+
+    blocked = _drag_over_board(window, FOOTPRINT_MIME, "dip-8", HoleCoord(6, 4))
+    assert blocked is not None and blocked.blocked, "red over a part already there"
+    window.scene.clear_drop_ghost()
+    assert window.scene._drop_ghost is None
+    _close(window)
+
+
+def test_a_placed_part_dragged_from_the_sheet_is_ghosted_the_way_round_it_is() -> None:
+    """A part already on the board keeps its orientation when it is dragged back onto it
+    (``component.move``), so its ghost is turned as it is -- and its own holes are not in
+    its way."""
+    from pathlib import Path
+
+    from perfboard_studio.persist import deserialize_document
+    from perfboard_studio.ui.view2d import PART_MIME
+
+    doc = deserialize_document(
+        (Path(__file__).resolve().parents[1] / "examples" / "nano-relay.perf").read_text(
+            encoding="utf-8"
+        )
+    ).document
+    relay = next(c for c in doc.components if c.ref == "K1")
+    assert relay.rotation, "the example no longer turns its relay"
+    window = _window_on(doc)
+
+    ghost = _drag_over_board(window, PART_MIME, "K1", relay.anchor)
+    assert ghost is not None
+    assert (ghost.part_rotation, ghost.part_mirrored) == (int(relay.rotation), relay.mirrored)
+    assert not ghost.blocked, "a part is not in its own way"
+    _close(window)
+
+
+def test_a_dragged_picture_travels_beside_the_pointer() -> None:
+    """Under the pointer it covered the holes the drop was aimed at, and the ghost too."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QColor, QPixmap
+
+    from perfboard_studio.ui.view2d import DRAG_PICTURE_OFFSET_PX, picture_beside_the_pointer
+
+    picture = QPixmap(40, 30)
+    picture.fill(QColor("#ff0000"))
+    carried = picture_beside_the_pointer(picture).toImage()
+    assert (carried.width(), carried.height()) == (40 + DRAG_PICTURE_OFFSET_PX, 30 + DRAG_PICTURE_OFFSET_PX)
+    assert carried.pixelColor(0, 0).alpha() == 0, "nothing at the hot spot"
+    assert carried.pixelColor(DRAG_PICTURE_OFFSET_PX + 5, DRAG_PICTURE_OFFSET_PX + 5) == QColor(
+        Qt.GlobalColor.red
+    )
+
+
 def test_a_footprint_dropped_on_the_board_places_that_part() -> None:
     """Dragging is what everybody tries first and it did nothing at all: the only way to
     put a part down was to pick it in the list and then click the board."""

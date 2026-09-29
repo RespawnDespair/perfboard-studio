@@ -289,6 +289,7 @@ from .view2d import (
     ConductorItem,
     hole_to_screen,
     next_reference,
+    picture_beside_the_pointer,
 )
 from .viewsch import SchematicView, SheetTool
 
@@ -567,8 +568,10 @@ class PartTree(QTreeWidget):
         # drawing the list, the board and the 3D view use (icons.part_icon).
         picture = item.icon(0).pixmap(icons.PART_SIZE * 2, icons.PART_SIZE * 2)
         if not picture.isNull():
-            drag.setPixmap(picture)
-            drag.setHotSpot(picture.rect().center())
+            # Beside the pointer, not under it: over the board the ghost shows where the
+            # part lands, and a picture on top of it would hide exactly that.
+            drag.setPixmap(picture_beside_the_pointer(picture))
+            drag.setHotSpot(QPoint(0, 0))
         drag.exec(Qt.DropAction.CopyAction)
 
 
