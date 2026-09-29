@@ -130,7 +130,13 @@ from perfboard_studio.model import (
 from perfboard_studio.placer import PlacementOptions, plan_placement
 from perfboard_studio.placer import describe as describe_placement
 from perfboard_studio.ratsnest import ratsnest, summarize
-from perfboard_studio.router import WIRE_PATHS, RouterOptions, RoutingStyle, options_for_style
+from perfboard_studio.router import (
+    CROSSING_POLICIES,
+    WIRE_PATHS,
+    RouterOptions,
+    RoutingStyle,
+    options_for_style,
+)
 from perfboard_studio.stripboard import is_stripboard
 from perfboard_studio.striproute import describe_plan as describe_strip_plan
 from perfboard_studio.striproute import plan_stripboard
@@ -1259,7 +1265,11 @@ class BoardSession:
     # -- the planners ------------------------------------------------------
 
     def autoroute(
-        self, nets: list[str] | None = None, style: str = "balanced", wires: str = "grid"
+        self,
+        nets: list[str] | None = None,
+        style: str = "balanced",
+        wires: str = "grid",
+        crossings: str = "hop",
     ) -> dict[str, Any]:
         """Plan and commit the routing, as one undoable command."""
         if not self.document.nets:
@@ -1283,7 +1293,7 @@ class BoardSession:
         if cleared:
             self.remove_stale_conductors()
 
-        options = _route_options(style, wires)
+        options = _route_options(style, wires, crossings)
         # Every variant's measurements travel with the result, not just the winner's. An
         # agent that is told only "solder won" cannot judge whether to accept it, and the
         # trade it was decided on -- wires against bridging risk -- is exactly the kind a
@@ -1402,7 +1412,11 @@ class BoardSession:
         return result
 
     def reroute(
-        self, nets: list[str] | None = None, style: str = "balanced", wires: str = "grid"
+        self,
+        nets: list[str] | None = None,
+        style: str = "balanced",
+        wires: str = "grid",
+        crossings: str = "hop",
     ) -> dict[str, Any]:
         """Rip up the existing routing and plan it again, as one undoable command.
 
@@ -1418,7 +1432,10 @@ class BoardSession:
         only = tuple(self._net_id_strict(name) for name in nets) if nets else None
 
         plan = plan_reroute(
-            self.document, self.lookup, only_net_ids=only, options=_route_options(style, wires)
+            self.document,
+            self.lookup,
+            only_net_ids=only,
+            options=_route_options(style, wires, crossings),
         )
         if plan.is_empty:
             return _ok(committed=False, summary=describe_reroute(plan))
@@ -1830,12 +1847,16 @@ def _route_styles() -> str:
     return ", ".join((*get_args(RoutingStyle), BEST_STYLE))
 
 
-def _route_options(style: str, wires: str = "grid") -> AutorouteOptions:
+def _route_options(style: str, wires: str = "grid", crossings: str = "hop") -> AutorouteOptions:
     """Turn a style name into router options, or say what the names are.
 
     ``wires`` is how a wire is laid (``router.WirePath``), and it is ``"grid"`` here as it is
     in the window: square to the rows and columns, the way anybody builds a board. The
     engine's own default stays straight, because that is what every golden route records.
+
+    ``crossings`` is what a trace does where it may not cross (``router.CrossingPolicy``),
+    ``"hop"`` here as in the engine and the window. Like the wire path it is not part of a
+    style, so it reaches the "best" sweep too.
 
     The style is a judgement about the builder rather than about the board -- which
     primitive they would rather use -- so it is per call, not a session setting: an agent
@@ -1848,7 +1869,12 @@ def _route_options(style: str, wires: str = "grid") -> AutorouteOptions:
         raise SessionError(
             f"{wires!r} is not a way to lay wire. Use one of: {', '.join(WIRE_PATHS)}."
         )
-    base = RouterOptions(wire_path=wires)
+    if crossings not in CROSSING_POLICIES:
+        raise SessionError(
+            f"{crossings!r} is not a way to handle a crossing. "
+            f"Use one of: {', '.join(CROSSING_POLICIES)}."
+        )
+    base = RouterOptions(wire_path=wires, crossing_policy=crossings)
     if style == BEST_STYLE:
         return AutorouteOptions(router=base)
     if style not in get_args(RoutingStyle):

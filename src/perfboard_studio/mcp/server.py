@@ -589,7 +589,10 @@ def remove_stale_conductors() -> dict[str, Any]:
 
 @mcp.tool()
 def autoroute(
-    nets: list[str] | None = None, style: str = "balanced", wires: str = "grid"
+    nets: list[str] | None = None,
+    style: str = "balanced",
+    wires: str = "grid",
+    crossings: str = "hop",
 ) -> dict[str, Any]:
     """Route the board, or just the named nets, and commit it as one undoable step.
 
@@ -602,12 +605,19 @@ def autoroute(
       "best"       route with all four, measure what each would cost to BUILD, keep the
                    best. Costs roughly two ordinary routes. Prefer this when the user has
                    not stated a preference -- it answers by measuring instead of guessing.
-    On the NE555 fixture "balanced" gives 4 traces and 10 wires; "solder" gives 17 traces
-    and 6 wires but 27 holes at bridging risk.
+    On the NE555 fixture "balanced" gives 4 traces and 10 wires; "solder" gives 15 traces
+    and 1 wire but 34 holes at bridging risk.
 
     `wires` is how each wire is laid: "grid" (the default) runs it square along the rows
     and columns of holes with as few bends as it can, the way wire is dressed on perfboard;
     "straight" is one run at whatever angle, shorter and crossing everything near it.
+
+    `crossings` is what a solder trace does where it meets something it may not cross:
+    "hop" (the default) carries it over on a short insulated jumper; "wire" makes the whole
+    connection one insulated wire instead; "refuse" uses no wire of any kind, whatever the
+    style, and reports what a trace alone cannot reach as unrouted. Ask for "refuse" only
+    when the user has said they want no wire at all -- on a crowded board it leaves several
+    connections for optimize_placement or for them to finish.
 
     Under "best" the result carries `comparison`: every style's traces, wires, wire length,
     risk holes and effort score, cheapest first. Report that trade rather than only the
@@ -618,22 +628,25 @@ def autoroute(
     are in the wrong places, and optimize_placement is the answer rather than more
     routing.
     """
-    return session.autoroute(nets, style, wires)
+    return session.autoroute(nets, style, wires, crossings)
 
 
 @mcp.tool()
 def reroute(
-    nets: list[str] | None = None, style: str = "balanced", wires: str = "grid"
+    nets: list[str] | None = None,
+    style: str = "balanced",
+    wires: str = "grid",
+    crossings: str = "hop",
 ) -> dict[str, Any]:
     """Rip up the existing routing and plan it again from nothing.
 
     Use this after moving parts. `autoroute` only ADDS: the copper laid out for a part's
     old position still joins the right pins, so nothing flags it, and routing again just
     puts more copper beside it — the board grows every time. This throws that away and
-    re-plans. Conductors with no net assigned are left alone. `style` and `wires` mean
-    what they mean for autoroute.
+    re-plans. Conductors with no net assigned are left alone. `style`, `wires` and
+    `crossings` mean what they mean for autoroute.
     """
-    return session.reroute(nets, style, wires)
+    return session.reroute(nets, style, wires, crossings)
 
 
 @mcp.tool()

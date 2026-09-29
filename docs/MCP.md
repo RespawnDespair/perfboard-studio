@@ -238,6 +238,13 @@ run at whatever angle, which is what the engine does by default and what every g
 route records. A straight bare wire can pass a fraction of a millimetre from another net's
 pad, and a board of them crosses itself everywhere.
 
+**What a trace does at a crossing is the agent's to say too.** `autoroute` and `reroute`
+take `crossings`: `"hop"` (the default, as in the engine and the window) carries a solder
+trace over whatever it may not cross on a short insulated jumper; `"wire"` makes that whole
+connection one insulated wire; `"refuse"` allows no wire of any kind, whatever the style,
+and reports what a trace alone cannot reach as unrouted. That last is for a user who has
+said they want no wire at all, and on a crowded board it leaves connections to finish.
+
 **Unrouted connections are never summarised away.** PLAN.md §13 names "it routed most of
 it and left four connections" as the trap every previous perfboard autorouter fell into.
 `autoroute` returns each failure with the router's own reason. Usually the answer is

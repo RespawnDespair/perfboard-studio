@@ -259,7 +259,7 @@ from perfboard_studio.placer import (
 from perfboard_studio.project import DOCUMENT_SUFFIX, document_in, project_name
 from perfboard_studio.ratsnest import NetRatsnest, ratsnest, summarize
 from perfboard_studio.recovery import RecoveryRecord, is_worth_offering
-from perfboard_studio.router import RouterOptions, RoutingStyle, options_for_style
+from perfboard_studio.router import CrossingPolicy, RouterOptions, RoutingStyle, options_for_style
 from perfboard_studio.schematic import build_schematic, snap_to_grid
 from perfboard_studio.schematic_export import drawing_to_svg
 from perfboard_studio.stripboard import is_stripboard
@@ -405,6 +405,7 @@ RULERS_KEY = "session/showRulers"
 HATCH_KEY = "session/hatchFarSide"
 ROUTING_STYLE_KEY = "session/routingStyle"
 GRID_WIRES_KEY = "session/gridWires"
+CROSSINGS_KEY = "session/crossings"
 EXPORT_DIR_KEY = "session/exportDirectory"
 LANGUAGE_KEY = "session/language"
 #: Whether this person has ever placed a part. The blank-board guidance is for the first
@@ -2731,6 +2732,9 @@ class MainWindow(QMainWindow):
         #: off in the engine: the engine's default is what every golden route records, and
         #: this is what somebody building the board wants to be handed.
         self._grid_wires = True
+        #: What a trace does where it meets something it may not cross (router.CrossingPolicy).
+        #: The engine's default, "hop": a short jumper over the obstacle.
+        self._crossing_policy: CrossingPolicy = "hop"
         #: The hole under the pointer, kept because Paste lands there. Starts off the
         #: board on purpose: before the pointer has been over the board at all there is
         #: no such hole, and (0, 0) would be a lie that pasted a block into A1.
@@ -4041,6 +4045,34 @@ class MainWindow(QMainWindow):
             action.setToolTip(tip)
             action.triggered.connect(lambda _checked, s=style: self.on_routing_style(s))
             self.act_style[style] = action
+
+        # What a trace does where it meets something it may not cross. A judgement about the
+        # builder like the style, and a separate one: somebody who prefers solder may still
+        # take a jumper over a crossing, or may take no wire at all. See router.CrossingPolicy.
+        crossing_menu = route_menu.addMenu(t("&Crossings"))
+        crossing_menu.setToolTipsVisible(True)
+        self.act_crossing: dict[str, QAction] = {}
+        for policy, label, tip in (
+            ("hop", t("&Hop over it with a short jumper"), t(
+                "Solder trace as far as it goes, and one short insulated jumper over each "
+                "thing it may not cross -- what somebody building by hand does. Most of the "
+                "run is solder and only the crossing costs a piece of wire. The default.")),
+            ("wire", t("Make the whole connection one &wire"), t(
+                "A connection that has to cross something becomes one insulated wire from "
+                "end to end, for anybody who would rather run one clean wire than solder up "
+                "to a jumper.")),
+            ("refuse", t("&Never use wire; leave it unrouted"), t(
+                "No wire of any kind, whichever connection is preferred: solder traces "
+                "only. A connection a trace cannot make is left unrouted and named, rather "
+                "than made with wire you did not ask for. On a crowded board that can be "
+                "several, and moving parts is usually the answer.")),
+        ):
+            action = crossing_menu.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(policy == self._crossing_policy)
+            action.setToolTip(tip)
+            action.triggered.connect(lambda _checked, p=policy: self.on_crossing_policy(p))
+            self.act_crossing[policy] = action
 
         # HOW a wire is laid, which is a separate question from WHICH primitive is chosen
         # and applies to every style: a wire style still wants its wires square.
@@ -7691,6 +7723,18 @@ class MainWindow(QMainWindow):
             8000,
         )
 
+    def on_crossing_policy(self, policy: str) -> None:
+        """Choose what a trace does where it may not cross. Like the style, it is recorded
+        here and applies to the next route."""
+        self._crossing_policy = cast("CrossingPolicy", policy)
+        for name, action in self.act_crossing.items():
+            action.setChecked(name == policy)
+        self.statusBar().showMessage(
+            f"{t('Crossings')}: {self.act_crossing[policy].text().replace('&', '')}"
+            f" — {t('applies to the next route')}",
+            8000,
+        )
+
     def on_grid_wires(self, checked: bool) -> None:
         """Lay wires along the grid, or straight. Like the style, it applies to the next route."""
         self._grid_wires = checked
@@ -7705,10 +7749,14 @@ class MainWindow(QMainWindow):
 
         Under "best" the sweep applies each style itself, so this hands it the UNSTYLED
         defaults -- picking one here would prime every variant with another's cost table.
-        How a wire is laid is not part of a style, so it goes to the sweep as well, which
-        keeps what it is handed for everything the style does not set.
+        How a wire is laid and what a trace does at a crossing are not part of a style, so
+        they go to the sweep as well, which keeps what it is handed for everything the style
+        does not set.
         """
-        base = RouterOptions(wire_path="grid" if self._grid_wires else "straight")
+        base = RouterOptions(
+            wire_path="grid" if self._grid_wires else "straight",
+            crossing_policy=self._crossing_policy,
+        )
         if self._routing_style == "best":
             return AutorouteOptions(router=base)
         return AutorouteOptions(router=options_for_style(self._routing_style, base))
@@ -9906,6 +9954,7 @@ class MainWindow(QMainWindow):
         settings.setValue(HATCH_KEY, self.act_hatch.isChecked())
         settings.setValue(ROUTING_STYLE_KEY, self._routing_style)
         settings.setValue(GRID_WIRES_KEY, self._grid_wires)
+        settings.setValue(CROSSINGS_KEY, self._crossing_policy)
 
     def _restore_session(self) -> None:
         """Put the window back where it was, quietly.
@@ -9959,6 +10008,11 @@ class MainWindow(QMainWindow):
             for name, action in self.act_style.items():
                 action.setChecked(name == style)
         self.act_grid_wires.setChecked(_stored_bool(settings, GRID_WIRES_KEY, True))
+        policy = settings.value(CROSSINGS_KEY, self._crossing_policy)
+        if isinstance(policy, str) and policy in self.act_crossing:
+            self._crossing_policy = cast("CrossingPolicy", policy)
+            for name, action in self.act_crossing.items():
+                action.setChecked(name == policy)
 
     def _restore_update_strip(self) -> None:
         """Keep the update strip's toolbar in step with the bar inside it after a restore.

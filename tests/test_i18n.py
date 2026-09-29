@@ -301,7 +301,7 @@ def test_no_two_entries_in_a_menu_claim_the_same_accelerator() -> None:
         "menu bar": ["&File", "&Edit", "&Draw", "&Place", "&Net", "&Route", "&View",
                      "&Help"],
         "route": ["&Autoroute All Nets", "Route Nets of &Selection", "&Preferred Connection",
-                  "Lay Wires Along the &Grid", "Re-route &Everything",
+                  "&Crossings", "Lay Wires Along the &Grid", "Re-route &Everything",
                   "Re-route Nets of Se&lection", "Remove S&tale Conductors"],
         "file": ["&New Board…", "&Open…", "Open &Recent", "Open E&xample", "&Save", "Save &As…",
                  "Re&load from Disk", "&Board Setup…", "Board &Features…", "Rena&me Board…",
@@ -331,6 +331,8 @@ def test_no_two_entries_in_a_menu_claim_the_same_accelerator() -> None:
         "routing style": ["&Try each and keep the best", "&Solder trace where possible",
                           "&Balanced", "&Wire where possible",
                           "Bend component &legs where possible"],
+        "crossings": ["&Hop over it with a short jumper", "Make the whole connection one &wire",
+                      "&Never use wire; leave it unrouted"],
         # The sheet's three context menus (`MainWindow.sheet_menu`). The pin entry is not a
         # fourth menu -- a pin is always on a symbol, so "Disconnect ..." sits on top of the
         # symbol's list and shares its letters. The two last entries are alternatives

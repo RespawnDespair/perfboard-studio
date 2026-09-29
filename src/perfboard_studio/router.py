@@ -201,6 +201,10 @@ WIRE_PATHS: tuple[WirePath, ...] = ("straight", "grid")
 #:            reported unrouted rather than made with wire the user did not ask for.
 type CrossingPolicy = Literal["hop", "wire", "refuse"]
 
+#: Every :data:`CrossingPolicy`, for a caller that has to check a name it was handed --
+#: spelled out for the reason :data:`WIRE_PATHS` is.
+CROSSING_POLICIES: tuple[CrossingPolicy, ...] = ("hop", "wire", "refuse")
+
 
 #: How the board is going to be ASSEMBLED, when the builder has decided that in advance.
 #:

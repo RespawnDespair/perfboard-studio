@@ -132,6 +132,34 @@ TURKISH: Mapping[str, str] = {
     "Preferred connection": "Tercih edilen bağlantı",
     "applies to the next route": "bir sonraki yönlendirmede geçerli olur",
     "Lay Wires Along the &Grid": "Telleri &Izgara Boyunca Döşe",
+    "&Crossings": "&Kesişmeler",
+    "Crossings": "Kesişmeler",
+    "&Hop over it with a short jumper": "Kısa bir &atlama teliyle üstünden geç",
+    "Make the whole connection one &wire": "Bağlantının tamamını tek bir &tel yap",
+    "&Never use wire; leave it unrouted": "&Hiç tel kullanma; yönlendirilmeden bırak",
+    "Solder trace as far as it goes, and one short insulated jumper over each "
+    "thing it may not cross -- what somebody building by hand does. Most of the "
+    "run is solder and only the crossing costs a piece of wire. The default.": (
+        "Lehim yolu gidebildiği yere kadar gider, geçemeyeceği her şeyin üstünden de "
+        "kısa bir yalıtımlı atlama teli geçer -- elle kart yapan birinin yaptığı gibi. "
+        "Yolun çoğu lehimdir, yalnızca kesişme bir parça tele mal olur. Varsayılan."
+    ),
+    "A connection that has to cross something becomes one insulated wire from "
+    "end to end, for anybody who would rather run one clean wire than solder up "
+    "to a jumper.": (
+        "Bir şeyin üstünden geçmesi gereken bağlantı baştan sona tek bir yalıtımlı tel "
+        "olur; bir atlama teline kadar lehim çekmektense tek temiz bir tel döşemeyi "
+        "tercih eden için."
+    ),
+    "No wire of any kind, whichever connection is preferred: solder traces "
+    "only. A connection a trace cannot make is left unrouted and named, rather "
+    "than made with wire you did not ask for. On a crowded board that can be "
+    "several, and moving parts is usually the answer.": (
+        "Tercih edilen bağlantı ne olursa olsun hiçbir türde tel yok: yalnızca lehim "
+        "yolu. Bir yolun yapamadığı bağlantı, istemediğiniz bir telle yapılmak yerine "
+        "yönlendirilmeden bırakılır ve adıyla bildirilir. Kalabalık bir kartta bunlar "
+        "birkaç tane olabilir; çözüm çoğu zaman parçaları taşımaktır."
+    ),
     "Run every wire square to the grid, along the rows and columns of holes, "
     "with as few bends as the board allows -- the way wire is dressed on "
     "perfboard. Off, a wire is one straight run at whatever angle, which is "

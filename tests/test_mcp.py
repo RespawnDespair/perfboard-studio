@@ -943,6 +943,28 @@ def test_an_agent_gets_wires_laid_along_the_grid_unless_it_asks_otherwise() -> N
     assert any(not square(c) for c in straight)
 
 
+def test_an_agent_can_ask_for_no_wire_at_all() -> None:
+    """``crossings="refuse"`` is the builder who wants no wire of any kind: whatever the
+    style, what a trace cannot reach comes back unrouted and NAMED, never as wire."""
+    board = BoardSession()
+    board.open_document(str(GOLDEN))
+    result = board.reroute(style="balanced", crossings="refuse")
+
+    assert result["ok"], result
+    assert not any(isinstance(c, WireConductor) for c in board.document.conductors)
+    assert result["unrouted"] > 0, "the fixture no longer needs a wire anywhere"
+    assert result["unrouted"] == len(result["unrouted_detail"])
+    for item in result["unrouted_detail"]:
+        assert item["reason"], item
+
+
+def test_an_unknown_way_to_cross_lists_the_real_ones(session: BoardSession) -> None:
+    session.import_netlist(str(NETLIST))
+    with pytest.raises(SessionError) as err:
+        session.autoroute(crossings="tunnel")
+    assert all(name in str(err.value) for name in ("hop", "wire", "refuse"))
+
+
 def test_an_unknown_way_to_lay_wire_lists_the_real_ones(session: BoardSession) -> None:
     session.import_netlist(str(NETLIST))
     with pytest.raises(SessionError) as err:

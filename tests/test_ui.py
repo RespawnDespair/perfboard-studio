@@ -4787,6 +4787,28 @@ def test_the_window_lays_wires_along_the_grid_and_remembers_when_it_should_not()
     _close(second)
 
 
+def test_the_window_can_route_with_no_wire_at_all_and_remembers_it() -> None:
+    """Route > Crossings. A short jumper over a crossing is the default, as it is in the
+    engine; "never use wire" reaches every style and the "best" sweep, because like the
+    wire path it is a judgement about the builder rather than part of a style."""
+    first = _window_on(_load_dense())
+    assert first.act_crossing["hop"].isChecked()
+    assert first._autoroute_options().router.crossing_policy == "hop"
+
+    first.act_crossing["refuse"].trigger()
+    assert first.act_crossing["refuse"].isChecked()
+    assert not first.act_crossing["hop"].isChecked()
+    for style in ("solder", "best"):
+        first.on_routing_style(style)
+        assert first._autoroute_options().router.crossing_policy == "refuse"
+    _close(first)
+
+    second = _window_on(_load_dense())
+    assert second.act_crossing["refuse"].isChecked()
+    assert second._autoroute_options().router.crossing_policy == "refuse"
+    _close(second)
+
+
 def test_autorouting_from_the_window_lays_no_diagonal_wire() -> None:
     """End to end, through the same planner the Route menu runs."""
     from perfboard_studio.autoroute import plan_autoroute

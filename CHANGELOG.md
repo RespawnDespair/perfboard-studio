@@ -22,6 +22,14 @@ closed without a bump.
 
 ### Added
 
+- **Route ▸ Crossings: routing with no wire at all.** The engine could always be told what
+  a solder trace does where it meets something it may not cross, and nothing let anybody
+  tell it. A short jumper over the crossing stays the default; "one wire for the whole
+  connection" and "never use wire" are the other two. The last uses solder traces only,
+  whatever connection is preferred, and names each connection a trace cannot make rather
+  than laying wire nobody asked for. It is remembered with the other routing choices, and
+  an agent asks for the same thing with `crossings` on `autoroute` and `reroute`.
+
 - **File ▸ Open Example.** The examples ship with the application and nothing in the
   window pointed at them. They open as new, untitled boards — the file lives inside the
   application, so saving over it would change the example for everybody — and the empty
