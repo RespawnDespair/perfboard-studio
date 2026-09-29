@@ -20,6 +20,8 @@ closed without a bump.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-09-30
+
 ### Added
 
 - **A step bar: Circuit, Board, Placement, Wiring, Check, Build — and Next.** The window
@@ -3789,7 +3791,8 @@ was introduced during 0.4.0 development, so they are accurate but were not writt
 release time. Their compare links point at commits rather than tags for the same reason;
 from v0.4.0 onwards every release is tagged.
 
-[Unreleased]: https://github.com/medinstech/perfboard-studio/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/medinstech/perfboard-studio/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/medinstech/perfboard-studio/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/medinstech/perfboard-studio/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/medinstech/perfboard-studio/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/medinstech/perfboard-studio/compare/v0.10.0...v0.11.0
