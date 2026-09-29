@@ -4781,11 +4781,15 @@ class MainWindow(QMainWindow):
                 note = f"  ·  {t('it overlaps an existing pin — see DRC')}"
             else:
                 note = ""
-            self.statusBar().showMessage(f"{result.description}{note} — Esc to stop placing.", 6000)
+            self.statusBar().showMessage(
+                f"{result.description}{note} — {t('Esc to stop placing.')}", 6000
+            )
             self._on_placement_armed(self.scene.armed_footprint_id or "")
             self._remember_a_part_was_placed()
         else:
-            self.statusBar().showMessage(f"Cannot place there: {result.message}", 6000)
+            self.statusBar().showMessage(
+                t("Cannot place there: {why}").format(why=result.message), 6000
+            )
 
     def _build_nets_dock(self) -> None:
         """The netlist, with what each net still needs.
@@ -5228,9 +5232,11 @@ class MainWindow(QMainWindow):
             self._sync_schematic_highlight()
             in_design = any(part.ref == ref for part in self.bus.document.parts)
             self.statusBar().showMessage(
-                f"{ref} is in the design, not on the board yet."
-                if in_design
-                else f"{ref} is named by a net and is not in the design at all.",
+                (
+                    t("{ref} is in the design, not on the board yet.")
+                    if in_design
+                    else t("{ref} is named by a net and is not in the design at all.")
+                ).format(ref=ref),
                 6000,
             )
             return
@@ -5830,7 +5836,10 @@ class MainWindow(QMainWindow):
             part = next((p for p in self.bus.document.parts if p.ref == ref), None)
             if part is None:
                 self.statusBar().showMessage(
-                    f"{ref} is only named by a net; edit the net to remove it.", 6000
+                    t("{ref} is only named by a net; edit the net to remove it.").format(
+                        ref=ref
+                    ),
+                    6000,
                 )
                 return
             result = self.bus.dispatch("part.delete", DeletePartPayload(id=part.id))
@@ -6043,10 +6052,10 @@ class MainWindow(QMainWindow):
         if not result.ok:
             self.statusBar().showMessage(f"[{result.code}] {result.message}", 10000)
             return
-        note = f"; {unplaced} would not fit" if unplaced else ""
+        note = "; " + t("{count} would not fit").format(count=unplaced) if unplaced else ""
         self.statusBar().showMessage(
-            f"{result.description}{note}. Ctrl+R routes it; Ctrl+Shift+A arranges it again "
-            f"from a different seed.",
+            f"{result.description}{note}. "
+            + t("Ctrl+R routes it; Ctrl+Shift+A arranges it again from a different seed."),
             12000,
         )
         self._sync_schematic_highlight()
@@ -7403,7 +7412,7 @@ class MainWindow(QMainWindow):
         if plan.is_empty:
             self.statusBar().showMessage(
                 f"{describe_placement(plan)} ({elapsed:.0f} ms). "
-                "Place > Try Another Arrangement searches again from a different seed.",
+                + t("Place ▸ Try Another Arrangement searches again from a different seed."),
                 8000,
             )
             return
@@ -7423,23 +7432,41 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"{describe_placement(plan)}{note}", 0)
 
     def _confirm_placement(self, plan: PlacementPlan, elapsed_ms: float) -> bool:
+        moving = t("{moved} of {movable} movable part(s) move").format(
+            moved=len(plan.changes), movable=plan.movable
+        )
+        if plan.locked:
+            moving += ", " + t("{locked} locked part(s) stay put.").format(locked=plan.locked)
+        else:
+            moving += "."
         detail = [
-            f"{len(plan.changes)} of {plan.movable} movable part(s) move"
-            + (f", {plan.locked} locked part(s) stay put." if plan.locked else "."),
-            f"Estimated connection length: {plan.before.hpwl_mm:.0f} mm → "
-            f"{plan.after.hpwl_mm:.0f} mm.",
+            moving,
+            t("Estimated connection length: {before} mm → {after} mm.").format(
+                before=f"{plan.before.hpwl_mm:.0f}", after=f"{plan.after.hpwl_mm:.0f}"
+            ),
         ]
         if plan.route_cost is not None:
+            # Said as what was done and why, not as the planner's internals: "router cost
+            # 812 (seed 0)" told nobody anything. The seed stays, last, because passing it
+            # back reproduces this exact plan.
             detail.append(
-                f"Best of {plan.iterations}-move searches, judged by routing each one; "
-                f"router cost {plan.route_cost:.0f} (seed {plan.seed})."
+                t(
+                    "Each arrangement found was routed, and this is the one cheapest to "
+                    "build (cost {cost}; seed {seed})."
+                ).format(cost=f"{plan.route_cost:.0f}", seed=plan.seed)
             )
         if plan.before.overlap_pairs:
             detail.append(
-                f"Overlapping bodies: {plan.before.overlap_pairs} → {plan.after.overlap_pairs}."
+                t("Overlapping bodies: {before} → {after}.").format(
+                    before=plan.before.overlap_pairs, after=plan.after.overlap_pairs
+                )
             )
         if plan.before.collisions:
-            detail.append(f"Pins sharing a hole: {plan.before.collisions} → {plan.after.collisions}.")
+            detail.append(
+                t("Pins sharing a hole: {before} → {after}.").format(
+                    before=plan.before.collisions, after=plan.after.collisions
+                )
+            )
         detail.append("")
         detail.extend(summarize_placement(plan, limit=10))
 
@@ -7556,7 +7583,7 @@ class MainWindow(QMainWindow):
             return
 
         if plan.is_empty:
-            self.statusBar().showMessage(f"Nothing to re-route ({elapsed:.0f} ms)", 6000)
+            self.statusBar().showMessage(f"{t('Nothing to re-route')} ({elapsed:.0f} ms)", 6000)
             return
 
         if plan.remove_ids:
@@ -7612,7 +7639,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"[{result.code}] {result.message}", 8000)
             return 0
         if not quiet:
-            self.statusBar().showMessage(f"{label} — Ctrl+Z puts them back.", 6000)
+            self.statusBar().showMessage(f"{label} — {t('Ctrl+Z puts them back.')}", 6000)
         return len(strays)
 
     def on_clear_strays(self) -> None:
@@ -7705,7 +7732,8 @@ class MainWindow(QMainWindow):
 
         if plan.is_empty:
             self.statusBar().showMessage(
-                f"Nothing to route: {describe_plan(plan)}{cleared_note} ({elapsed:.0f} ms)", 8000
+                f"{t('Nothing to route:')} {describe_plan(plan)}{cleared_note} ({elapsed:.0f} ms)",
+                8000,
             )
             return
 
@@ -7773,11 +7801,13 @@ class MainWindow(QMainWindow):
             return
         lines = [f"{problem.message}" for problem in plan.problems[:12]]
         if len(plan.problems) > 12:
-            lines.append(f"... and {len(plan.problems) - 12} more.")
+            lines.append(t("… and {count} more").format(count=len(plan.problems) - 12))
         QMessageBox.information(
             self,
             t("Some connections could not be made"),
-            f"{len(plan.problems)} problem(s):\n\n" + "\n\n".join(lines),
+            t("{count} problem(s):").format(count=len(plan.problems))
+            + "\n\n"
+            + "\n\n".join(lines),
         )
 
     def _report_unrouted(self, plan: AutoroutePlan) -> None:
@@ -7792,11 +7822,13 @@ class MainWindow(QMainWindow):
             for item in failures[:12]
         ]
         if len(failures) > 12:
-            lines.append(f"... and {len(failures) - 12} more.")
+            lines.append(t("… and {count} more").format(count=len(failures) - 12))
         QMessageBox.information(
             self,
             t("Some connections could not be routed"),
-            f"{len(failures)} connection(s) were left unrouted:\n\n" + "\n".join(lines),
+            t("{count} connection(s) were left unrouted:").format(count=len(failures))
+            + "\n\n"
+            + "\n".join(lines),
         )
 
     # -- edit --------------------------------------------------------------
@@ -8421,8 +8453,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 t("Board not changed"),
-                f"[{result.code}] {result.message}\n\nMove or delete whatever is in the way "
-                "and try again.",
+                f"[{result.code}] {result.message}\n\n"
+                + t("Move or delete whatever is in the way and try again."),
             )
             return
         self.view.fit_board()
@@ -8821,7 +8853,7 @@ class MainWindow(QMainWindow):
         if text is None:
             QMessageBox.critical(
                 self,
-                t("Open failed"), problem or "Could not read the file.")
+                t("Open failed"), problem or t("Could not read the file."))
             return
         result = persist.deserialize_document(text)
         if not result.ok:
@@ -8952,7 +8984,9 @@ class MainWindow(QMainWindow):
     def _on_connect_progress(self, picked: list[Any]) -> None:
         self._refresh_mode_banner()
         if picked:
-            self.statusBar().showMessage(f"From {picked[0]} — click the pin it joins.", 0)
+            self.statusBar().showMessage(
+                t("From {pin} — click the pin it joins.").format(pin=picked[0]), 0
+            )
 
     def _on_pins_connected(self, result: Any) -> None:
         if result is None:
@@ -9155,7 +9189,7 @@ class MainWindow(QMainWindow):
         if text is None:
             QMessageBox.critical(
                 self,
-                t("Import failed"), problem or "Could not read the file.")
+                t("Import failed"), problem or t("Could not read the file."))
             return
         try:
             imported = parse_kicad_netlist(text)
@@ -9989,13 +10023,14 @@ class MainWindow(QMainWindow):
         except OSError as err:
             QMessageBox.critical(
                 self,
-                t("Export failed"), f"Could not write the guide: {err}")
+                t("Export failed"), t("Could not write the guide: {err}").format(err=err))
             return
 
         without = f" ({t('without its pictures')})" if rendered is None else ""
         self.statusBar().showMessage(
-            f"{describe_guide(guide)} — {written[0].name} and {len(written) - 1} more"
-            f"{without}",
+            f"{describe_guide(guide)} — "
+            + t("{name} and {count} more").format(name=written[0].name, count=len(written) - 1)
+            + without,
             0,
         )
         if guide.warnings:
@@ -10006,8 +10041,10 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self,
                 t("The guide has gaps"),
-                f"Written to {written[0].parent}, with {len(guide.warnings)} thing(s) it "
-                f"could not cover:\n\n{lines}",
+                t("Written to {folder}, with {count} thing(s) it could not cover:").format(
+                    folder=written[0].parent, count=len(guide.warnings)
+                )
+                + f"\n\n{lines}",
             )
         self._offer_to_open(written)
 
@@ -10058,12 +10095,16 @@ class MainWindow(QMainWindow):
             QApplication.restoreOverrideCursor()
         if failure is not None:
             QMessageBox.critical(
-                self, t("Export failed"), f"Could not write the schematic: {failure}"
+                self,
+                t("Export failed"),
+                t("Could not write the schematic: {err}").format(err=failure),
             )
             return
 
         self.statusBar().showMessage(
-            f"{len(drawing.symbols)} part(s) — {written[0].name} and {len(written) - 1} more",
+            t("{parts} part(s)").format(parts=len(drawing.symbols))
+            + " — "
+            + t("{name} and {count} more").format(name=written[0].name, count=len(written) - 1),
             8000,
         )
         self._offer_to_open(
@@ -10120,8 +10161,8 @@ class MainWindow(QMainWindow):
         box.setText(f"<b>Perfboard Studio {__version__}</b>")
         box.setInformativeText(
             f"{describe_version()}\n\n"
-            "Perfboard layout design, verification and a soldering guide.\n"
-            "Apache-2.0 · github.com/medinstech/perfboard-studio"
+            + t("Perfboard layout design, verification and a soldering guide.")
+            + "\nApache-2.0 · github.com/medinstech/perfboard-studio"
         )
         box.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
         box.exec()

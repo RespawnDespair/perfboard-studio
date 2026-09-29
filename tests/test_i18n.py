@@ -188,6 +188,69 @@ _UNWRAPPED = re.compile(
 _HAS_A_WORD = re.compile(r"[A-Za-z]{4}")
 
 
+#: Where a sentence reaches the person using the window: the status bar and message boxes.
+_MESSAGE_SINKS = frozenset(
+    {"showMessage", "critical", "warning", "information", "question", "setInformativeText",
+     "setLabelText", "_confirm"}
+)
+
+
+def _untranslated_parts(node: ast.AST) -> list[str]:
+    """The literal text in an argument that no ``t()`` reaches -- the parts that stay English."""
+    if isinstance(node, ast.Call):
+        if getattr(node.func, "id", "") == "t":
+            return []
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "format":
+            return _untranslated_parts(node.func.value) + [
+                part for arg in [*node.args, *(k.value for k in node.keywords)]
+                for part in _untranslated_parts(arg)
+            ]
+        return []
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [node.value]
+    if isinstance(node, ast.JoinedStr):
+        return [
+            part
+            for value in node.values
+            for part in (
+                [value.value] if isinstance(value, ast.Constant)
+                else _untranslated_parts(value.value) if isinstance(value, ast.FormattedValue)
+                else []
+            )
+        ]
+    if isinstance(node, ast.BinOp):
+        return _untranslated_parts(node.left) + _untranslated_parts(node.right)
+    if isinstance(node, ast.IfExp):
+        return _untranslated_parts(node.body) + _untranslated_parts(node.orelse)
+    if isinstance(node, ast.BoolOp):
+        return [part for value in node.values for part in _untranslated_parts(value)]
+    return []
+
+
+def test_no_message_is_built_out_of_untranslated_english() -> None:
+    """The catalogue scan reads ``t("...")`` literals, so a status line or a dialog built as
+    an f-string never entered it: "Cannot place there: ...", "Nothing to route: ...", the
+    auto-place confirmation and the About box were English in the Turkish interface with
+    nothing to say so. Markup, placeholders and addresses (``github.com/...``, a licence id)
+    are not prose; a four-letter word is."""
+    offenders: list[str] = []
+    for path in sorted(UI_DIR.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+            if name not in _MESSAGE_SINKS:
+                continue
+            for arg in node.args:
+                for part in _untranslated_parts(arg):
+                    text = re.sub(r"\S*[./]\S*", " ", re.sub(r"<[^>]*>", " ", part))
+                    if re.search(r"[A-Za-z]{4,}", text):
+                        offenders.append(f"{path.name}:{node.lineno}: {part.strip()[:70]!r}")
+    assert offenders == []
+
+
 def test_no_tooltip_or_placeholder_is_left_out_of_the_catalogue() -> None:
     """The direction the coverage number cannot see.
 

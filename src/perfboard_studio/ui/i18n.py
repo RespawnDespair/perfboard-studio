@@ -388,6 +388,57 @@ TURKISH: Mapping[str, str] = {
     "Export failed": "Dışa aktarılamadı",
     "Working": "Çalışıyor",
     "Drawing the build steps…": "Montaj adımları çiziliyor…",
+    # -- messages that used to be built as English f-strings -------------------
+    "Esc to stop placing.": "yerleştirmeyi bitirmek için Esc.",
+    "Cannot place there: {why}": "Oraya yerleştirilemez: {why}",
+    "{ref} is only named by a net; edit the net to remove it.": (
+        "{ref} yalnızca bir nette adı geçiyor; kaldırmak için neti düzenle."
+    ),
+    "{count} would not fit": "{count} tanesi sığmadı",
+    "Ctrl+R routes it; Ctrl+Shift+A arranges it again from a different seed.": (
+        "Ctrl+R yönlendirir; Ctrl+Shift+A farklı bir tohumla yeniden yerleştirir."
+    ),
+    "Place ▸ Try Another Arrangement searches again from a different seed.": (
+        "Yerleştir ▸ Başka Bir Yerleşim Dene, farklı bir tohumla yeniden arar."
+    ),
+    "Nothing to re-route": "Yeniden yönlendirilecek bir şey yok",
+    "Ctrl+Z puts them back.": "Ctrl+Z geri getirir.",
+    "Nothing to route:": "Yönlendirilecek bir şey yok:",
+    "Move or delete whatever is in the way and try again.": (
+        "Yolda ne varsa taşı ya da sil, sonra yeniden dene."
+    ),
+    "From {pin} — click the pin it joins.": "{pin} pininden — birleşeceği pine tıkla.",
+    "Could not write the guide: {err}": "Rehber yazılamadı: {err}",
+    "{name} and {count} more": "{name} ve {count} dosya daha",
+    "Written to {folder}, with {count} thing(s) it could not cover:": (
+        "{folder} klasörüne yazıldı; kapsayamadığı {count} şey var:"
+    ),
+    "Could not write the schematic: {err}": "Şema yazılamadı: {err}",
+    "{parts} part(s)": "{parts} parça",
+    "Perfboard layout design, verification and a soldering guide.": (
+        "Perfboard yerleşim tasarımı, doğrulama ve bir lehimleme rehberi."
+    ),
+    "{moved} of {movable} movable part(s) move": (
+        "Taşınabilir {movable} parçadan {moved} tanesi yer değiştiriyor"
+    ),
+    "{locked} locked part(s) stay put.": "kilitli {locked} parça yerinde kalıyor.",
+    "Estimated connection length: {before} mm → {after} mm.": (
+        "Tahmini bağlantı uzunluğu: {before} mm → {after} mm."
+    ),
+    "Each arrangement found was routed, and this is the one cheapest to "
+    "build (cost {cost}; seed {seed}).": (
+        "Bulunan her yerleşim yönlendirildi; bu, kurulması en ucuz olanı "
+        "(maliyet {cost}; tohum {seed})."
+    ),
+    "Overlapping bodies: {before} → {after}.": "Çakışan gövdeler: {before} → {after}.",
+    "Pins sharing a hole: {before} → {after}.": "Aynı deliği paylaşan pinler: {before} → {after}.",
+    "{count} problem(s):": "{count} sorun:",
+    "{count} connection(s) were left unrouted:": "{count} bağlantı yönlendirilemedi:",
+    "{ref} is in the design, not on the board yet.": "{ref} tasarımda var, ama henüz kartta değil.",
+    "{ref} is named by a net and is not in the design at all.": (
+        "{ref} yalnızca bir nette adı geçiyor; tasarımda hiç yok."
+    ),
+    "Could not read the file.": "Dosya okunamadı.",
     "Drawing step {done} of {total}…": "{total} adımın {done}. adımı çiziliyor…",
     "Skip the Pictures": "Görselleri Atla",
     "without its pictures": "görselleri olmadan",

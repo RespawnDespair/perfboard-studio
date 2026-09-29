@@ -50,6 +50,13 @@ closed without a bump.
 
 ### Fixed
 
+- **About thirty messages stayed English in the Turkish interface.** They were built as
+  f-strings, which the catalogue scan never reads — "Cannot place there", "Nothing to
+  route", the unrouted-connections report, the auto-place confirmation, the export
+  errors, the About box. They are translated now, the auto-place confirmation says what
+  was done rather than "router cost 812 (seed 0)", and `tests/test_i18n.py` reads every
+  argument that reaches the status bar or a message box for English no `t()` touches.
+
 - **Selecting a net lit its ratsnest and nothing else.** On a finished board there is
   no ratsnest left, so choosing GND in the Nets panel changed nothing anybody could see.
   The net's copper now glows in the ratsnest's highlight colour, on either face, judged by
