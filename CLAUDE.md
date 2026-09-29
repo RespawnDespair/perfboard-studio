@@ -1013,9 +1013,14 @@ emailed PNG and the embedded SVG to disagree about what the circuit is.
 
 Three things there are load-bearing:
 
-- **It is NOT a second copy of the panel, and the two differences are measurable.** Screen
-  labels hold a PIXEL size (`ui/scenetext.py` argues it at length); paper labels are
-  millimetres of sheet, the same split `export_pdf` already makes. And the panel is light
+- **It is NOT a second copy of the panel, and the two differences are measurable.** Paper
+  labels are millimetres of sheet; the panel draws the SAME millimetres but never below a
+  floor in pixels (`viewsch.label_px`), because a fitted sheet whose text shrank to nothing
+  would say nothing. It used to hold a fixed pixel size like the board's annotations, and at
+  the zoom the panel opens on that was two to three times the text the layout had cleared
+  room for -- lanes kept out of a value ran through it on screen. The sizes are
+  `schematic.REF_LABEL_MM` / `VALUE_LABEL_MM` / `NET_LABEL_MM` / `PIN_LABEL_MM`, one fact
+  for the layout, the panel and the SVG. And the panel is light
   ink on a dark sheet, which is right at midnight and wrong on every printer, so the export
   defaults to black on white — monochrome, because the rail glyphs already say which rail
   sinks and which sources and a photocopier keeps shapes and not colours. What the two must
@@ -1034,6 +1039,41 @@ Three things there are load-bearing:
 
 `--headless` writes the sheet too. It is the only place the writer, Qt's SVG renderer and a
 real board meet on all three operating systems, and the only export that needs no GL.
+
+### The window walks through six steps
+
+`ui/workflow.py` is the bar under the toolbar -- Circuit, Board, Placement, Wiring, Check,
+Build -- and the Next button beside it. `workflow_steps(WorkflowFacts)` is pure (counts in,
+statuses out) and tested in `tests/test_workflow.py`; the window builds the facts from what
+`on_bus_changed` already computed (`MainWindow.workflow_facts`). Every step's action is a
+command that already existed, reached from where it already was: the bar decides nothing
+about the document. Three things about it:
+
+- **A toolbar row, not a dock.** A top-area dock made the top area take a third of the
+  window's height, empty, for the reason DRC is split under the board (see below): with the
+  central widget capped to nothing, spare height goes to whichever dock area can take it.
+  The bar sheds its summaries, then its names, on a narrow window (`WorkflowBar._fit`) so it
+  never sets the window's minimum width.
+- **Choosing the board is a step**, because a perfboard is bought before it is populated.
+  `on_choose_board` asks the fit-tested stock-board question when the design has parts and
+  the board has none (`_offer_a_board_size`, `always=True` so it is never silent), Board
+  Setup otherwise; `_board_chosen` then stops Place on the Board asking again. It is session
+  state, reset by `_forget_the_previous_document`: a board with parts on it counts as chosen.
+- **A problem outranks the next step.** A DRC error or an LVS open/short on a placed board
+  makes Check the step Next does, whatever else is left -- but not before anything is placed,
+  when LVS reports every net unplaced and that is Placement's news.
+
+A netlist import feeds the same order: its parts go into the DESIGN in one `part.addMany`
+and the sheet comes forward; nothing lands on the board until a board is chosen.
+
+The main toolbar is three bars (`toolbar`, `board_toolbar`, `views_toolbar`) so the middle one
+can go: the board's tools show only while `board_is_showing()`, which is
+`schematic_is_showing`'s question about the other panel. `_fit_toolbar` sheds words across
+whichever bars are up; `toolbar_button(action)` finds an action's button on any of them.
+
+`ui/boardpreview.py` draws a board as a picture through `BoardScene` itself -- the board
+dialogs' previews and the stock-size grid -- so a picture cannot disagree with the board OK
+gives. References and pin names are off there (`show_references`, `show_pin_names`).
 
 ### The window is panels all the way down
 

@@ -22,6 +22,31 @@ closed without a bump.
 
 ### Added
 
+- **A step bar: Circuit, Board, Placement, Wiring, Check, Build — and Next.** The window
+  had every tool and no order: nothing said the circuit comes first, that a board is
+  chosen before the parts go on it, that routing joins them, that DRC says it can be built,
+  or that the guide and the 3D view are what it is built from. A row under the toolbar now
+  shows the six steps, where this board stands on each ("8 parts · 7 nets", "5 x 7 cm",
+  "8/8 on the board", "3 connections left", "0 errors · 1 warning"), and a Next button that
+  does whichever is next — a DRC error or an open net first. Pressing a step goes where it
+  is done. Choosing the board is a step of its own.
+
+- **Boards chosen by looking at them.** The question of which stock board a circuit goes
+  on is now a grid of pictures, each board with the circuit actually arranged on it, the
+  suggested one starred and the too-small ones greyed; and New Board and Board Setup draw
+  the chosen product — finger strips, corner holes, printed legend — beside the questions,
+  redrawn as the size changes. The pictures are drawn by the board view itself.
+
+- **A welcome that has somewhere to begin.** Draw a New Circuit, the shipped examples by
+  name with what each one is ("11 parts on a 6 x 8 cm board", the drawn-but-not-built one
+  first), Import a KiCad Netlist, and the six steps named once.
+
+- **Ground and power from a pin's right-click.** A pin on nothing offers the sheet's rails
+  by name, and GND and +5V when there are none — where it used to take the Label tool and
+  typing the name.
+
+- **`part.addMany`**: several parts into the design as one undo step, all or nothing.
+
 - **The build guide in Turkish.** The guide is what this application is for — the thing a
   person follows with an iron in their hand — and it was English in a Turkish window: every
   step, every check, the cut list, the parts list and the page they are printed from. It is
@@ -68,6 +93,36 @@ closed without a bump.
   checked, so the rule joins `PYTHON_ONLY_RULES` and is pinned there.
 
 ### Changed
+
+- **A netlist is imported into the design, not onto whatever board is open.** Its parts
+  used to land on the board after a question, beside what they connect to — skipping the
+  choice of board and leaving a first-pass placement nobody would keep. They now arrive in
+  the design with their values and pin names, the sheet comes forward, and Choose a Board
+  and Place on the Board take them from there.
+
+- **Add a Part offers the catalog first**, from the Parts panel's own tree: typing 555
+  finds the NE555 and gives it its value, its pin names and U as its letter, where it used
+  to list sixty-one packages with a crystal first and Y1 in the reference box. A value that
+  names a catalog part in the chosen package brings its pinout too.
+
+- **The board's tools are on the toolbar only while the board is in front.** With the
+  sheet in front the bar offered solder-trace and jumper tools, and a Rotate and a Mirror
+  that acted on the board's selection beside the sheet's own.
+
+- **A net is classed by its name** until somebody picks a class: GND typed in New Net, a
+  pin labelled GND, or N3 renamed GND is a ground net and drawn as ground symbols, where it
+  used to be a signal wired to every part.
+
+- **References on the board sit over their part, on a plate**, instead of at the corner of
+  the courtyard across the next row's pads.
+
+- **The schematic keeps its lanes out of the text.** Every row has room above for its
+  references and below for its values, so no trunk runs through "NE555" or "10nF"; net
+  names are placed clear of each other and of the parts' text; every power glyph says which
+  supply it is; and the panel draws text at the size the layout left room for.
+
+- **Qt's own buttons speak the window's language**: OK, Cancel, Close, Yes and No are
+  Tamam, İptal, Kapat, Evet and Hayır in Turkish.
 
 - **The example boards are routed the way Ctrl+R routes, and the README shows the
   application as it is.** `tools/build_examples.py` routed with the engine's default, which
