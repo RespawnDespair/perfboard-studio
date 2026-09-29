@@ -90,6 +90,28 @@ TURKISH: Mapping[str, str] = {
     "&Bare Wire": "&Çıplak Tel",
     "&Insulated Wire": "İ&zoleli Tel",
     "Top &Jumper": "Üst Yüz &Jumper",
+    "Join adjacent pads with solder. Orthogonal steps only — solder spans the "
+    "0.6 mm gap to the next pad and not the 1.7 mm diagonal one. Click each "
+    "pad, then Enter or right-click to finish.": (
+        "Komşu pedleri lehimle birleştirir. Yalnızca düz adımlar — lehim yandaki pede "
+        "olan 0,6 mm boşluğu kapatır, çaprazdaki 1,7 mm boşluğu kapatmaz. Her pede tıkla, "
+        "bitirmek için Enter veya sağ tık."
+    ),
+    "The same over a tinned-wire spine: about ten times lower resistance, and "
+    "what a power or ground rail longer than five or six pads wants.": (
+        "Aynısı, kalaylı bir tel omurganın üzerinde: yaklaşık on kat düşük direnç; beş altı "
+        "pedden uzun bir güç ya da toprak rayının istediği de budur."
+    ),
+    "Tinned wire on the solder side. Cannot cross other copper. Click both "
+    "ends.": (
+        "Lehim yüzünde kalaylı tel. Başka bakırın üzerinden geçemez. İki ucuna da tıkla."
+    ),
+    "May cross anything, at the cost of stripping it. Click both ends.": (
+        "Her şeyin üzerinden geçebilir; bedeli uçlarını soymaktır. İki ucuna da tıkla."
+    ),
+    "Insulated, routed over the component side. Occupies body space.": (
+        "İzoleli, komponent yüzünün üzerinden gider. Gövdelerin yerini kaplar."
+    ),
     "&Cut Track": "Şeridi &Kes",
     "&Stop the Current Tool": "Aracı &Bırak",
     # -- nets ----------------------------------------------------------------
@@ -129,6 +151,40 @@ TURKISH: Mapping[str, str] = {
     "&Balanced": "&Dengeli",
     "&Wire where possible": "Mümkün olan her yerde &kablo",
     "Bend component &legs where possible": "Mümkün olan her yerde &bacak bük",
+    "Route the board once with every style, measure what each would cost to "
+    "build -- traces, wires, wire length, bridging risk -- and keep the best. "
+    "Takes about as long as two ordinary routes; the comparison is reported.": (
+        "Kartı her stille bir kez yönlendir, her birinin yapım maliyetini ölç — lehim "
+        "yolları, teller, tel uzunluğu, köprüleme riski — ve en iyisini tut. İki sıradan "
+        "yönlendirme kadar sürer; karşılaştırma raporlanır."
+    ),
+    "Every connection a solder trace can make, IS one -- wire only where a "
+    "trace physically cannot get there. A short jumper carries a run over "
+    "anything it must cross. On the NE555 fixture: all 14 connections, not one "
+    "wire.": (
+        "Bir lehim yolunun yapabildiği her bağlantı lehim yolu olur — tel yalnızca lehim "
+        "yolunun fiziksel olarak ulaşamadığı yerde. Kesmesi gereken her şeyin üzerinden "
+        "kısa bir atlama teli geçirir. NE555 örneğinde: 14 bağlantının hepsi, tek tel yok."
+    ),
+    "No commitment: weigh each primitive on its own cost and take the cheapest "
+    "each time. The default, and what every golden fixture is routed with. On "
+    "a populated board this comes out as wire far more often than people "
+    "expect.": (
+        "Bağlılık yok: her bağlantı türünü kendi maliyetiyle tart ve her seferinde en "
+        "ucuzunu al. Varsayılan budur, altın örneklerin hepsi bununla yönlendirilir. Dolu bir "
+        "kartta beklenenden çok daha sık tel çıkar."
+    ),
+    "For anyone assembling with wire: every connection a wire can make is a "
+    "wire, including the rails. Solder only where a wire cannot reach.": (
+        "Telle kuranlar için: bir telin yapabildiği her bağlantı tel olur, raylar dahil. "
+        "Lehim yalnızca telin ulaşamadığı yerde."
+    ),
+    "Fold a component's own leg to a nearby hole first, then solder, then wire. "
+    "The cheapest connection there is -- no wire to cut, and already soldered "
+    "at one end.": (
+        "Önce parçanın kendi bacağını yakındaki bir deliğe bük, sonra lehim, sonra tel. "
+        "Olabilecek en ucuz bağlantı — kesilecek tel yok, bir ucu zaten lehimli."
+    ),
     "Preferred connection": "Tercih edilen bağlantı",
     "applies to the next route": "bir sonraki yönlendirmede geçerli olur",
     "Lay Wires Along the &Grid": "Telleri &Izgara Boyunca Döşe",
@@ -972,7 +1028,32 @@ TURKISH: Mapping[str, str] = {
         "Lehimleme sırası, pencerenin içinde: önce en alçak parça, üzerinde bir şey duran "
         "jumperlar ondan önce, entegreler en sonda. Bir adımı seçmek onu kart üzerinde gösterir."
     ),
-    "Step": "Adım",
+    # The phases, in the order they are soldered. The engine keeps them in English for the
+    # guide golden; the panel is interface.
+    "Preparation": "Hazırlık",
+    "Lowest profile": "En alçak parçalar",
+    "IC sockets": "Entegre soketleri",
+    "Small bodies": "Küçük gövdeler",
+    "Medium bodies": "Orta gövdeler",
+    "Tall and mechanical": "Uzun ve mekanik parçalar",
+    "Solder side: traces and bare wire": "Lehim yüzü: lehim yolları ve çıplak tel",
+    "Long insulated wires": "Uzun izoleli teller",
+    "Closing up": "Kapanış",
+    "{steps} step(s) across {phases} phase(s)": "{phases} aşamada {steps} adım",
+    "{count} check(s)": "{count} kontrol",
+    "{count} wire(s) to cut": "kesilecek {count} tel",
+    "{count} warning(s)": "{count} uyarı",
+    "bent lead": "bükülmüş bacak",
+    "solder trace": "lehim yolu",
+    "solder trace with a spine": "omurgalı lehim yolu",
+    "bare wire": "çıplak tel",
+    "insulated wire": "izoleli tel",
+    "top jumper": "üst yüz jumper",
+    "copper strip": "bakır şerit",
+    "1 hole apart": "1 delik ara",
+    "{count} holes apart": "{count} delik ara",
+    "pin 1 at {hole}": "1. pin {hole}",
+    "{count} pads": "{count} ped",
     "Export the Guide…": "Rehberi Dışa Aktar…",
     "Build guide written": "Montaj rehberi yazıldı",
     "Written to {folder}, with {count} other files.": (
@@ -1030,6 +1111,59 @@ TURKISH: Mapping[str, str] = {
         "{name} — {pins} pin, {height} mm yükseklik"
     ),
     "this board": "bu kart",
+    "{count} pin(s)": "{count} pin",
+    # -- the Parts panel's package families (main._archetype_headings) -------------------
+    "Axial resistors and diodes": "Eksenel dirençler ve diyotlar",
+    "Ceramic disc capacitors": "Seramik disk kondansatörler",
+    "Film capacitors": "Film kondansatörler",
+    "Electrolytic capacitors": "Elektrolitik kondansatörler",
+    "LEDs": "LED'ler",
+    "Crystals": "Kristaller",
+    "TO-92 packages": "TO-92 kılıflar",
+    "TO-220 packages": "TO-220 kılıflar",
+    "DIP packages": "DIP kılıflar",
+    "Pin headers": "Pin başlıkları",
+    "IDC box headers": "IDC kutu başlıklar",
+    "Screw terminals": "Vidalı klemensler",
+    "Screw terminals, wires from above": "Dik klemensler, kablo yukarıdan",
+    "Potentiometers": "Potansiyometreler",
+    "Tactile switches": "Tact butonlar",
+    "Relays": "Röleler",
+    "Module boards": "Modül kartları",
+    "Boxes of any size": "Her boyutta kutular",
+    # -- footprint names, as the engine phrases them (ui/partnames.py) -------------------
+    "Resistor (axial, {0}-hole span)": "Direnç (eksenel, {0} delik açıklık)",
+    "Axial ({0}-hole span, {1} mm body)": "Eksenel ({0} delik açıklık, {1} mm gövde)",
+    "Diode, {0}": "Diyot, {0}",
+    "Electrolytic capacitor, {0} mm dia, {1}-hole pitch": (
+        "Elektrolitik kondansatör, {0} mm çap, {1} delik aralık"
+    ),
+    "Disc ceramic capacitor, {0} mm dia, {1}-hole pitch": (
+        "Disk seramik kondansatör, {0} mm çap, {1} delik aralık"
+    ),
+    "Disc ceramic capacitor, {0}-hole pitch": "Disk seramik kondansatör, {0} delik aralık",
+    "Film capacitor, {0} mm, {1}-hole pitch": "Film kondansatör, {0} mm, {1} delik aralık",
+    "Film capacitor, {0}-hole pitch": "Film kondansatör, {0} delik aralık",
+    'DIP-{0} (0.6" wide)': 'DIP-{0} (0.6" geniş)',
+    "TO-92 (inline, on-grid)": "TO-92 (sıralı, ızgaraya oturan)",
+    "LED, {0} mm round": "LED, {0} mm yuvarlak",
+    "Pin header, {0}": "Pin başlığı, {0}",
+    "IDC box header, {0}": "IDC kutu başlık, {0}",
+    "Screw terminal, {0}-way, 5.08 mm pitch, vertical (wires from above)": (
+        "Vidalı klemens, {0} yollu, 5.08 mm aralık, dik (kablo yukarıdan)"
+    ),
+    "Screw terminal, {0}-way, 5.08 mm pitch": "Vidalı klemens, {0} yollu, 5.08 mm aralık",
+    "Screw terminal, {0}-way": "Vidalı klemens, {0} yollu",
+    "Potentiometer, 3-pin inline": "Potansiyometre, 3 pin sıralı",
+    "Tactile switch, 4-pin": "Tact buton, 4 pin",
+    "Tactile switch, {0} mm": "Tact buton, {0} mm",
+    "Crystal, HC-49/U": "Kristal, HC-49/U",
+    "Small SPDT relay": "Küçük SPDT röle",
+    "Custom part, {0} pins, {1} mm, body offset {2} mm": (
+        "Özel parça, {0} pin, {1} mm, gövde kaydırması {2} mm"
+    ),
+    "Custom part, {0} pins, {1} mm": "Özel parça, {0} pin, {1} mm",
+    "Module, {0} pins, {1} mm, seated {2} mm up": "Modül, {0} pin, {1} mm, {2} mm yukarıda",
     "Any rectangular part": "Herhangi bir dikdörtgen parça",
     "DIP (dual in-line)": "DIP (çift sıra)",
     "Pin header": "Pin başlığı",

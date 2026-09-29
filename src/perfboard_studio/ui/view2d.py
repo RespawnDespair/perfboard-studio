@@ -145,6 +145,7 @@ from .bodies import (
     surface_for,
 )
 from .i18n import t
+from .partnames import footprint_label
 from .scenetext import (
     draw_label,
     draw_physical_label,
@@ -2212,7 +2213,7 @@ class ComponentItem(QGraphicsItem):
         where = format_hole(comp.anchor)
         if comp.rotation:
             where += f"  {comp.rotation}°"
-        tip = f"{comp.ref}  {comp.value}\n{fp.name}{lock_note}\n{where}"
+        tip = f"{comp.ref}  {comp.value}\n{footprint_label(fp.name)}{lock_note}\n{where}"
         if names_left_off and show_pin_names:
             # Printed nowhere on the board for want of room, so said here instead.
             pins = ", ".join(f"{number} {name}" for number, name in names_left_off)

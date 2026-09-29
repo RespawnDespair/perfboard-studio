@@ -36,7 +36,7 @@ from perfboard_studio import persist
 from perfboard_studio.command import CommandBus, CommandContext, create_id_generator
 from perfboard_studio.commands import MoveComponentPayload, create_standard_registry
 from perfboard_studio.footprints import footprint_lookup
-from perfboard_studio.geometry import column_label
+from perfboard_studio.geometry import column_label, format_hole
 from perfboard_studio.model import (
     Board,
     ComponentInstance,
@@ -1961,6 +1961,156 @@ def test_picking_a_step_shows_it_on_the_board() -> None:
 
     assert window.scene.selected_component_ids() == (steps[part_index].component_id,)
     _close(window)
+
+
+def test_the_guide_panel_says_where_once() -> None:
+    """A step read "R1 240 — J21 → J18, 3 holes apart" beside a Where column saying
+    "J21 → J18, 3 holes apart" again -- and in a dock a third of the window wide, "R1…"
+    and the repeat were all anybody could read. Now: the part first, its holes once."""
+    from perfboard_studio.guide import PartStep
+    from perfboard_studio.ui.main import ROLE_STEP_INDEX
+
+    window = _window_on(_load_dense())
+    window.dock_guide.show()
+    window._refresh_guide_panel()
+    steps = window._assembly_steps()
+    try:
+        for index, step in enumerate(steps):
+            line = _guide_leaf_for(window, index, ROLE_STEP_INDEX).text(0)
+            if isinstance(step, PartStep):
+                assert line.startswith(f"{step.ref} {step.value}".strip()), line
+                # Two leads are named end to end; a wider part by where its pin 1 is.
+                pins = dict(step.pin_holes)
+                named = pins["1"] if len(pins) > 2 else step.pin_holes[0][1]
+            else:
+                assert line.startswith(f"{step.net_name} · "), line
+                named = step.path[0]
+            assert format_hole(named) in line, line
+            assert line.count("→") <= 1, line
+    finally:
+        _close(window)
+
+
+def test_the_guide_panel_counts_what_the_engine_counts() -> None:
+    """The panel's summary line is its own, so that it can be in the window's language --
+    and in English it is word for word the engine's, which is what the MCP server and the
+    headless run print."""
+    from perfboard_studio.guide import build_guide, describe
+    from perfboard_studio.ui.main import _guide_summary
+
+    for document in (_load_dense(), _example_document("atmega328-relay")):
+        guide = build_guide(document, footprint_lookup())
+        assert _guide_summary(guide) == describe(guide)
+
+
+def test_every_phase_is_titled_in_the_panel_as_the_engine_titles_it() -> None:
+    from perfboard_studio.guide import PHASE_TITLES
+    from perfboard_studio.ui.main import _phase_title
+
+    assert {number: _phase_title(number) for number in PHASE_TITLES} == PHASE_TITLES
+
+
+def test_every_conductor_kind_has_a_word_in_the_guide_panel() -> None:
+    from typing import get_args
+
+    from perfboard_studio.model import ConductorKind
+    from perfboard_studio.ui.main import _conductor_word
+
+    for kind in get_args(ConductorKind):
+        assert _conductor_word(kind)
+
+
+def _menu_tooltips(window) -> list[tuple[str, str]]:
+    """(text, tooltip) for every action in every menu, depth first, in menu order.
+
+    The actions are held while their submenus are read -- see
+    test_a_view_is_put_away_from_the_panels_submenu for what happens otherwise."""
+    found: list[tuple[str, str]] = []
+    held: list = []
+
+    def walk(menu) -> None:
+        actions = menu.actions()
+        held.append(actions)
+        for action in actions:
+            if action.isSeparator():
+                continue
+            found.append((action.text(), action.toolTip()))
+            if action.menu() is not None:
+                walk(action.menu())
+
+    tops = window.menuBar().actions()
+    held.append(tops)
+    for top in tops:
+        if top.menu() is not None:
+            walk(top.menu())
+    return found
+
+
+def test_no_menu_tooltip_is_left_in_english_in_turkish() -> None:
+    """The literal scan in test_i18n reads ``setToolTip("...")``, and a tooltip handed over
+    as a VARIABLE out of a table slipped past it: the Draw menu's five tools and the
+    routing styles' five explained themselves in English in a Turkish window, for as long
+    as the tables had existed. This asks the window instead of the source -- every tooltip
+    somebody wrote on purpose, in both languages, side by side."""
+    from perfboard_studio.ui.i18n import language, set_language
+
+    before = language()
+    try:
+        set_language("en")
+        english_window = _window_on(_load_dense())
+        english = _menu_tooltips(english_window)
+        set_language("tr")
+        turkish_window = _window_on(_load_dense())
+        turkish = _menu_tooltips(turkish_window)
+    finally:
+        set_language(before)
+    try:
+        assert len(english) == len(turkish)
+        left_in_english = [
+            tip
+            for (text, tip), (_tr_text, tr_tip) in zip(english, turkish, strict=True)
+            # Written on purpose: Qt's default tooltip is the text itself. Prose only --
+            # a file name in Open Recent is the same in every language.
+            if tip != text.replace("&", "") and " " in tip and tip == tr_tip
+        ]
+        assert left_in_english == [], left_in_english
+    finally:
+        _close(english_window)
+        _close(turkish_window)
+
+
+def test_in_turkish_the_guide_panel_is_in_turkish() -> None:
+    """The panel is interface, even though the guide it lists is written by the engine.
+    Phase headings and the summary were English in an otherwise Turkish window."""
+    from perfboard_studio.ui.i18n import language, set_language
+
+    before = language()
+    set_language("tr")
+    try:
+        window = _window_on(_load_dense())
+        try:
+            window.dock_guide.show()
+            window._refresh_guide_panel()
+            headings = [
+                window.guide_tree.topLevelItem(i).text(0)
+                for i in range(window.guide_tree.topLevelItemCount())
+            ]
+            assert any("Lehim yüzü" in heading for heading in headings), headings
+            assert "adım" in window.guide_summary.text()
+            assert "step(s)" not in window.guide_summary.text()
+        finally:
+            _close(window)
+    finally:
+        set_language(before)
+
+
+def _example_document(stem: str) -> PerfDocument:
+    root = pathlib.Path(__file__).resolve().parents[1]
+    result = persist.deserialize_document(
+        (root / "examples" / f"{stem}.perf").read_text(encoding="utf-8")
+    )
+    assert result.ok
+    return result.document
 
 
 def _guide_leaf_for(window, index, role):
@@ -9731,6 +9881,41 @@ def test_a_board_with_an_offset_module_and_a_box_header_draws() -> None:
 # ---------------------------------------------------------------------------
 # The catalog in the Parts panel, the module wizard, and pin names on the board
 # ---------------------------------------------------------------------------
+
+
+def test_every_package_family_has_a_heading_in_the_parts_panel() -> None:
+    """A package group was headed by its archetype's id with the hyphens taken out --
+    "axial cylinder", "box film", "to92" -- in both languages."""
+    from typing import get_args
+
+    from perfboard_studio.model import BodyArchetype
+    from perfboard_studio.ui.main import _archetype_headings
+
+    assert set(_archetype_headings()) == set(get_args(BodyArchetype))
+
+
+def test_the_parts_panel_names_its_packages_in_turkish() -> None:
+    from perfboard_studio.ui.i18n import language, set_language
+
+    before = language()
+    set_language("tr")
+    try:
+        window = _blank_window()
+        try:
+            tree = window.library_tree
+            groups = {tree.topLevelItem(i).text(0): tree.topLevelItem(i)
+                      for i in range(tree.topLevelItemCount())}
+            assert "axial cylinder" not in groups
+            axial = groups["Eksenel dirençler ve diyotlar"]
+            names = [axial.child(i).text(0) for i in range(axial.childCount())]
+            assert "Direnç (eksenel, 3 delik açıklık)" in names
+            # And the filter finds a part by its Turkish name as well as its English one.
+            window.library_filter.setText("direnç")
+            assert tree.topLevelItemCount() > 0
+        finally:
+            _close(window)
+    finally:
+        set_language(before)
 
 
 def _catalog_leaf(window, catalog_id: str):

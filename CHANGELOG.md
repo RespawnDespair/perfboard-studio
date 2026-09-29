@@ -126,6 +126,30 @@ closed without a bump.
 
 ### Fixed
 
+- **The build guide panel said where twice and showed neither.** Each step read "R1 240 —
+  J21 → J18, 3 holes apart" beside a Where column saying "J21 → J18, 3 holes apart" again,
+  and in a dock a few hundred pixels wide what was left of it was "R1…" and a phase called
+  "1. Lowes…". A step is now one line — the part or the connection first, its holes once —
+  with phase headings in full, and the panel, its summary and the 3D caption speak the
+  window's language: "GND · çıplak tel — C14 → B10" under "6. Lehim yüzü". The guide
+  itself, and every export of it, is written by the engine and is still English.
+
+- **The Parts panel named its packages by their ids.** Below "Transistors" and "Diodes"
+  came "axial cylinder", "box film" and "to92", in both languages and in alphabetical order
+  of the id, and every part under them was named in English in a Turkish window. The
+  groups are named as the catalog's are — "Axial resistors and diodes", "Film capacitors"
+  — in the order parts go on a board, and a part's name is shown in the window's language
+  wherever the window shows one: "Direnç (eksenel, 3 delik açıklık)". The engine's names
+  do not change (they are in the footprint golden); the panel recognises the engine's
+  phrasings, and a test fails on a library part named in words it does not recognise.
+  The filter finds a part by either name.
+
+- **Ten explanations were English in the Turkish window.** The Draw menu's five tools and
+  the five routing styles explain themselves on hover, and the tables they came from
+  handed the text over as a variable, which the catalogue's check reads past. They are
+  translated, and a new test builds the window in both languages and compares every menu
+  tooltip somebody wrote, however it was built.
+
 - **A part dragged onto the board had no shadow where it would land.** Dragging from the
   Parts panel or the sheet showed only the list's icon, at a fixed size and centred on the
   pointer, while the drop puts the part's first pin in the hole under the pointer — so the

@@ -95,7 +95,12 @@ def loop_built_labels() -> set[str]:
         )
         for raw in row
     }
-    return {scheme.label for scheme in SCHEMES} | tools | pairs | catalog_texts()
+    from perfboard_studio.ui.partnames import NAME_TEMPLATES
+
+    return (
+        {scheme.label for scheme in SCHEMES} | tools | pairs | catalog_texts()
+        | set(NAME_TEMPLATES)
+    )
 
 
 def catalog_texts() -> set[str]:
@@ -123,6 +128,58 @@ def test_every_word_the_catalog_says_about_a_part_is_in_turkish() -> None:
     assert missing == [], f"catalog text with no Turkish: {missing}"
     unused = sorted(SAME_IN_TURKISH - catalog_texts())
     assert unused == [], f"same-in-Turkish summaries the catalog no longer has: {unused}"
+
+
+def test_every_footprint_name_the_engine_writes_has_turkish() -> None:
+    """The Parts panel read "Resistor (axial, 3-hole span)" under a Turkish heading. The
+    engine keeps its English names (they are in the footprint golden), so the panel
+    recognises the engine's phrasings instead -- and a footprint added later in new words
+    must fail here rather than turn up in English."""
+    from perfboard_studio.footprints import standard_footprints
+    from perfboard_studio.ui.partnames import NAME_TEMPLATES, matching_template
+
+    untemplated = sorted(
+        footprint.name
+        for footprint in standard_footprints().values()
+        # A name with no word in it -- DIP-8, TO-220 -- is the same in every language.
+        if matching_template(footprint.name) is None
+        and re.search(r"[a-z]{3,}", footprint.name)
+    )
+    assert untemplated == [], f"footprint names no template recognises: {untemplated}"
+    missing = sorted(set(NAME_TEMPLATES) - set(TURKISH))
+    assert missing == [], f"footprint name templates with no Turkish: {missing}"
+
+
+def test_a_footprint_name_is_unchanged_in_english() -> None:
+    """The templates only ever RE-SAY a name. In English that must be the name itself,
+    down to the last digit, or the panel would be showing a part the file does not name."""
+    from perfboard_studio.footprints import generated_footprint, standard_footprints
+    from perfboard_studio.ui.partnames import footprint_label
+
+    names = [footprint.name for footprint in standard_footprints().values()]
+    for generated in ("box-4x2-p1-r3-15x10x8", "box-4x2-p1-r3-15x10x8-o2x-1.5", "idc-2x5",
+                      "screw-terminal-4", "screw-terminal-4-v"):
+        footprint = generated_footprint(generated)
+        assert footprint is not None, generated
+        names.append(footprint.name)
+    assert [footprint_label(name) for name in names] == names
+
+
+def test_a_footprint_name_keeps_its_numbers_in_turkish() -> None:
+    from perfboard_studio.ui.partnames import footprint_label
+
+    set_language("tr")
+    assert footprint_label("Resistor (axial, 3-hole span)") == "Direnç (eksenel, 3 delik açıklık)"
+    assert (
+        footprint_label("Electrolytic capacitor, 6.3 mm dia, 2-hole pitch")
+        == "Elektrolitik kondansatör, 6.3 mm çap, 2 delik aralık"
+    )
+    # A longer phrasing is never claimed by a shorter template that is its prefix.
+    assert footprint_label("Screw terminal, 4-way, 5.08 mm pitch") == (
+        "Vidalı klemens, 4 yollu, 5.08 mm aralık"
+    )
+    # A name somebody typed is shown as typed.
+    assert footprint_label("Hand-wound choke") == "Hand-wound choke"
 
 
 @pytest.fixture(autouse=True)

@@ -199,7 +199,6 @@ from perfboard_studio.guide import (
     document_at_step,
     step_focus,
 )
-from perfboard_studio.guide import describe as describe_guide
 from perfboard_studio.guide_export import bom_to_csv, cut_list_to_csv, guide_to_html, guide_to_json
 from perfboard_studio.lvs import LvsIssue, LvsResult, run_lvs, stale_conductor_ids
 from perfboard_studio.model import (
@@ -211,7 +210,9 @@ from perfboard_studio.model import (
     BoardMaterial,
     BoardSide,
     BoardType,
+    BodyArchetype,
     ComponentInstance,
+    ConductorKind,
     DocumentMeta,
     EdgeConnector,
     Footprint,
@@ -280,6 +281,7 @@ from .export_pdf import export_pdf
 from .export_schematic import SchematicRenderError, svg_to_pdf, svg_to_png
 from .i18n import language as current_language
 from .i18n import set_language, t
+from .partnames import footprint_label
 from .project import write_project
 from .theme import ERROR, OK, STYLESHEET, TEXT_DIM, WARNING
 from .view2d import (
@@ -511,6 +513,41 @@ def _catalog_headings() -> dict[str, str]:
         "ic": t("ICs"),
         "switch": t("Switches"),
         "module": t("Modules"),
+    }
+
+
+def _archetype_headings() -> dict[BodyArchetype, str]:
+    """The package families' groups in the Parts panel, named as the catalog's groups
+    above them are named, in the order the panel lists them.
+
+    The group used to be the archetype's id with its hyphens taken out -- "axial
+    cylinder", "box film", "to92" -- under "Transistors" and "Diodes", in both languages,
+    in alphabetical order of the id. An id is the tool's vocabulary in a file and a rule;
+    in a list somebody is reading to find a capacitor it is a word they have to translate
+    twice. The order is the one the parts go on a board in: passives, then
+    semiconductors, then what plugs in and what is handled. Every archetype has a heading,
+    including the ones only a generated part can have, and a test reads them off
+    ``BodyArchetype``. A function because the words go through ``t()``.
+    """
+    return {
+        "axial-cylinder": t("Axial resistors and diodes"),
+        "disc-ceramic": t("Ceramic disc capacitors"),
+        "box-film": t("Film capacitors"),
+        "radial-electrolytic": t("Electrolytic capacitors"),
+        "led-round": t("LEDs"),
+        "crystal-hc49": t("Crystals"),
+        "to92": t("TO-92 packages"),
+        "to220": t("TO-220 packages"),
+        "dip": t("DIP packages"),
+        "pin-header": t("Pin headers"),
+        "box-header": t("IDC box headers"),
+        "screw-terminal": t("Screw terminals"),
+        "screw-terminal-vertical": t("Screw terminals, wires from above"),
+        "potentiometer": t("Potentiometers"),
+        "tactile-switch": t("Tactile switches"),
+        "relay-box": t("Relays"),
+        "module-board": t("Module boards"),
+        "generic-box": t("Boxes of any size"),
     }
 
 
@@ -1531,7 +1568,9 @@ class ComponentDialog(QDialog):
         # The facts, so the dialog answers "which part is this" as well as renaming it.
         # A connector is placed by its pin 1 and named after nothing in particular, and at
         # this point the user has usually double-clicked to find out which one they hit.
-        name = footprint.name if footprint is not None else component.footprint_id
+        name = (
+            footprint_label(footprint.name) if footprint is not None else component.footprint_id
+        )
         pins = f"{len(footprint.pins)}" if footprint is not None else "?"
         height = f"{footprint.body_height:.1f} mm" if footprint is not None else "?"
         for label, fact in (
@@ -1620,7 +1659,9 @@ class GoToPartDialog(QDialog):
 
     def _describe(self, component: ComponentInstance) -> str:
         footprint = self._lookup(component.footprint_id)
-        name = footprint.name if footprint is not None else component.footprint_id
+        name = (
+            footprint_label(footprint.name) if footprint is not None else component.footprint_id
+        )
         value = f"  {component.value}" if component.value else ""
         return f"{component.ref}{value}  ·  {name}  ·  {format_hole(component.anchor)}"
 
@@ -2002,7 +2043,7 @@ class CustomPartDialog(QDialog):
             return
         self.identifier.setText(footprint.id)
         summary = t("{name} — {pins} pin(s), {height} mm tall").format(
-            name=footprint.name,
+            name=footprint_label(footprint.name),
             pins=len(footprint.pins),
             height=f"{footprint.body_height:g}",
         )
@@ -2157,10 +2198,16 @@ class AddPartDialog(QDialog):
         )
         for footprint in offered:
             custom = footprint.id in self._custom
-            haystack = f"{footprint.id} {footprint.name} {footprint.body.archetype}".lower()
+            haystack = (
+                f"{footprint.id} {footprint.name} {footprint_label(footprint.name)} "
+                f"{footprint.body.archetype}"
+            ).lower()
             if needle and not custom and needle not in haystack:
                 continue
-            item = QListWidgetItem(f"{footprint.name}  ·  {len(footprint.pins)} pin(s)")
+            item = QListWidgetItem(
+                f"{footprint_label(footprint.name)}  ·  "
+                + t("{count} pin(s)").format(count=len(footprint.pins))
+            )
             item.setData(Qt.ItemDataRole.UserRole, footprint.id)
             item.setIcon(icons.part_icon(footprint))
             self.list.addItem(item)
@@ -2636,6 +2683,122 @@ def _lvs_title(kind: str) -> str:
 
 def _severity_word(severity: str) -> str:
     return t("error") if severity == "error" else t("warning")
+
+
+def _phase_title(number: int) -> str:
+    """A build phase's heading in the guide panel.
+
+    The engine's ``PHASE_TITLES``, through ``t()``. The engine keeps its English because
+    the guide golden compares it byte for byte; the panel is interface and speaks the
+    interface's language. A test holds the English column of this table equal to the
+    engine's, so the two cannot name a phase differently.
+    """
+    titles = {
+        0: t("Preparation"),
+        1: t("Lowest profile"),
+        2: t("IC sockets"),
+        3: t("Small bodies"),
+        4: t("Medium bodies"),
+        5: t("Tall and mechanical"),
+        6: t("Solder side: traces and bare wire"),
+        7: t("Long insulated wires"),
+        8: t("Closing up"),
+    }
+    return titles.get(number, str(number))
+
+
+def _guide_summary(guide: Guide) -> str:
+    """The guide panel's one line: ``guide.describe`` in the window's language.
+
+    Identical to it in English, and a test says so -- the MCP server and the headless run
+    print the engine's own, and the three should not disagree about what they counted.
+    """
+    phases = sum(1 for phase in guide.phases if not phase.is_empty)
+    parts = [
+        t("{steps} step(s) across {phases} phase(s)").format(
+            steps=guide.total_steps, phases=phases
+        ),
+        t("{count} check(s)").format(count=guide.checkpoint_count),
+    ]
+    if guide.cut_list:
+        parts.append(t("{count} wire(s) to cut").format(count=len(guide.cut_list)))
+    if guide.warnings:
+        parts.append(t("{count} warning(s)").format(count=len(guide.warnings)))
+    return ", ".join(parts)
+
+
+def _conductor_word(kind: ConductorKind) -> str:
+    """What a conductor is called in a guide step, in lower case, as it reads after a net
+    name. Every kind has one; a test reads them off ``ConductorKind``."""
+    words = {
+        "lead-bend": t("bent lead"),
+        "solder-trace": t("solder trace"),
+        "solder-trace-wired": t("solder trace with a spine"),
+        "bare-wire": t("bare wire"),
+        "insulated-wire": t("insulated wire"),
+        "top-jumper": t("top jumper"),
+        "strip": t("copper strip"),
+    }
+    return words[kind]
+
+
+def _step_what(step: GuideStep) -> str:
+    """WHAT goes in -- a part by reference and value, a connection by its net and what it
+    is made of."""
+    if isinstance(step, PartStep):
+        return f"{step.ref} {step.value}".strip()
+    return f"{step.net_name} · {_conductor_word(step.conductor_kind)}"
+
+
+def _step_line(step: GuideStep) -> str:
+    """A step as the guide panel and the 3D caption say it: what, then where.
+
+    ``step.title`` says the same in the engine's English, which the guide golden holds it
+    to; this is the interface's. The panel used to show the title AND the span beside it
+    in a column of its own -- the holes twice, in a dock too narrow for them once.
+    """
+    where = _step_where(step)
+    return f"{_step_what(step)} — {where}" if where else _step_what(step)
+
+
+def _step_where(step: GuideStep) -> str:
+    """WHERE, built from holes rather than from the engine's span.
+
+    The span is English prose ("4 holes apart", "3 pins with pin 1 at J16") and the
+    panel is interface. The holes are the tool's vocabulary in every language, so they are
+    written as they are and only the words around them are translated. The shape of the
+    answer is the span's: two leads get their distance, anything wider gets the rectangle
+    it stands in and where pin 1 is, and a trace gets its pad count.
+    """
+    if isinstance(step, PartStep):
+        holes = [hole for _number, hole in step.pin_holes]
+        if not holes:
+            return ""
+        if len(holes) == 1:
+            return format_hole(holes[0])
+        cols = [hole.col for hole in holes]
+        rows = [hole.row for hole in holes]
+        if len(holes) == 2:
+            apart = max(max(cols) - min(cols), max(rows) - min(rows))
+            distance = (
+                t("1 hole apart") if apart == 1
+                else t("{count} holes apart").format(count=apart)
+            )
+            return f"{format_hole(holes[0])} → {format_hole(holes[1])} · {distance}"
+        corners = (
+            f"{format_hole(HoleCoord(min(cols), min(rows)))} → "
+            f"{format_hole(HoleCoord(max(cols), max(rows)))}"
+        )
+        pin_one = dict(step.pin_holes).get("1")
+        if pin_one is None:
+            return corners
+        return f"{corners} · " + t("pin 1 at {hole}").format(hole=format_hole(pin_one))
+    if not step.path:
+        return ""
+    ends = f"{format_hole(step.path[0])} → {format_hole(step.path[-1])}"
+    if step.conductor_kind in ("solder-trace", "solder-trace-wired", "strip"):
+        return f"{ends} · " + t("{count} pads").format(count=step.pads)
+    return ends
 
 
 class _OpensPanel(QObject):
@@ -3445,7 +3608,7 @@ class MainWindow(QMainWindow):
         elif index < 0:
             self.assembly_label.setText(t("Bare board"))
         else:
-            self.assembly_label.setText(f"{index + 1}/{len(steps)} · {steps[index].title}")
+            self.assembly_label.setText(f"{index + 1}/{len(steps)} · {_step_line(steps[index])}")
 
     def _on_assembly_moved(self, _value: int) -> None:
         self._update_assembly_label()
@@ -3879,18 +4042,19 @@ class MainWindow(QMainWindow):
         self.act_draw: dict[str, QAction] = {}
         for kind, label, shortcut, tip in (
             ("solder-trace", "&Solder Trace", "T",
-             "Join adjacent pads with solder. Orthogonal steps only — solder spans the "
-             "0.6 mm gap to the next pad and not the 1.7 mm diagonal one. Click each pad, "
-             "then Enter or right-click to finish."),
+             t("Join adjacent pads with solder. Orthogonal steps only — solder spans the "
+               "0.6 mm gap to the next pad and not the 1.7 mm diagonal one. Click each "
+               "pad, then Enter or right-click to finish.")),
             ("solder-trace-wired", "Solder Trace with S&pine", "Shift+T",
-             "The same over a tinned-wire spine: about ten times lower resistance, and "
-             "what a power or ground rail longer than five or six pads wants."),
+             t("The same over a tinned-wire spine: about ten times lower resistance, and "
+               "what a power or ground rail longer than five or six pads wants.")),
             ("bare-wire", "&Bare Wire", "W",
-             "Tinned wire on the solder side. Cannot cross other copper. Click both ends."),
+             t("Tinned wire on the solder side. Cannot cross other copper. Click both "
+               "ends.")),
             ("insulated-wire", "&Insulated Wire", "Shift+W",
-             "May cross anything, at the cost of stripping it. Click both ends."),
+             t("May cross anything, at the cost of stripping it. Click both ends.")),
             ("top-jumper", "Top &Jumper", "",
-             "Insulated, routed over the component side. Occupies body space."),
+             t("Insulated, routed over the component side. Occupies body space.")),
         ):
             action = draw_menu.addAction(t(label))
             action.setCheckable(True)
@@ -4034,24 +4198,26 @@ class MainWindow(QMainWindow):
         self.act_style: dict[str, QAction] = {}
         for style, label, tip in (
             ("best", t("&Try each and keep the best"),
-             "Route the board once with every style, measure what each would cost to "
-             "build -- traces, wires, wire length, bridging risk -- and keep the best. "
-             "Takes about as long as two ordinary routes; the comparison is reported."),
+             t("Route the board once with every style, measure what each would cost to "
+               "build -- traces, wires, wire length, bridging risk -- and keep the best. "
+               "Takes about as long as two ordinary routes; the comparison is reported.")),
             ("solder", t("&Solder trace where possible"),
-             "Every connection a solder trace can make, IS one -- wire only where a trace "
-             "physically cannot get there. A short jumper carries a run over anything it "
-             "must cross. On the NE555 fixture: all 14 connections, not one wire."),
+             t("Every connection a solder trace can make, IS one -- wire only where a "
+               "trace physically cannot get there. A short jumper carries a run over "
+               "anything it must cross. On the NE555 fixture: all 14 connections, not one "
+               "wire.")),
             ("balanced", t("&Balanced"),
-             "No commitment: weigh each primitive on its own cost and take the cheapest "
-             "each time. The default, and what every golden fixture is routed with. On a "
-             "populated board this comes out as wire far more often than people expect."),
+             t("No commitment: weigh each primitive on its own cost and take the cheapest "
+               "each time. The default, and what every golden fixture is routed with. On "
+               "a populated board this comes out as wire far more often than people "
+               "expect.")),
             ("wire", t("&Wire where possible"),
-             "For anyone assembling with wire: every connection a wire can make is a wire, "
-             "including the rails. Solder only where a wire cannot reach."),
+             t("For anyone assembling with wire: every connection a wire can make is a "
+               "wire, including the rails. Solder only where a wire cannot reach.")),
             ("lead-bend", t("Bend component &legs where possible"),
-             "Fold a component's own leg to a nearby hole first, then solder, then wire. "
-             "The cheapest connection there is -- no wire to cut, and already soldered at "
-             "one end."),
+             t("Fold a component's own leg to a nearby hole first, then solder, then wire. "
+               "The cheapest connection there is -- no wire to cut, and already soldered "
+               "at one end.")),
         ):
             action = style_menu.addAction(label)
             action.setCheckable(True)
@@ -4656,10 +4822,15 @@ class MainWindow(QMainWindow):
         tree = self.library_tree
         tree.blockSignals(True)
         tree.clear()
-        by_archetype: dict[str, list[Footprint]] = {}
+        by_archetype: dict[BodyArchetype, list[Footprint]] = {}
         custom = self.custom_footprints()
         for footprint in sorted(standard_footprints().values(), key=lambda f: f.name):
-            haystack = f"{footprint.id} {footprint.name} {footprint.body.archetype}".lower()
+            # In either language, as the catalog rows are: "direnç" finds a resistor as
+            # "resistor" does.
+            haystack = (
+                f"{footprint.id} {footprint.name} {footprint_label(footprint.name)} "
+                f"{footprint.body.archetype}"
+            ).lower()
             if needle and needle not in haystack:
                 continue
             by_archetype.setdefault(footprint.body.archetype, []).append(footprint)
@@ -4675,11 +4846,15 @@ class MainWindow(QMainWindow):
             group.setIcon(0, icons.part_icon(ordered[0]))
             tree.addTopLevelItem(group)
             for footprint in ordered:
-                leaf = QTreeWidgetItem([footprint.name, str(len(footprint.pins))])
+                leaf = QTreeWidgetItem(
+                    [footprint_label(footprint.name), str(len(footprint.pins))]
+                )
                 leaf.setData(0, ROLE_FOOTPRINT_ID, footprint.id)
                 leaf.setIcon(0, icons.part_icon(footprint))
                 leaf.setToolTip(
-                    0, f"{footprint.name}\n{footprint.id} — {len(footprint.pins)} pin(s)"
+                    0,
+                    f"{footprint_label(footprint.name)}\n{footprint.id} — "
+                    + t("{count} pin(s)").format(count=len(footprint.pins)),
                 )
                 group.addChild(leaf)
             group.setExpanded(True)
@@ -4722,15 +4897,19 @@ class MainWindow(QMainWindow):
                 group.addChild(leaf)
             group.setExpanded(bool(needle))
 
-        for archetype in sorted(by_archetype):
-            group = QTreeWidgetItem([archetype.replace("-", " "), ""])
+        families = _archetype_headings()
+        order = list(families)
+        for archetype in sorted(by_archetype, key=order.index):
+            group = QTreeWidgetItem([families[archetype], ""])
             group.setFlags(group.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             # The group takes the picture of its first member, which is the archetype's
             # picture: every part under it is that shape in that colour.
             group.setIcon(0, icons.part_icon(by_archetype[archetype][0]))
             tree.addTopLevelItem(group)
             for footprint in by_archetype[archetype]:
-                leaf = QTreeWidgetItem([footprint.name, str(len(footprint.pins))])
+                leaf = QTreeWidgetItem(
+                    [footprint_label(footprint.name), str(len(footprint.pins))]
+                )
                 leaf.setData(0, ROLE_FOOTPRINT_ID, footprint.id)
                 # In the colours the board draws it in, so finding the part you picked is
                 # recognition rather than reading -- see the note in icons.py.
@@ -4739,7 +4918,9 @@ class MainWindow(QMainWindow):
                 # elided: "Film capa…" in a 300 px dock is the string a tooltip has to
                 # finish, and the id alone was no help at all with that.
                 leaf.setToolTip(
-                    0, f"{footprint.name}\n{footprint.id} — {len(footprint.pins)} pin(s)"
+                    0,
+                    f"{footprint_label(footprint.name)}\n{footprint.id} — "
+                    + t("{count} pin(s)").format(count=len(footprint.pins)),
                 )
                 group.addChild(leaf)
             # Expanded only when the filter has narrowed things down, otherwise the twenty-eight
@@ -4793,7 +4974,7 @@ class MainWindow(QMainWindow):
             self._refresh_mode_banner()
             return
         footprint = self.lookup(footprint_id)
-        name = footprint.name if footprint is not None else footprint_id
+        name = footprint_label(footprint.name) if footprint is not None else footprint_id
         ref = next_reference(self.bus.document, footprint_id, self.scene.placement_prefix)
         described = f"{self.scene.placement_value} {name}" if self.scene.placement_value else name
         self.label_place_hint.setText(
@@ -4852,7 +5033,7 @@ class MainWindow(QMainWindow):
         footprint_id = self.scene.armed_footprint_id
         if footprint_id:
             footprint = self.lookup(footprint_id)
-            name = footprint.name if footprint is not None else footprint_id
+            name = footprint_label(footprint.name) if footprint is not None else footprint_id
             ref = next_reference(self.bus.document, footprint_id, self.scene.placement_prefix)
             value = self.scene.placement_value
             described = f"{value} {name}" if value else name
@@ -6394,11 +6575,16 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.guide_summary)
 
         self.guide_tree = QTreeWidget()
-        self.guide_tree.setHeaderLabels([t("Step"), t("Where")])
+        # ONE column: what goes in, then where. It was two -- the step and a Where column --
+        # in a dock a few hundred pixels wide, and whichever way the width was shared one
+        # of them was cut to "R1…" or pushed off the edge. In a single line the part is
+        # always read first and the holes follow as far as there is room; the whole line
+        # is the row's tooltip.
+        self.guide_tree.setHeaderHidden(True)
         self.guide_tree.setRootIsDecorated(True)
-        header = self.guide_tree.header()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        # Two levels deep in that same narrow dock; Qt's 20 px a level was a fifth of it
+        # spent on nothing.
+        self.guide_tree.setIndentation(12)
         self.guide_tree.itemSelectionChanged.connect(self._on_guide_step_selected)
         layout.addWidget(self.guide_tree)
 
@@ -6435,7 +6621,7 @@ class MainWindow(QMainWindow):
         self._guide_stale = False
         guide = self.current_guide()
         steps = self._assembly_cached
-        self.guide_summary.setText(describe_guide(guide))
+        self.guide_summary.setText(_guide_summary(guide))
 
         tree = self.guide_tree
         blocked = tree.blockSignals(True)
@@ -6446,18 +6632,23 @@ class MainWindow(QMainWindow):
                 # The order is physical, not editorial (guide.py), and a board simply may
                 # not need a phase. An empty heading reads as a step somebody forgot.
                 continue
-            head = QTreeWidgetItem([f"{phase.number}. {phase.title}", f"{len(phase.steps)}"])
+            heading = f"{phase.number}. {_phase_title(phase.number)}"
+            if phase.steps:
+                heading += f" ({len(phase.steps)})"
+            head = QTreeWidgetItem([heading])
             head.setFlags(head.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             tree.addTopLevelItem(head)
             for step in phase.steps:
-                leaf = QTreeWidgetItem([step.title, step.span])
+                line = _step_line(step)
+                leaf = QTreeWidgetItem([line])
+                leaf.setToolTip(0, line)
                 # The index into the FLAT list, which is what the assembly slider and
                 # document_at_step both count in -- see guide.all_steps.
                 leaf.setData(0, ROLE_STEP_INDEX, index)
                 head.addChild(leaf)
                 index += 1
             for checkpoint in phase.checkpoints:
-                mark = QTreeWidgetItem([f"✓ {checkpoint.title}", ""])
+                mark = QTreeWidgetItem([f"✓ {checkpoint.title}"])
                 mark.setForeground(0, QColor(OK))
                 mark.setFlags(mark.flags() & ~Qt.ItemFlag.ItemIsSelectable)
                 head.addChild(mark)
@@ -7479,7 +7670,9 @@ class MainWindow(QMainWindow):
             bits = [f"<b>{c.ref}</b>"]
             if c.value:
                 bits.append(c.value)
-            bits.append(footprint.name if footprint is not None else f"?{c.footprint_id}")
+            bits.append(
+                footprint_label(footprint.name) if footprint is not None else f"?{c.footprint_id}"
+            )
             bits.append(format_hole(c.anchor))
             if c.rotation:
                 bits.append(f"{c.rotation}°")
@@ -10426,7 +10619,7 @@ class MainWindow(QMainWindow):
 
         without = f" ({t('without its pictures')})" if rendered is None else ""
         self.statusBar().showMessage(
-            f"{describe_guide(guide)} — "
+            f"{_guide_summary(guide)} — "
             + t("{name} and {count} more").format(name=written[0].name, count=len(written) - 1)
             + without,
             0,
