@@ -155,6 +155,14 @@ closed without a bump.
   phrasings, and a test fails on a library part named in words it does not recognise.
   The filter finds a part by either name.
 
+- **A ground symbol could be drawn inside a power symbol on the schematic.** Where a
+  ground rail from the row above and a power rail from the row below met at one point of a
+  channel, the lane above went to whichever net's id sorted first — ground, usually — and
+  the two glyphs, pointing at each other a lane apart and a column across, drew their bars
+  into each other: stacked lines that read as a battery. It happened on five sheets,
+  `nano-relay` among them. Power takes the upper lane now, so both point away, and a test
+  holds every glyph on every sheet clear of every other.
+
 - **A window a little too narrow for the toolbar lost every word on it.** The toolbar
   needs 1536 px with its words in English and 1624 in Turkish, and the rule was all the
   words or none — so on a 1920 screen at 125 % a Turkish window dropped them all to be 90

@@ -511,6 +511,39 @@ def test_nothing_is_drawn_through_a_rail_glyph(path: Path) -> None:
                 )
 
 
+def _glyph_box(rail) -> tuple[float, float, float, float]:
+    deep = RAIL_GLYPH_DEPTH_MM if rail.direction == "down" else -RAIL_GLYPH_DEPTH_MM
+    return (
+        rail.at.x - RAIL_GLYPH_MM,
+        min(rail.at.y, rail.at.y + deep),
+        rail.at.x + RAIL_GLYPH_MM,
+        max(rail.at.y, rail.at.y + deep),
+    )
+
+
+@pytest.mark.parametrize("path", ALL_BOARDS, ids=lambda path: path.stem)
+def test_no_two_rail_glyphs_are_drawn_into_each_other(path: Path) -> None:
+    """The test above keeps WIRES out of a glyph and says nothing about another glyph.
+
+    A ground in the upper lane of a channel pointing down, and a power rail one lane below
+    and one column across pointing up, met in the middle: on five sheets -- `nano-relay`
+    among them -- a ground's bars were drawn inside a power symbol. Power takes the upper
+    lane now, so the two point away from each other and their boxes cannot meet.
+    """
+    rails = drawing_for(path).rails
+    for first in range(len(rails)):
+        for second in range(first + 1, len(rails)):
+            a, b = _glyph_box(rails[first]), _glyph_box(rails[second])
+            meeting = (
+                a[0] < b[2] - 1e-9 and b[0] < a[2] - 1e-9
+                and a[1] < b[3] - 1e-9 and b[1] < a[3] - 1e-9
+            )
+            assert not meeting, (
+                f"the {rails[first].net_name} glyph at {rails[first].at} and the "
+                f"{rails[second].net_name} glyph at {rails[second].at} are drawn into each other"
+            )
+
+
 def test_the_glyph_can_never_reach_the_lane_beside_it() -> None:
     """The whole guarantee above rests on this, so it is asserted rather than assumed.
 

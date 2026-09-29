@@ -2883,8 +2883,19 @@ def _derived_sheet(
     # it -- and unlike a crossing, there is no convention that says otherwise. Reserving
     # the lane costs at most one extra track in a channel, and rails pack into it densely
     # because each claims a single column rather than a span.
-    def _rail_key(net_id: NetId, ref: str, number: str) -> str:
-        return f"rail\x1f{net_id}\x1f{ref}\x1f{number}"
+    #
+    # POWER SORTS BEFORE GROUND, and that is what keeps two glyphs apart. Ground rails in
+    # a channel belong to the row above it and point down; power rails belong to the row
+    # below and point up. Two of them at the same point of a channel need two lanes, and
+    # the sweep hands the first one it meets the upper lane. When that was ground -- by
+    # nothing more than its net id sorting first -- the two glyphs pointed at each other a
+    # lane apart, and a glyph is most of a lane deep and most of a lane wide: on five
+    # sheets in this repository, `nano-relay` among them, a ground's bars sat inside a
+    # power symbol one column across. With power in the upper lane both point away, and
+    # the two boxes cannot meet at all.
+    def _rail_key(net: Net, ref: str, number: str) -> str:
+        order = "0" if net.net_class == "power" else "1"
+        return f"rail\x1f{order}\x1f{net.id}\x1f{ref}\x1f{number}"
 
     pin_channel: dict[tuple[NetId, str, str], int] = {}
     trunk_channel: dict[NetId, int] = {}
@@ -2900,7 +2911,7 @@ def _derived_sheet(
             upward = item.net.net_class == "power"
             for ref, pin in item.pins:
                 channel = symbols[ref].row if upward else symbols[ref].row + 1
-                key = _rail_key(item.net.id, ref, pin.number)
+                key = _rail_key(item.net, ref, pin.number)
                 rail_channel[key] = channel
                 lane = float(pin_channel[(item.net.id, ref, pin.number)])
                 horizontal_runs[channel].append((key, lane, lane))
@@ -2960,7 +2971,7 @@ def _derived_sheet(
             if item.rail:
                 # Padded PAST the anchor by the glyph's depth, so nothing else is given the
                 # same track through the space the bars are drawn in.
-                glyph = rail_y[_rail_key(item.net.id, ref, pin.number)]
+                glyph = rail_y[_rail_key(item.net, ref, pin.number)]
                 beyond = glyph + (
                     -RAIL_GLYPH_DEPTH_MM if glyph < anchor_y else RAIL_GLYPH_DEPTH_MM
                 )
@@ -3017,7 +3028,7 @@ def _derived_sheet(
             for ref, pin in item.pins:
                 anchor = symbols[ref].anchor_of(pin)
                 x = _track_x(net.id, ref, pin.number)
-                end_y = rail_y[_rail_key(net.id, ref, pin.number)]
+                end_y = rail_y[_rail_key(net, ref, pin.number)]
                 rails.append(
                     Rail(
                         net_id=net.id,
