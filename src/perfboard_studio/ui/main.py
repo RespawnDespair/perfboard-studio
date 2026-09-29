@@ -7762,6 +7762,12 @@ class MainWindow(QMainWindow):
         )
         self.act_undo.setToolTip(f"{t('Undo')} {last}" if last else t("Nothing to undo"))
         self.act_redo.setToolTip(f"{t('Redo')} {next_up}" if next_up else t("Nothing to redo"))
+        # ...but the TOOLBAR BUTTON keeps its one word. A toolbar draws an action's iconText,
+        # which follows the text unless it is set, so the button grew to "Undo Autoroute 7
+        # nets (14 connections)" and pushed every button after it along the bar. The
+        # description is one hover away, in the tooltip above.
+        self.act_undo.setIconText(t("&Undo").replace("&", ""))
+        self.act_redo.setIconText(t("&Redo").replace("&", ""))
 
     # -- editing the selection ----------------------------------------------
     #

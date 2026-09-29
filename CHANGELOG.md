@@ -91,6 +91,10 @@ closed without a bump.
   `#AARRGGBB`, a fully transparent blue. A test now refuses an eight-digit colour string
   anywhere in the interface.
 
+- **The Undo button grew with the command it named** — "Undo Autoroute 7 nets (14
+  connections)" — and pushed every button after it along the toolbar. The button keeps
+  its one word; the menu and the tooltip still name the command.
+
 - **Borrowed parts were shaded in flat facets** — an LED's dome, a can's side — because the
   meshes carry no normals. They are computed once per mesh when it is read, with a feature
   angle that keeps real edges sharp.

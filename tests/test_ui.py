@@ -7655,6 +7655,24 @@ def test_undo_and_redo_name_the_command_in_the_menu() -> None:
         _close(window)
 
 
+def test_the_undo_button_keeps_its_one_word() -> None:
+    """The menu names the command; the toolbar button used to as well, and grew to "Undo
+    Autoroute 7 nets (14 connections)", shoving every button after it along the bar."""
+    from perfboard_studio.ui import i18n
+
+    window = _window_on(_load_dense())
+    try:
+        first = window.bus.document.components[0]
+        window.bus.dispatch("component.move", MoveComponentPayload(id=first.id, anchor=HoleCoord(3, 3)))
+        assert first.ref in window.act_undo.text()
+        assert first.ref in window.act_undo.toolTip()
+        assert window.act_undo.iconText() == i18n.t("&Undo").replace("&", "")
+        window.on_undo()
+        assert window.act_redo.iconText() == i18n.t("&Redo").replace("&", "")
+    finally:
+        _close(window)
+
+
 def test_save_is_enabled_only_when_there_is_something_to_save(tmp_path) -> None:
     """Ctrl+S on an unmodified board rewrote the file -- a new modified stamp, a new
     mtime -- for nothing."""
