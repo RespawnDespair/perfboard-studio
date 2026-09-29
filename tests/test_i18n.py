@@ -463,6 +463,26 @@ def test_the_language_is_not_taken_for_a_file_to_open() -> None:
     assert _document_arguments(["perfboard-studio", "--lang"]) == []
 
 
+def test_the_headless_run_does_not_take_the_language_for_a_file_either(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    """The same bug, in the run that kept its own copy of the rule: ``--headless --lang tr
+    board.perf`` looked for a document called "tr". Asked for a board that is not there,
+    so it stops at the first line instead of rendering anything."""
+    from PySide6.QtWidgets import QApplication
+
+    from perfboard_studio.ui.headless import headless
+
+    QApplication.instance() or QApplication([])
+    monkeypatch.chdir(tmp_path)
+    missing = tmp_path / "board.perf"
+
+    assert headless(["--lang", "tr", str(missing)]) == 1
+    printed = capsys.readouterr().out
+    assert f"document     {missing}" in printed
+    assert "no such file: tr" not in printed
+
+
 def test_available_lists_exactly_what_can_be_selected() -> None:
     assert set(AVAILABLE) == {"en", *CATALOGUES}
 

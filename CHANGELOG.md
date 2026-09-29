@@ -167,6 +167,11 @@ closed without a bump.
   phrasings, and a test fails on a library part named in words it does not recognise.
   The filter finds a part by either name.
 
+- **`--headless --lang tr board.perf` looked for a board called "tr".** The window's
+  command line was fixed for exactly this once, and the headless run kept its own copy of
+  the old rule — every argument not starting with `--` — so the language's value became
+  the document. It reads the command line the way the window does now.
+
 - **The build guide counted a wire's corners as pads.** A wire laid along the grid keeps its
   bends in its path, and the step card called each one a pad — "bare wire · 25.4 mm · 4
   pads" for a wire soldered at two ends, which reads as two more joints to make on a wire

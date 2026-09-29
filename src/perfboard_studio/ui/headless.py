@@ -53,7 +53,7 @@ from . import view3d
 from .export_pdf import export_pdf, verify_scale
 from .export_schematic import svg_to_pdf, svg_to_png
 from .i18n import language
-from .main import read_document_text
+from .main import _document_arguments, read_document_text
 from .view2d import RULER_MARGIN_MM, BoardScene
 
 
@@ -88,7 +88,10 @@ def headless(argv: list[str]) -> int:
     app = QApplication.instance() or QApplication(sys.argv[:1])
     lookup = footprint_lookup()
 
-    positional = [a for a in argv if not a.startswith("--")]
+    # The window's own reading of a command line, not a second one: "not a flag" alone
+    # took the value of --lang for the document, so `--headless --lang tr board.perf`
+    # opened a file called "tr" -- the bug main._document_arguments was written to fix.
+    positional = _document_arguments(["", *argv])
     perf_path = Path(positional[0]) if positional else _find_repo_root() / "tools" / "diffcheck" / "golden" / "dense.perf"
 
     out_dir = Path.cwd() / "headless_out"
