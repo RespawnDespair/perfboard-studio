@@ -22,7 +22,7 @@ text has to scale with the page, and at 600 dpi ordinary point sizes work correc
 from __future__ import annotations
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QFont, QFontMetricsF, QGuiApplication, QPainter
+from PySide6.QtGui import QColor, QFont, QFontMetricsF, QGuiApplication, QPainter
 
 from .bodies import PIN_NAME_HEIGHT_MM
 
@@ -50,11 +50,16 @@ def draw_label(
     alignment: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom,
     bold: bool = False,
     offset: QPointF | None = None,
+    background: QColor | None = None,
 ) -> None:
     """Draw ``text`` at a fixed ``pixel_size``, anchored at the scene point ``anchor``.
 
     ``offset`` shifts the label in DEVICE pixels after positioning, which is how a drop
     shadow or a few pixels of clearance stay constant instead of growing with zoom.
+
+    ``background`` puts a rounded plate behind the text, a few pixels bigger than it -- the
+    one way to keep a label readable over whatever it lands on: pads, a pale body, the
+    printed legend. A drop shadow a pixel wide does it over flat substrate and nowhere else.
     """
     transform = painter.transform()
     device = transform.map(anchor)
@@ -73,6 +78,14 @@ def draw_label(
     painter.save()
     painter.resetTransform()
     painter.setFont(font)
+    if background is not None:
+        pen = painter.pen()
+        used = metrics.boundingRect(box, int(alignment), text)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(background)
+        radius = height * 0.3
+        painter.drawRoundedRect(used.adjusted(-4, -1, 4, 1), radius, radius)
+        painter.setPen(pen)
     painter.drawText(box, int(alignment), text)
     painter.restore()
 

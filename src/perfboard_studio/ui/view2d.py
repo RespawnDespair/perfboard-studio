@@ -180,6 +180,9 @@ PIN_MARKER = QColor("#8d949e")
 PIN_ONE = QColor("#f0f3f8")
 LABEL = QColor("#15151a")
 REF_LABEL = QColor("#eef1f8")
+#: The plate behind a reference: dark enough to carry light text over tinned pads, clear
+#: enough that the board still shows through at its edges.
+REF_PLATE = QColor(14, 16, 22, 185)
 SELECTED = QColor("#4c9dff")
 ERROR_OUTLINE = QColor("#e5484d")
 #: The part on the far side, seen through the board. Dim on purpose: on the solder side
@@ -2233,6 +2236,21 @@ class ComponentItem(QGraphicsItem):
             self.has_error = has_error
             self.update()
 
+    def _local_body_rect(self) -> QRectF:
+        """The real body (``bodies.placement_for``), in item coordinates -- turned and
+        mirrored with the part, so the reference above it stays above the body whichever
+        way the part is placed."""
+        placement = placement_for(self.fp, self.board.pitch)
+        half_x, half_y = placement.size_x / 2, placement.size_y / 2
+        corners = [
+            _local_offset_mm(placement.centre_x + sx * half_x, placement.centre_y + sy * half_y,
+                             self.comp, self.side)
+            for sx, sy in ((-1, -1), (1, 1))
+        ]
+        xs = [x for x, _ in corners]
+        ys = [y for _, y in corners]
+        return QRectF(QPointF(min(xs), min(ys)), QPointF(max(xs), max(ys)))
+
     def _local_outline(self) -> QPolygonF:
         poly = QPolygonF()
         for pt in self.fp.body_outline:
@@ -2261,8 +2279,21 @@ class ComponentItem(QGraphicsItem):
         # space the further out the view is zoomed (see scenetext.label_extent_mm). Sized for
         # the lowest zoom at which the label is still drawn.
         top = 1.5 + REF_LABEL_PX / 3.0
-        body = self._local_outline().boundingRect().adjusted(-1.5, -top, 1.5, 3.0)
+        # ...and as wide as the reference on its plate, centred: "LED10" over a 3 mm LED
+        # is wider than the part.
+        side = max(1.5, (len(self.comp.ref) * REF_LABEL_PX * 0.7 + 10) / 3.0 / 2)
+        body = self._local_outline().boundingRect().adjusted(-side, -top, side, 3.0)
         return body.united(self._names_rect) if not self._names_rect.isNull() else body
+
+    def shape(self) -> QPainterPath:
+        """What a click on this part is: the part and the strip over it -- NOT the whole
+        painted area. Without its own shape an item is hit-tested by its bounding rect,
+        and that rect is widened to hold a reference plate that can be wider than the
+        part, so a click on the part beside it selected this one."""
+        path = QPainterPath()
+        top = 1.5 + REF_LABEL_PX / 3.0
+        path.addRect(self._local_outline().boundingRect().adjusted(-1.5, -top, 1.5, 3.0))
+        return path
 
     def _apply_local_transform(self, painter: QPainter) -> None:
         """Enter the footprint's own coordinate frame, so a body can be drawn as a shape.
@@ -2367,28 +2398,25 @@ class ComponentItem(QGraphicsItem):
             painter.setBrush(QBrush(PIN_ONE if marked else PIN_MARKER))
             painter.drawEllipse(centre, radius, radius)
 
-        # The ref sits just above the body, so it lands on the substrate rather than on the
-        # part -- which means it needs a LIGHT colour. It was previously drawn in near-black
-        # The ref sits just above the courtyard, on the substrate rather than on the part, so
-        # it needs a LIGHT colour. It used to be drawn in near-black -- fine against a body,
-        # invisible against dark green FR4 -- so in practice no part was labelled at all.
-        # Skipped when zoomed out far enough that the text would be an unreadable smear.
+        # THE REFERENCE, CENTRED OVER THE BODY ON A PLATE OF ITS OWN. It sat at the top-left
+        # corner of the COURTYARD -- half a pitch out from the part, on the row of pads above
+        # it -- with a one-pixel shadow, which kept it readable over flat substrate and
+        # nowhere else: on a populated board "U1" was printed across the pads of the row it
+        # was not on, and "LED1" across a neighbour. Centred over the body it belongs to the
+        # part at a glance, and the plate keeps it readable over whatever it lands on.
+        # Light text, because the plate is dark. Skipped when zoomed out far enough that
+        # the text would be an unreadable smear.
         scale = painter.transform().m11() or 1.0
         if scale >= 3.0 and self.show_reference:
-            rect = self._local_outline().boundingRect()
-            anchor = QPointF(rect.left(), rect.top())
-            align = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignBottom
-            # A one-pixel dark copy underneath: a hairline shadow is what keeps the label
-            # readable where it crosses a pad or another part, not just over bare substrate.
-            painter.setPen(QPen(LABEL))
-            draw_label(
-                painter, anchor, self.comp.ref, REF_LABEL_PX, align, bold=True,
-                offset=QPointF(1, -1),
-            )
+            body = self._local_body_rect()
+            anchor = QPointF(body.center().x(), body.top())
+            # AlignTop is ABOVE the point in draw_label's terms (see ``label_alignment``
+            # in viewsch): over the body, never on it, where it would hide a resistor's bands.
+            align = Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop
             painter.setPen(QPen(SELECTED if self.isSelected() else REF_LABEL))
             draw_label(
                 painter, anchor, self.comp.ref, REF_LABEL_PX, align, bold=True,
-                offset=QPointF(0, -2),
+                offset=QPointF(0, -2), background=REF_PLATE,
             )
 
     def itemChange(self, change: QGraphicsItem.GraphicsItemChange, value: Any) -> Any:
