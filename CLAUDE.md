@@ -1122,10 +1122,20 @@ about the document. Three things about it:
   The bar sheds its summaries, then its names, on a narrow window (`WorkflowBar._fit`) so it
   never sets the window's minimum width.
 - **Choosing the board is a step**, because a perfboard is bought before it is populated.
-  `on_choose_board` asks the fit-tested stock-board question when the design has parts and
-  the board has none (`_offer_a_board_size`, `always=True` so it is never silent), Board
-  Setup otherwise; `_board_chosen` then stops Place on the Board asking again. It is session
+  `on_choose_board` asks the stock-board question when the design has parts and the board
+  has none (`_offer_a_board_size`, `always=True` so it is never silent), Board Setup
+  otherwise; `_board_chosen` then stops Place on the Board asking again. It is session
   state, reset by `_forget_the_previous_document`: a board with parts on it counts as chosen.
+  The question is three methods so a test can stand in for one without touching Qt:
+  `_board_choice` TRIES the boards (`boardfit.choose_board` through `_run_planner`, whose
+  label may be a function so the progress dialog names the board being tried; remembered
+  per design in `_judged`, but only a search that finished), `_ask_which_board` ASKS
+  (`BoardSizeDialog(verdicts=...)` shows a tried board with the placement it was judged by
+  and what the trial found), and `_use_board` applies `commands.preset_payload` and keeps
+  the tried placement in `_placement_ready`. **What was judged is what lands**: Place on the
+  Board commits that placement when `placer.placement_inputs` still matches, instead of
+  annealing again and perhaps coming out different from the picture just approved; any edit
+  in between makes it miss, and placing works it out afresh through `placer.place_design`.
 - **A problem outranks the next step.** A DRC error or an LVS open/short on a placed board
   makes Check the step Next does, whatever else is left -- but not before anything is placed,
   when LVS reports every net unplaced and that is Placement's news.

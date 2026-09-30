@@ -956,12 +956,34 @@ TURKISH: Mapping[str, str] = {
     ),
     # -- choosing the board the circuit goes on --------------------------------
     "Which board is this going on?": "Bu devre hangi karta girecek?",
-    "Every size below was tried with your circuit actually laid out on it. "
-    "The suggested one is the smallest with room left to wire the board, "
-    "which is not the same as the smallest it fits on.": (
-        "Aşağıdaki her boy, devreniz gerçekten üzerine yerleştirilerek denendi. "
-        "Önerilen, kartı tellemeye yer kalan en küçük boy — ki bu, devrenin sığdığı "
-        "en küçük boyla aynı şey değildir."
+    "Your circuit was placed, wired and checked on the roomy board and on the "
+    "sizes below it. The suggested one is the smallest that builds as well: every "
+    "part placed, every connection made, no warning the roomy board does not have, "
+    "and at most {percent}% dearer to wire.": (
+        "Devreniz geniş kartta ve ondan küçük boylarda yerleştirildi, tellendi ve "
+        "denetlendi. Önerilen, aynı iyilikte kurulan en küçük boy: her parça yerinde, "
+        "her bağlantı yapılmış, geniş kartta olmayan hiçbir uyarı yok, ve tellemesi en "
+        "fazla %{percent} daha pahalı."
+    ),
+    "Stopped before every board was tried; the suggestion is the smallest tried.": (
+        "Her kart denenmeden durduruldu; öneri, denenenler arasındaki en küçük kart."
+    ),
+    "Trying your circuit on smaller boards…": "Devreniz daha küçük kartlarda deneniyor…",
+    "Trying your circuit on a {board} board…": "Devreniz {board} kartta deneniyor…",
+    "the roomy board the smaller ones are measured against": (
+        "küçük kartların kıyaslandığı geniş kart"
+    ),
+    "builds as well, at {percent}% of its wiring cost": (
+        "aynı iyilikte kuruluyor, telleme maliyeti geniş karta göre %{percent}"
+    ),
+    "wires dearer: {percent}% of the roomy board's cost": (
+        "tellemesi pahalı: geniş karta göre %{percent}"
+    ),
+    "warns: {rules}": "uyarı veriyor: {rules}",
+    "{count} connection(s) would not route": "{count} bağlantı yönlendirilemiyor",
+    "{count} DRC error(s) once wired": "tellenince {count} DRC hatası",
+    "not tried · a quick layout had no room for {count} part(s)": (
+        "denenmedi · hızlı yerleşimde {count} parçaya yer çıkmadı"
     ),
     "Keep the board I have  ·  {cols} × {rows}": "Mevcut kartım kalsın  ·  {cols} × {rows}",
     "fits, {percent}% full": "sığıyor, %{percent} dolu",

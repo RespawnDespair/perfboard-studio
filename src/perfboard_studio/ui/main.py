@@ -113,6 +113,12 @@ from perfboard_studio.autoroute import (
 from perfboard_studio.autoroute import (
     describe as describe_plan,
 )
+from perfboard_studio.boardfit import (
+    ROUTE_COST_TOLERANCE,
+    BoardChoice,
+    BoardVerdict,
+    choose_board,
+)
 from perfboard_studio.catalog import CATALOG, CATEGORY_ORDER, CatalogPart, catalog_part
 from perfboard_studio.command import CommandBus, CommandContext, DispatchResult, HistoryEntry
 from perfboard_studio.commands import (
@@ -156,7 +162,7 @@ from perfboard_studio.commands import (
     create_empty_document,
     create_standard_registry,
     create_starter_document,
-    place_parts,
+    preset_payload,
 )
 from perfboard_studio.connectivity import FootprintLookup
 from perfboard_studio.drc import DrcViolation, run_drc
@@ -248,11 +254,13 @@ from perfboard_studio.parsers.kicad_parts import (  # noqa: F401 - guess_footpri
 from perfboard_studio.phrasebook import GuideLanguage, guide_language
 from perfboard_studio.placer import (
     BoardSuggestion,
+    DesignPlacement,
     PlacementOptions,
     PlacementPlan,
     arrange,
-    arrange_design,
     design_entries,
+    place_design,
+    placement_inputs,
     plan_placement,
     recommended_board,
     suggest_boards,
@@ -2886,15 +2894,14 @@ class BoardSizeDialog(QDialog):
     the answer is still free. Before that there is nothing to size the board against; the
     circuit is what says how much board it needs.
 
-    ANSWERED BY ARRANGING THE CIRCUIT ON EACH BOARD, not by adding up footprint areas
-    (``placer.suggest_boards``). Every row below is a board a supplier actually stocks,
-    laid out for real, and what the row says is what happened -- so a board that says the
-    circuit fits is one the circuit has already been fitted on.
-
-    The recommendation is the smallest board with room left to WIRE it, which is not the
-    smallest board it fits on: a board packed to its last hole has nowhere to run a solder
-    trace. Everything bigger is offered too, and so is the board the user already has --
-    somebody who has the 7 x 9 in a drawer is not helped by being told to buy the 5 x 7.
+    ANSWERED BY BUILDING THE CIRCUIT ON THE BOARDS (``boardfit.choose_board``): placed,
+    routed and checked on the roomy board and on each smaller one, and the suggestion is
+    the smallest that builds as well. A board that was tried shows the placement it was
+    judged by and says what the trial found; one that was not shows the quick arrangement
+    ``placer.suggest_boards`` made of it. Everything is offered, and so is the board the
+    user already has -- somebody who has the 7 x 9 in a drawer is not helped by being told
+    to buy the 5 x 7. A board that could not take the design at all is shown and greyed,
+    because "the 4 x 6 is too small" is the useful half of the answer.
     """
 
     #: How big each board's picture is. Big enough that the parts on it can be told apart
@@ -2910,6 +2917,8 @@ class BoardSizeDialog(QDialog):
         parent: QWidget | None = None,
         document: PerfDocument | None = None,
         lookup: FootprintLookup | None = None,
+        verdicts: Sequence[BoardVerdict] = (),
+        complete: bool = True,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(t("Which board is this going on?"))
@@ -2917,13 +2926,17 @@ class BoardSizeDialog(QDialog):
         self._suggestions = tuple(suggestions)
 
         layout = QVBoxLayout(self)
-        blurb = QLabel(
-            t(
-                "Every size below was tried with your circuit actually laid out on it. "
-                "The suggested one is the smallest with room left to wire the board, "
-                "which is not the same as the smallest it fits on."
+        text = t(
+            "Your circuit was placed, wired and checked on the roomy board and on the "
+            "sizes below it. The suggested one is the smallest that builds as well: every "
+            "part placed, every connection made, no warning the roomy board does not have, "
+            "and at most {percent}% dearer to wire."
+        ).format(percent=round((ROUTE_COST_TOLERANCE - 1) * 100))
+        if not complete:
+            text += " " + t(
+                "Stopped before every board was tried; the suggestion is the smallest tried."
             )
-        )
+        blurb = QLabel(text)
         blurb.setWordWrap(True)
         blurb.setStyleSheet(f"color: {TEXT_DIM};")
         layout.addWidget(blurb)
@@ -2970,9 +2983,20 @@ class BoardSizeDialog(QDialog):
             )
         self.choices.addItem(keep)
 
+        judged = {verdict.preset: verdict for verdict in verdicts}
         for index, suggestion in enumerate(self._suggestions):
             preset = suggestion.preset
-            if suggestion.fits:
+            verdict = judged.get(preset)
+            if verdict is not None:
+                note = _verdict_note(verdict)
+            elif verdicts and not suggestion.fits:
+                # Below the board the search stopped at. "Too small" would be the quick
+                # layout's claim, and the trials have just shown how much tighter the
+                # placer packs than that -- so it says what is actually known.
+                note = t("not tried · a quick layout had no room for {count} part(s)").format(
+                    count=len(suggestion.arrangement.unplaced)
+                )
+            elif suggestion.fits:
                 note = t("fits, {percent}% full").format(
                     percent=round(suggestion.fill * 100)
                 )
@@ -2994,15 +3018,21 @@ class BoardSizeDialog(QDialog):
             item.setToolTip(f"{preset.name}  ·  {preset.cols} × {preset.rows}  ·  {note}")
             if pictures:
                 assert document is not None
-                item.setIcon(
-                    picture(
-                        with_arrangement(
-                            with_board(document, suggestion.board, preset),
-                            suggestion.arrangement,
+                if verdict is not None and verdict.trial.placed is not None:
+                    # The board the verdict is about: the placement it was judged by.
+                    item.setIcon(picture(verdict.trial.placed.document))
+                else:
+                    item.setIcon(
+                        picture(
+                            with_arrangement(
+                                with_board(document, suggestion.board, preset),
+                                suggestion.arrangement,
+                            )
                         )
                     )
-                )
-            if not suggestion.fits:
+            if (verdict is not None and verdict.kind == "too-small") or (
+                verdict is None and not suggestion.fits
+            ):
                 # Left visible rather than hidden: "the 4 x 6 is too small" is the useful
                 # half of the answer, and a list that silently starts at the 6 x 8 looks
                 # like the small boards do not exist.
@@ -3032,6 +3062,29 @@ class BoardSizeDialog(QDialog):
         if index < 0:
             return None
         return self._suggestions[index]
+
+
+def _verdict_note(verdict: BoardVerdict) -> str:
+    """What a board's trial found, in words, for its row in the board question. Built at
+    call time, so it comes out in the language the window was built in; the kinds are
+    ``boardfit.VerdictKind`` and every one of them has words here."""
+    trial = verdict.trial
+    percent = None if verdict.cost_ratio is None else round(verdict.cost_ratio * 100)
+    if verdict.kind == "reference":
+        return t("the roomy board the smaller ones are measured against")
+    if verdict.kind == "accepted":
+        return t("builds as well, at {percent}% of its wiring cost").format(percent=percent)
+    if verdict.kind == "dearer":
+        return t("wires dearer: {percent}% of the roomy board's cost").format(percent=percent)
+    if verdict.kind == "new-warnings":
+        return t("warns: {rules}").format(
+            rules=", ".join(_rule_title(rule) for rule in verdict.new_warnings)
+        )
+    if verdict.kind == "unrouted":
+        return t("{count} connection(s) would not route").format(count=trial.unrouted)
+    if verdict.kind == "drc-errors":
+        return t("{count} DRC error(s) once wired").format(count=trial.drc_errors)
+    return t("too small — {count} part(s) will not fit").format(count=len(trial.unplaced))
 
 
 def _matching_preset(board: Board) -> BoardPreset | None:
@@ -3343,6 +3396,11 @@ class MainWindow(QMainWindow):
         #: ``workflow.WorkflowFacts.board_chosen``. Not stored: a board with parts on it
         #: has been chosen by definition, and one without has been chosen by nobody yet.
         self._board_chosen = False
+        #: The board question's answer for the design it was worked out for, and the
+        #: placement the chosen board was judged by -- both keyed on
+        #: ``placer.placement_inputs``, so an edit makes them miss rather than go stale.
+        self._judged: tuple[PerfDocument, BoardChoice] | None = None
+        self._placement_ready: tuple[PerfDocument, DesignPlacement] | None = None
 
         #: The update check. Built on first use and never in this constructor: the test
         #: suite builds a great many windows and none of them should reach the network.
@@ -6967,14 +7025,20 @@ class MainWindow(QMainWindow):
             return
         document = self.bus.document  # The board may have changed under us.
 
-        plan = self._run_planner(
-            t("Arranging the circuit on the board…"),
-            lambda should_stop: self._arranged_placements(document, should_stop),
-        )
-        if plan is None:
-            return
-        placements, unplaced = plan
-        if not placements:
+        placed = self._tried_placement(document)
+        if placed is None:
+            placed = self._run_planner(
+                t("Arranging the circuit on the board…"),
+                lambda should_stop: place_design(
+                    document,
+                    self.lookup,
+                    PlacementOptions(seed=self._place_seed),
+                    should_stop=should_stop,
+                ),
+            )
+            if placed is None:
+                return
+        if not placed.placements:
             self.statusBar().showMessage(
                 t("No room on this board for the parts in the design. Make it bigger, or "
                   "place them one at a time."),
@@ -6982,16 +7046,11 @@ class MainWindow(QMainWindow):
             )
             return
 
-        result = self.bus.dispatch(
-            "part.place",
-            PlacePartsPayload(
-                placements=tuple(placements),
-                label=f"Place and arrange {len(placements)} part(s) from the schematic",
-            ),
-        )
+        result = self.bus.dispatch("part.place", placed.payload())
         if not result.ok:
             self.statusBar().showMessage(f"[{result.code}] {result.message}", 10000)
             return
+        unplaced = len(placed.unplaced)
         note = "; " + t("{count} would not fit").format(count=unplaced) if unplaced else ""
         self.statusBar().showMessage(
             f"{say(result.description)}{note}. "
@@ -7002,6 +7061,10 @@ class MainWindow(QMainWindow):
 
     def _offer_a_board_size(self, document: PerfDocument, always: bool = False) -> bool:
         """Ask which stock board the circuit is going on. False means the user cancelled.
+
+        Three steps, each its own method so a test can stand in for one without reaching
+        into Qt: the boards are TRIED (``_board_choice``), the question is ASKED
+        (``_ask_which_board``), and the answer is USED (``_use_board``).
 
         Silent when nothing can be suggested -- a design of parts the registry does not
         know, or a board family with no stock sizes -- because a dialog with nothing in it
@@ -7014,87 +7077,104 @@ class MainWindow(QMainWindow):
         )
         if not suggestions:
             return self.on_board_setup() if always else True
+        choice = self._board_choice(document, suggestions)
+        accepted, chosen = self._ask_which_board(choice, document)
+        if not accepted:
+            return False
+        if chosen is None:
+            return True
+        return self._use_board(choice, chosen)
+
+    def _board_choice(
+        self, document: PerfDocument, suggestions: Sequence[BoardSuggestion]
+    ) -> BoardChoice:
+        """The boards tried with the design built on them (``boardfit.choose_board``), off
+        the UI thread and named one by one as they are tried.
+
+        Remembered for the design it was worked out for -- asking twice about one design is
+        seconds nobody should pay twice -- but only when the search FINISHED. A choice that
+        was cancelled part way is an answer about the boards tried so far, and the next
+        question should be allowed to finish it.
+        """
+        key = placement_inputs(document)
+        if self._judged is not None and self._judged[0] == key:
+            return self._judged[1]
+        trying: dict[str, str] = {}
+
+        def label() -> str:
+            board = trying.get("board")
+            if board is None:
+                return t("Trying your circuit on smaller boards…")
+            return t("Trying your circuit on a {board} board…").format(board=board)
+
+        choice = self._run_planner(
+            label,
+            lambda should_stop: choose_board(
+                document,
+                self.lookup,
+                suggestions,
+                should_stop=should_stop,
+                # On the worker thread: a plain assignment, which the label reads back.
+                on_trial=lambda preset: trying.__setitem__("board", preset.name),
+            ),
+        )
+        if not isinstance(choice, BoardChoice):
+            # Only a stub in a test gets here; the question still has to be answerable.
+            reference = recommended_board(suggestions)
+            return BoardChoice(tuple(suggestions), reference, (), reference, False)
+        if choice.complete:
+            self._judged = (key, choice)
+        return choice
+
+    def _ask_which_board(
+        self, choice: BoardChoice, document: PerfDocument
+    ) -> tuple[bool, BoardSuggestion | None]:
+        """(accepted, the board chosen or None to keep the one it has)."""
         dialog = BoardSizeDialog(
-            suggestions,
+            choice.suggestions,
             document.board,
-            recommended_board(suggestions),
+            choice.recommended,
             self,
             document=document,
             lookup=self.lookup,
+            verdicts=choice.verdicts,
+            complete=choice.complete,
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
-            return False
-        chosen = dialog.chosen()
-        if chosen is None:
-            return True
+            return False, None
+        return True, dialog.chosen()
 
-        connectors = preset_edge_connectors(chosen.preset, chosen.board)
-        holes = preset_mounting_holes(chosen.preset, chosen.board)
-        result = self.bus.dispatch(
-            "board.applyPreset",
-            ApplyBoardPresetPayload(
-                board=chosen.board,
-                edge_connectors=connectors,
-                mounting_holes=holes,
-                label=f"Use a {chosen.preset.name} board",
-            ),
-        )
+    def _use_board(self, choice: BoardChoice, chosen: BoardSuggestion) -> bool:
+        """Put the document on the board chosen, and keep the placement that board was
+        judged by for Place on the Board to commit.
+
+        WHAT WAS JUDGED IS WHAT LANDS. The trial already placed the design on this board,
+        and placing it again would be seconds spent on an answer that could come out
+        differently from the one the dialog just showed. It is kept against the design it
+        was worked out for (``placer.placement_inputs``), so any edit in between -- a part
+        added, a net changed -- throws it away and placing works it out afresh.
+        """
+        result = self.bus.dispatch("board.applyPreset", preset_payload(chosen.preset, chosen.board))
         if not result.ok:
             QMessageBox.warning(self, t("Board refused"), f"[{result.code}] {result.message}")
             return False
+        verdict = choice.verdict_for(chosen.preset)
+        if (
+            verdict is not None
+            and verdict.trial.document is not None
+            and verdict.trial.placed is not None
+        ):
+            self._placement_ready = (placement_inputs(verdict.trial.document), verdict.trial.placed)
         self.view.fit_board()
         return True
 
-    def _arranged_placements(
-        self, document: PerfDocument, should_stop: Callable[[], bool]
-    ) -> tuple[list[PartPlacement], int]:
-        """Where every part in the design should go, optimised, as one batch to commit.
-
-        Worked out on a PREVIEW document rather than on the bus: the parts have to be on
-        the board before the placer can score them, and doing that for real would put a
-        grid on the undo stack that nobody asked for and that the next command replaces.
-        The preview is built through the real ``part.place``, so it is the document the
-        bus would have produced.
-
-        Components already on the board are LOCKED in the preview, not left movable. It is
-        the difference between "place my design" and "rearrange my board", and only the
-        second is a thing the user asked for here.
-        """
-        arrangement = arrange_design(document, self.lookup)
-        if not arrangement.placements:
-            return [], len(arrangement.unplaced)
-
-        seeded = PlacePartsPayload(
-            placements=tuple(
-                PartPlacement(id=p.id, anchor=p.anchor, rotation=p.rotation)
-                for p in arrangement.placements
-            ),
-            label="preview",
-        )
-        preview = place_parts.apply(
-            document, seeded, CommandContext(next_id=create_document_id_generator(document))
-        )
-        arranged_ids = {p.id for p in arrangement.placements}
-        preview = dataclasses.replace(
-            preview,
-            components=tuple(
-                c if c.id in arranged_ids else dataclasses.replace(c, locked=True)
-                for c in preview.components
-            ),
-        )
-
-        plan = plan_placement(
-            preview, self.lookup, PlacementOptions(seed=self._place_seed), should_stop=should_stop
-        )
-        final = {c.id: c for c in plan.document.components}
-        placements = [
-            PartPlacement(
-                id=part.id, anchor=final[part.id].anchor, rotation=final[part.id].rotation
-            )
-            for part in arrangement.placements
-            if part.id in final
-        ]
-        return placements, len(arrangement.unplaced)
+    def _tried_placement(self, document: PerfDocument) -> DesignPlacement | None:
+        """The placement a board trial worked out for exactly this document, used once."""
+        ready = self._placement_ready
+        self._placement_ready = None
+        if ready is None or ready[0] != placement_inputs(document):
+            return None
+        return ready[1]
 
     def _on_schematic_net_clicked(self, net_id: str) -> None:
         """Selecting the net in the dock is what lights it up everywhere else.
@@ -8293,7 +8373,7 @@ class MainWindow(QMainWindow):
 
     def _run_planner(
         self,
-        label: str,
+        label: str | Callable[[], str],
         work: Callable[[Callable[[], bool]], Any],
     ) -> Any:
         """Run a planner off the UI thread, with a progress dialog that can cancel it.
@@ -8311,6 +8391,12 @@ class MainWindow(QMainWindow):
         ``work`` is handed a ``should_stop`` predicate. Cancelling asks the planner to
         stop and return its best result so far rather than discarding it, which for the
         placer means a worse placement, never an invalid one.
+
+        ``label`` may be a function, asked again while the work runs, for a run that goes
+        through stages somebody would want named -- the board question tries one board
+        after another, and "Trying your circuit on a 7 x 9 cm board" is what makes twenty
+        seconds read as progress rather than as a hang. It is only ever READ here, on this
+        thread; whatever the worker does to change its answer has to be a plain assignment.
 
         **THE CYCLIC COLLECTOR IS HELD OFF FOR THE DURATION, AND THAT IS NOT AN
         OPTIMISATION.** This is the one place in the application where Python runs on two
@@ -8336,6 +8422,10 @@ class MainWindow(QMainWindow):
         def should_stop() -> bool:
             return cancelled
 
+        def text() -> str:
+            return label() if callable(label) else label
+
+        shown = ""
         holder: dict[str, Any] = {}
         error: dict[str, BaseException] = {}
 
@@ -8360,10 +8450,14 @@ class MainWindow(QMainWindow):
             worker.start()
             while not worker.isFinished():
                 QApplication.processEvents(QEventLoop.ProcessEventsFlag.AllEvents, 20)
+                if progress is not None and not cancelled and text() != shown:
+                    shown = text()
+                    progress.setLabelText(shown)
                 if progress is None and time.perf_counter() - started > self.PLANNER_GRACE_S:
                     # Only now, so a run that finishes quickly never flashes a dialog: a
                     # window that blinks is worse than one that pauses imperceptibly.
-                    progress = QProgressDialog(label, t("Cancel"), 0, 0, self)
+                    shown = text()
+                    progress = QProgressDialog(shown, t("Cancel"), 0, 0, self)
                     progress.setWindowTitle(t("Working"))
                     progress.setWindowModality(Qt.WindowModality.WindowModal)
                     progress.setMinimumDuration(0)
@@ -8380,7 +8474,7 @@ class MainWindow(QMainWindow):
                         nonlocal cancelled
                         cancelled = True
                         dialog.setLabelText(
-                            f"{label}\n{t('Stopping, and keeping the best found so far…')}"
+                            f"{text()}\n{t('Stopping, and keeping the best found so far…')}"
                         )
 
                     progress.canceled.connect(on_cancel)
@@ -10069,6 +10163,8 @@ class MainWindow(QMainWindow):
         # Nobody has chosen the NEW document's board -- unless it has parts on it, which
         # ``workflow_steps`` already counts as chosen.
         self._board_chosen = False
+        self._judged = None
+        self._placement_ready = None
 
     # -- nets, entered by hand -----------------------------------------------
     #

@@ -6431,14 +6431,14 @@ def test_moving_a_symbol_keeps_the_wires_on_the_sheet_and_one_undo_takes_them_ba
     _close(window)
 
 
-def test_a_symbol_dragged_onto_the_board_places_that_one_part() -> None:
+def test_a_symbol_dragged_onto_the_board_places_that_one_part(monkeypatch) -> None:
     """The other half of "Place on the Board": that button moves the WHOLE design, and
     until now there was no way to put down one part from the sheet at all -- double-clicking
     a symbol opened its properties."""
     from perfboard_studio.model import HoleCoord
 
     window = _blank_window()
-    _keep_the_board(window)
+    _keep_the_board(window, monkeypatch)
     _add(window, "R1", "r-axial-3")
     _add(window, "R2", "r-axial-3")
 
@@ -6450,14 +6450,14 @@ def test_a_symbol_dragged_onto_the_board_places_that_one_part() -> None:
     _close(window)
 
 
-def test_dragging_a_symbol_whose_part_is_already_down_moves_it() -> None:
+def test_dragging_a_symbol_whose_part_is_already_down_moves_it(monkeypatch) -> None:
     """Two commands behind one gesture, and which one it is depends on which list the part
     is in -- the same split Remove already makes. Dragging a symbol whose part is already
     on the board can only mean "put it here instead"."""
     from perfboard_studio.model import HoleCoord
 
     window = _blank_window()
-    _keep_the_board(window)
+    _keep_the_board(window, monkeypatch)
     _add(window, "R1", "r-axial-3")
     window._on_part_dropped("R1", HoleCoord(4, 4))
 
@@ -6468,13 +6468,13 @@ def test_dragging_a_symbol_whose_part_is_already_down_moves_it() -> None:
     _close(window)
 
 
-def test_a_drop_the_board_refuses_says_so_rather_than_half_placing() -> None:
+def test_a_drop_the_board_refuses_says_so_rather_than_half_placing(monkeypatch) -> None:
     """The command checks the hole, not the view: a second opinion in the view is a second
     thing to keep in step with what the bus actually allows."""
     from perfboard_studio.model import HoleCoord
 
     window = _blank_window()
-    _keep_the_board(window)
+    _keep_the_board(window, monkeypatch)
     _add(window, "U1", "dip-28")
 
     window._on_part_dropped("U1", HoleCoord(-4, -4))
@@ -7416,19 +7416,25 @@ def test_a_missed_click_while_wiring_cancels_the_half_made_pair() -> None:
     _close(window)
 
 
-def _keep_the_board(window) -> None:
+def _keep_the_board(window, monkeypatch) -> None:
     """Answer the board-size question with "keep the one I have".
 
     Stubbed on the METHOD, not on the dialog, for the reason ``_confirm`` is: a test that
     reaches past the window into QDialog is a test that breaks when the question is asked
     a different way, and this is the question, whatever it looks like.
+
+    Through ``monkeypatch``, so it is undone when the test ends. It used to be assigned to
+    the class, and every test after the first to call it got the stub whether it asked or
+    not -- a stub with no ``always``, which the Board step passes.
     """
-    type(window)._offer_a_board_size = lambda self, document: True
+    monkeypatch.setattr(
+        type(window), "_offer_a_board_size", lambda self, document, always=False: True
+    )
 
 
-def test_place_on_the_board_arranges_the_whole_design_in_one_undo_step() -> None:
+def test_place_on_the_board_arranges_the_whole_design_in_one_undo_step(monkeypatch) -> None:
     window = _blank_window()
-    _keep_the_board(window)
+    _keep_the_board(window, monkeypatch)
     _add(window, "U1", "dip-8")
     _add(window, "R1", "r-axial-3")
     _add(window, "R2", "r-axial-3")
@@ -7447,11 +7453,11 @@ def test_place_on_the_board_arranges_the_whole_design_in_one_undo_step() -> None
     _close(window)
 
 
-def test_placing_a_design_leaves_the_parts_already_on_the_board_alone() -> None:
+def test_placing_a_design_leaves_the_parts_already_on_the_board_alone(monkeypatch) -> None:
     """Putting a design on the board is not the moment to rearrange what somebody has
     already positioned. That is auto-place, and it is a gesture they ask for by name."""
     window = _blank_window()
-    _keep_the_board(window)
+    _keep_the_board(window, monkeypatch)
     _add(window, "U1", "dip-8")
     window.on_schematic_place_all()
     settled = {c.ref: (c.anchor, c.rotation) for c in window.bus.document.components}
@@ -7466,11 +7472,11 @@ def test_placing_a_design_leaves_the_parts_already_on_the_board_alone() -> None:
     _close(window)
 
 
-def test_a_connector_in_the_design_is_placed_on_the_edge_of_the_board() -> None:
+def test_a_connector_in_the_design_is_placed_on_the_edge_of_the_board(monkeypatch) -> None:
     """The whole reason the button arranges rather than laying a grid: a header dropped
     in the middle of a board is a header nothing can be plugged into."""
     window = _blank_window()
-    _keep_the_board(window)
+    _keep_the_board(window, monkeypatch)
     _add(window, "J1", "hdr-1x4")
     _add(window, "R1", "r-axial-3")
     _add(window, "R2", "r-axial-3")
@@ -7558,6 +7564,270 @@ def test_the_board_size_dialog_shows_each_board_with_the_circuit_on_it() -> None
         _close(window)
 
 
+# -- the board question, tried rather than estimated (boardfit) ---------------------------
+
+
+def _verdict(document, name, kind, *, ratio=1.0, unplaced=(), new_warnings=(), unrouted=0, errors=0):
+    """A board trial's verdict without running one: the dialog is about what a verdict SAYS."""
+    from perfboard_studio.boardfit import PLACEMENT_WARNING_RULES, BoardTrial, BoardVerdict
+    from perfboard_studio.geometry import STANDARD_PRESETS, board_from_preset
+    from perfboard_studio.placer import Arrangement, BoardSuggestion, DesignPlacement
+
+    preset = next(p for p in STANDARD_PRESETS if p.name == name and not p.single_sided)
+    board = board_from_preset(preset, document.board)
+    on = dataclasses.replace(document, board=board)
+    suggestion = BoardSuggestion(preset, board, Arrangement((), (), 1, board.cols * board.rows))
+    trial = BoardTrial(
+        suggestion=suggestion,
+        document=on,
+        placed=DesignPlacement((), unplaced, (), on, None),
+        unplaced=unplaced,
+        unrouted=unrouted,
+        route_cost=100.0 * ratio,
+        drc_errors=errors,
+        warnings=tuple(0 for _ in PLACEMENT_WARNING_RULES),
+    )
+    return BoardVerdict(trial, kind, ratio, new_warnings)
+
+
+def test_every_verdict_has_words_in_the_board_question() -> None:
+    """A row says what its trial found in words, never as the verdict's id -- and every kind
+    ``boardfit`` can give has some, which is what this reads ``get_args`` for."""
+    from typing import get_args
+
+    from perfboard_studio.boardfit import VerdictKind
+    from perfboard_studio.ui.main import _verdict_note
+
+    window = _blank_window()
+    try:
+        for kind in get_args(VerdictKind):
+            note = _verdict_note(
+                _verdict(window.bus.document, "5 x 7 cm", kind, ratio=1.1, unplaced=("U1",),
+                         new_warnings=("heat-proximity",), unrouted=2, errors=1)
+            )
+            assert note and note != kind, (kind, note)
+            if "-" in kind:
+                assert kind not in note, (kind, note)
+        warned = _verdict_note(
+            _verdict(window.bus.document, "5 x 7 cm", "new-warnings", new_warnings=("heat-proximity",))
+        )
+        assert "heat-proximity" not in warned, "a rule is named in words, as the DRC panel does"
+    finally:
+        _close(window)
+
+
+def test_the_board_question_says_what_each_trial_found() -> None:
+    """A tried board shows the placement it was judged by and what the trial found; the
+    star is on the recommendation; a board that could not take the design is greyed, and
+    one that builds worse is not -- it is a board somebody may still want."""
+    from perfboard_studio.placer import suggest_boards
+    from perfboard_studio.ui.main import BoardSizeDialog
+
+    window = _blank_window()
+    try:
+        document = window.bus.document
+        suggestions = suggest_boards(document.board, [], document.nets, window.lookup)
+        by_name = {s.preset.name: s for s in suggestions}
+        verdicts = (
+            _verdict(document, "6 x 8 cm", "reference"),
+            _verdict(document, "5 x 7 cm", "accepted", ratio=1.04),
+            _verdict(document, "4 x 6 cm", "dearer", ratio=1.31),
+            _verdict(document, "3 x 7 cm", "too-small", unplaced=("U1", "R1")),
+        )
+        dialog = BoardSizeDialog(
+            suggestions,
+            document.board,
+            by_name["5 x 7 cm"],
+            window,
+            document=document,
+            lookup=window.lookup,
+            verdicts=verdicts,
+            complete=False,
+        )
+        rows = {
+            dialog.choices.item(row).text().split("\n")[0].replace("★ ", ""): dialog.choices.item(row)
+            for row in range(dialog.choices.count())
+        }
+        text = {name: item.text() for name, item in rows.items()}
+        suggested = next(name for name in text if "5 x 7 cm" in name)
+        assert "★" in dialog.choices.item(dialog.choices.currentRow()).text()
+        assert "5 x 7 cm" in dialog.choices.item(dialog.choices.currentRow()).text()
+        assert "104" in text[suggested]
+        dearer = next(item for name, item in rows.items() if name == "4 x 6 cm")
+        small = next(item for name, item in rows.items() if name == "3 x 7 cm")
+        assert "131" in dearer.text() and dearer.flags() & Qt.ItemFlag.ItemIsEnabled
+        assert not small.flags() & Qt.ItemFlag.ItemIsEnabled
+        for row in range(dialog.choices.count()):
+            item = dialog.choices.item(row)
+            assert not item.icon().isNull(), item.text()
+        dialog.deleteLater()
+    finally:
+        _close(window)
+
+
+def _choice(document, *, complete=True, tried=("6 x 8 cm", "5 x 7 cm")):
+    from perfboard_studio.boardfit import BoardChoice
+    from perfboard_studio.placer import suggest_boards
+
+    suggestions = tuple(suggest_boards(document.board, [], document.nets, footprint_lookup()))
+    verdicts = tuple(
+        _verdict(document, name, "reference" if index == 0 else "accepted")
+        for index, name in enumerate(tried)
+    )
+    recommended = next(s for s in suggestions if s.preset.name == tried[-1])
+    reference = next(s for s in suggestions if s.preset.name == tried[0])
+    return BoardChoice(suggestions, reference, verdicts, recommended, complete)
+
+
+def test_the_boards_are_tried_off_the_ui_thread_and_named_as_they_are(monkeypatch) -> None:
+    """Twenty seconds on a big design, so it goes through ``_run_planner`` -- the worker
+    thread, the Cancel button, the collector held off -- and the progress label names the
+    board being tried, read back from what the worker last set."""
+    from perfboard_studio.ui import main as main_module
+
+    window = _blank_window()
+    try:
+        _add(window, "R1", "r-axial-3")
+        document = window.bus.document
+        labels: list[str] = []
+
+        def planner(self, label, work):
+            labels.append(label())
+            result = work(lambda: False)
+            labels.append(label())
+            return result
+
+        def choose(doc, lookup_, suggestions, should_stop=None, on_trial=None, **_):
+            for suggestion in suggestions[:2]:
+                on_trial(suggestion.preset)
+            return _choice(doc)
+
+        monkeypatch.setattr(main_module.MainWindow, "_run_planner", planner)
+        monkeypatch.setattr(main_module, "choose_board", choose)
+        suggestions = main_module.suggest_boards(document.board, [], document.nets, window.lookup)
+        choice = window._board_choice(document, suggestions)
+
+        assert choice.recommended is not None
+        assert "smaller boards" in labels[0]
+        assert suggestions[1].preset.name in labels[1]
+    finally:
+        _close(window)
+
+
+def test_a_design_is_judged_once_until_it_changes_and_a_cancelled_judgement_is_not_kept(
+    monkeypatch,
+) -> None:
+    from perfboard_studio.ui import main as main_module
+
+    window = _blank_window()
+    try:
+        _add(window, "R1", "r-axial-3")
+        runs: list[bool] = []
+        complete = [True]
+
+        def choose(doc, lookup_, suggestions, **_):
+            runs.append(True)
+            return _choice(doc, complete=complete[0])
+
+        monkeypatch.setattr(
+            main_module.MainWindow, "_run_planner", lambda self, label, work: work(lambda: False)
+        )
+        monkeypatch.setattr(main_module, "choose_board", choose)
+        suggestions = main_module.suggest_boards(
+            window.bus.document.board, [], window.bus.document.nets, window.lookup
+        )
+
+        window._board_choice(window.bus.document, suggestions)
+        window._board_choice(window.bus.document, suggestions)
+        assert len(runs) == 1, "the same design is not tried twice"
+
+        _add(window, "R2", "r-axial-3")
+        window._board_choice(window.bus.document, suggestions)
+        assert len(runs) == 2, "a changed design is a new question"
+
+        complete[0] = False
+        _add(window, "R3", "r-axial-3")
+        window._board_choice(window.bus.document, suggestions)
+        window._board_choice(window.bus.document, suggestions)
+        assert len(runs) == 4, "a search that was stopped is allowed to finish next time"
+    finally:
+        _close(window)
+
+
+def _tried_on_a_board(window, monkeypatch):
+    """A design big enough that its roomy board is not the smallest one -- so there is a
+    smaller board to try -- tried for real through the Board step, the recommended board
+    chosen in the dialog."""
+    from perfboard_studio.ui import main as main_module
+
+    _add(window, "U1", "dip-14")
+    for ref in ("R1", "R2", "R3"):
+        _add(window, ref, "r-axial-4")
+    _add(window, "C1", "c-elec-d5-p2")
+
+    monkeypatch.setattr(
+        main_module.MainWindow, "_run_planner", lambda self, label, work: work(lambda: False)
+    )
+    monkeypatch.setattr(
+        main_module.MainWindow,
+        "_ask_which_board",
+        lambda self, choice, document: (True, choice.recommended),
+    )
+    window.on_choose_board()
+    assert window._board_chosen
+
+
+def test_placing_after_choosing_a_tried_board_commits_what_was_tried(monkeypatch) -> None:
+    """WHAT WAS JUDGED IS WHAT LANDS: the trial already placed the design on the board the
+    user chose, so Place on the Board commits that placement -- instantly, and without the
+    chance of a second anneal coming out differently from the picture just approved."""
+    from perfboard_studio.ui import main as main_module
+
+    window = _blank_window()
+    try:
+        _tried_on_a_board(window, monkeypatch)
+        tried = window._placement_ready
+        assert tried is not None
+        expected = {c.ref: (c.anchor, c.rotation) for c in tried[1].document.components}
+
+        def no_planning(self, label, work):
+            raise AssertionError("the placement was worked out again")
+
+        monkeypatch.setattr(main_module.MainWindow, "_run_planner", no_planning)
+        before = len(window.bus.history())
+        window.on_schematic_place_all()
+
+        placed = {c.ref: (c.anchor, c.rotation) for c in window.bus.document.components}
+        assert placed == expected
+        assert len(window.bus.history()) == before + 1
+        assert window._placement_ready is None, "used once"
+    finally:
+        _close(window)
+
+
+def test_an_edit_after_the_trial_throws_the_tried_placement_away(monkeypatch) -> None:
+    from perfboard_studio.ui import main as main_module
+
+    window = _blank_window()
+    try:
+        _tried_on_a_board(window, monkeypatch)
+        _add(window, "R9", "r-axial-3")
+
+        planned: list[bool] = []
+
+        def planner(self, label, work):
+            planned.append(True)
+            return work(lambda: False)
+
+        monkeypatch.setattr(main_module.MainWindow, "_run_planner", planner)
+        window.on_schematic_place_all()
+
+        assert planned == [True], "a design that changed is placed afresh"
+        assert {c.ref for c in window.bus.document.components} == {"U1", "R1", "R2", "R3", "C1", "R9"}
+    finally:
+        _close(window)
+
+
 def test_the_board_dialog_draws_the_board_it_describes() -> None:
     """A product is recognised by looking at it. Picking a size redraws the picture beside
     the questions, finger strips and corner holes included."""
@@ -7582,9 +7852,9 @@ def test_the_board_dialog_draws_the_board_it_describes() -> None:
         _close(window)
 
 
-def test_placing_with_nothing_left_in_the_design_says_so_rather_than_doing_nothing() -> None:
+def test_placing_with_nothing_left_in_the_design_says_so_rather_than_doing_nothing(monkeypatch) -> None:
     window = _blank_window()
-    _keep_the_board(window)
+    _keep_the_board(window, monkeypatch)
 
     window.on_schematic_place_all()
 
@@ -7592,12 +7862,12 @@ def test_placing_with_nothing_left_in_the_design_says_so_rather_than_doing_nothi
     _close(window)
 
 
-def test_remove_deletes_a_part_in_the_design_and_unplaces_one_on_the_board() -> None:
+def test_remove_deletes_a_part_in_the_design_and_unplaces_one_on_the_board(monkeypatch) -> None:
     """Two actions behind one button, and the difference is which list the part is in.
     Somebody clicking Remove on a placed part means "wrong hole", not "delete the
     circuit around it"."""
     window = _blank_window()
-    _keep_the_board(window)
+    _keep_the_board(window, monkeypatch)
     _add(window, "R1", "r-axial-3")
     _add(window, "R2", "r-axial-3")
     window.on_schematic_place_all()
@@ -7739,14 +8009,14 @@ def test_a_right_click_on_a_symbol_offers_the_part() -> None:
     _close(window)
 
 
-def test_a_placed_part_is_taken_off_the_board_and_a_drawn_one_is_deleted() -> None:
+def test_a_placed_part_is_taken_off_the_board_and_a_drawn_one_is_deleted(monkeypatch) -> None:
     """The one entry that differs between the two lists, and the difference is the whole
     reason ``on_schematic_remove`` is two actions behind one button: "I put this in the
     wrong hole" must not delete the circuit around it."""
     from perfboard_studio.model import HoleCoord
 
     window = _blank_window()
-    _keep_the_board(window)
+    _keep_the_board(window, monkeypatch)
     _add(window, "R1", "r-axial-3")
     window._on_part_dropped("R1", HoleCoord(5, 5))
     window._refresh_schematic_panel()
@@ -7841,12 +8111,12 @@ def test_duplicating_a_part_copies_what_it_is_and_not_what_it_is_wired_to() -> N
     _close(window)
 
 
-def test_a_duplicate_of_a_placed_part_lands_in_the_design() -> None:
+def test_a_duplicate_of_a_placed_part_lands_in_the_design(monkeypatch) -> None:
     """The copy has no position and nothing here is entitled to guess one."""
     from perfboard_studio.model import HoleCoord
 
     window = _blank_window()
-    _keep_the_board(window)
+    _keep_the_board(window, monkeypatch)
     _add(window, "U1", "dip-8")
     window._on_part_dropped("U1", HoleCoord(4, 4))
     window._refresh_schematic_panel()

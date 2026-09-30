@@ -22,6 +22,25 @@ closed without a bump.
 
 ### Changed
 
+- **The board question builds your circuit on the boards before it suggests one.** It used to
+  lay the circuit out quickly on every stock size and suggest the first it filled to a third
+  or less -- a rule set by looking at where the examples sat on the boards that same rule
+  had picked for them, and a board and a half too big: the 24-part `atmega328-relay` was sent
+  to 9 × 15 cm, most of it bare, and it builds just as cleanly on 7 × 9. Now the circuit is
+  placed, wired and checked on that roomy board and on each size below it, and the suggestion
+  is the smallest that builds as well -- every part placed, every connection made, no DRC
+  error, no placement warning the roomy board does not have, and at most 20% dearer to wire.
+  Each tried board in the dialog shows the placement it was judged by and what was found
+  ("builds as well, at 104% of its wiring cost", "warns: Too close to a mounting hole"); the
+  progress dialog names each board as it is tried, and Cancel keeps the answer so far. It
+  takes a few seconds on a small circuit and about half a minute on a 24-part one -- once per
+  design, since the answer is remembered until the design changes.
+
+- **Place on the Board after choosing a board puts down exactly what the dialog showed**,
+  at once. The board was tried with the circuit placed on it, so that placement is committed
+  rather than worked out a second time, which took as long again and could come out
+  different from the picture just approved. An edit in between makes it place afresh.
+
 - **Auto-place keeps parts out from under the corner screws, and keeps a regulator or a
   relay away from the electrolytics as a matter of course.** DRC has always warned about
   both, and the placer only ever priced the second, by millimetres, behind the cost of
@@ -37,6 +56,12 @@ closed without a bump.
 
 ### Fixed
 
+- **Place on the Board left parts off a board that had room for them.** It laid the design
+  out in lanes with a hole between parts and a row between lanes, and whatever the lanes had
+  no room for stayed in the design with a count in the status bar -- a 24-part circuit on a
+  7 × 9 cm board came back five parts short. Those parts are now put down where they overlap
+  least and the placer works them clear; only a board that really is too small leaves any
+  behind, and it says which.
 - **The board-size question counted the finger strips as room.** Each stock board was laid
   out as a bare grid, so the two edge strips a board is sold with -- holes nothing can be
   soldered into -- and the pads its corner screws take were counted as space for parts, and

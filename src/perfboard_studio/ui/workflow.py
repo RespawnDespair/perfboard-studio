@@ -15,7 +15,7 @@ facts go in, the steps come out, and a test can hand it facts.
 
 Six steps and not five, because choosing the board is a decision of its own. A perfboard is
 bought before it is populated, and the moment between drawing the circuit and placing it is
-the last one at which the size is still free (``placer.suggest_boards``).
+the last one at which the size is still free (``boardfit.choose_board``).
 """
 
 from __future__ import annotations
