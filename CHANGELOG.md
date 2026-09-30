@@ -20,6 +20,26 @@ closed without a bump.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Turkish README said the whole project was Apache-2.0.** Since 0.12.0 the 3D package
+  meshes borrowed from KiCad are CC-BY-SA 4.0, and the English README's licence section
+  says so and answers the two questions people have about it; the Turkish one was never
+  given that paragraph. It has it now, and a test compares the two READMEs from here on —
+  the same headings, code blocks, table rows and inline code, which is what a paragraph
+  added in one language only looks like from outside. That test is what found it.
+- **The Turkish README's "İki yüz" jump link went nowhere.** It pointed at `#iki-yuz`, and
+  the heading's real anchor began with a dot nobody can see: GitHub lower-cases "İ" to "i"
+  plus a combining dot and keeps both. The heading is now "Her iki yüz", which is what the
+  English says anyway.
+- **`docs/prior-art.md` said KiCad library data would be recorded there if it were ever
+  bundled**, in every release since 0.12.0 bundled it. The record is there now: what was
+  borrowed (the 3D shapes, not the footprints), where it lives, under which licence, and
+  what the release checks about it.
+- **`docs/RELEASING.md` announced four steps above a list of six.**
+- **Both READMEs described PLAN.md as "kept as written"**, which is the very note PLAN.md
+  retired when it became a living plan.
+
 ## [0.14.0] - 2026-09-30
 
 ### Added

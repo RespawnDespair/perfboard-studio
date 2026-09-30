@@ -6,7 +6,8 @@ sources they may and may not read.
 
 ## Licence boundaries — read this before contributing
 
-Perfboard Studio is Apache-2.0. Two existing tools in this space are GPL-3.0:
+Perfboard Studio is Apache-2.0, apart from the KiCad-derived 3D meshes recorded
+[below](#kicad-library-data). Two existing tools in this space are GPL-3.0:
 
 - **DIY Layout Creator** (bancika/diy-layout-creator) — GPL-3.0
 - **VeroRoute** (Alex Lawrow, SourceForge) — GPL-3.0
@@ -76,6 +77,23 @@ our application.
 Consequence: we generate footprints and 3D bodies parametrically instead. If we ever
 bundle KiCad library data, it must live in its own directory with its own LICENSE and
 attribution, and that decision must be recorded here.
+
+**It happened in 0.12.0, for the 3D shapes only, and this is the record.** A body
+generated from a diameter and a height is a disc with a peg on it, a relay is a box and a
+screw terminal is a block with no screws in it, so the meshes of the real packages are
+now read from KiCad's `packages3D` library. Footprints are still generated, every one of
+them.
+
+- The meshes live in `src/perfboard_studio/ui/models/`, with KiCad's `LICENSE` beside
+  them and a `NOTICE.md` naming the model each came from and what was changed.
+- They are the only part of the repository that is not Apache-2.0. The wheel declares
+  `Apache-2.0 AND CC-BY-SA-4.0`, and `release.yml` refuses a wheel the meshes or their
+  licence are missing from.
+- The generated body is still the fallback for every part, so a build without the meshes
+  draws every board — which is exactly why nothing else would notice them going missing.
+
+The design exception still covers a user's board, exactly as it covers anybody using
+KiCad's libraries in KiCad.
 
 ## Sources consulted
 

@@ -74,7 +74,7 @@
 > değil.
 
 **Şuraya atla** — [Çalıştırmak](#çalıştırmak) ·
-[Bağlantılar](#her-bağlantı-aynı-şey-değildir) · [İki yüz](#iki-yuz) ·
+[Bağlantılar](#her-bağlantı-aynı-şey-değildir) · [İki yüz](#her-iki-yüz-ve-üçüncü-boyut) ·
 [Gerçek parçalar](#gerçek-parçalar-adlarıyla) · [Şema](#önce-devreyi-çizin) ·
 [Rehber](#rehberin-bir-sırası-var-ve-onu-izleyebilirsiniz) ·
 [Bir ajandan](#bir-ajandan) · [Nasıl kurulmuş](#nasıl-kurulmuş) ·
@@ -103,7 +103,7 @@ dönüştürür.
 
 <a id="iki-yuz"></a>
 
-## İki yüz, ve üçüncü boyut
+## Her iki yüz, ve üçüncü boyut
 
 Bakır lehim yüzeyindedir; bu yüzden lehim yüzeyi bir "ayna modu" değil, tam yetkili bir
 görünümdür — ve **bakmadığınız** yüzdeki bakır taralı çizilir, çünkü kart saydam değildir
@@ -333,7 +333,7 @@ src/perfboard_studio/ui/         Qt uygulaması: 2D editör, VTK 3D görünüm, 
 src/perfboard_studio/mcp/        MCP sunucusu (docs/MCP.md)
 src/perfboard_studio/catalog.py  gerçek parçalar, adlarıyla ve veri sayfalarıyla
 examples/                  içe aktarılacak netlist'ler ve çıktıkları kartlar
-tests/                     ~2800 test; motor mypy --strict temiz
+tests/                     ~3500 test; motor mypy --strict temiz
 packages/                  Python portunun karşısında kanıtlandığı referans olarak
                            saklanan orijinal TypeScript motoru
 ```
@@ -384,7 +384,7 @@ Sırada, [PLAN.md](./PLAN.md) §11'in koyduğu sırayla:
 | [docs/prior-art.md](./docs/prior-art.md) | bu alanda hâlihazırda var olan araçlar, ve bu projenin onlara karşı koruduğu lisans sınırı (yalnızca İngilizce) |
 | [CONTRIBUTING.md](./CONTRIBUTING.md) | test paketinin çalıştırılması, hangi kontrollerin kapı hangilerinin rapor olduğu (yalnızca İngilizce) |
 | [SECURITY.md](./SECURITY.md) · [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) | güvenlik açığı bildirimi, ve burada insanlardan beklenen davranış (yalnızca İngilizce) |
-| [PLAN.md](./PLAN.md) | **Türkçe** yazılmış proje planı, yazıldığı hâlde duruyor: neyin öngörüldüğü neyin çıktığının yanında okunabilsin diye |
+| [PLAN.md](./PLAN.md) | **Türkçe** yazılmış proje planı: ne yapılacağı ve neyin bilerek yapılmadığı. Dondurulmuş değil, plan değiştikçe o da değişiyor; tutmayan bir öngörü ne olduğunu söyleyen bir cümleyle yerinde kalıyor |
 | [CLAUDE.md](./CLAUDE.md) | kodun neden bu şekilde olduğu. Repoda çalışan ajanlar için yazıldı, ama bir şeyi değiştirmek üzere olan bir insan için buradaki en faydalı belge (yalnızca İngilizce) |
 
 ## Katkı
@@ -398,4 +398,22 @@ Kayıt [docs/prior-art.md](./docs/prior-art.md) içinde.
 
 ## Lisans
 
-Apache-2.0. Bkz. [LICENSE](./LICENSE) ve [NOTICE](./NOTICE).
+**Kod Apache-2.0'dır.** Bkz. [LICENSE](./LICENSE) ve [NOTICE](./NOTICE).
+
+**`src/perfboard_studio/ui/models/` içindeki 3D kılıf mesh'leri CC-BY-SA 4.0'dır**, çünkü
+[KiCad packages3D kütüphanesinden](https://gitlab.com/kicad/libraries/kicad-packages3D)
+türetildiler. Bu dağıtımın Apache-2.0 olmayan tek parçası onlar, ve o klasörde kendi
+[LICENSE](./src/perfboard_studio/ui/models/LICENSE) ve
+[NOTICE.md](./src/perfboard_studio/ui/models/NOTICE.md) dosyalarını taşıyorlar.
+
+İnsanların gerçekten sorduğu iki soru:
+
+- **Tasarladığım bir kartı etkiler mi?** Hayır. KiCad'in lisansında tam da bunun için bir
+  istisna var: kütüphaneyle yapılan tasarımlar ve onlardan üretilen dosyalar kapsam dışında.
+  `.perf` dosyanız, şemanız, montaj rehberiniz ve tezgâhınızdaki kart sizindir, istediğiniz
+  koşullarla. KiCad'in kendisini kullanan herkesle aynı durum.
+- **Bir fork'u, ya da dağıttığım bir derlemeyi etkiler mi?** Yalnızca o klasörü, ve yalnızca
+  olağan CC-BY-SA biçimiyle: `LICENSE` ve `NOTICE.md` dosyalarını onunla birlikte tutun.
+  Ağacın geri kalanı Apache-2.0 kalır. Mesh'leri kendiniz üretmeyi tercih ederseniz
+  `tools/import_kicad_models.py` onları bir KiCad kurulumundan yeniden üretir, ve onları
+  silmenin şekillerden başka bir bedeli yok — her parça kendi üretilmiş gövdesine geri döner.

@@ -1529,6 +1529,22 @@ field for field -- then builds every board in the repository in both languages a
 English words the two share, which is what a sentence nobody wrapped looks like from the
 outside. `tests/test_guide_golden.py` freezes the NE555 guide in Turkish beside the English.
 
+**Turkish stops at what the builder sees**: the interface, the build guide and
+`README.tr.md`. `docs/`, `CHANGELOG.md`, `CONTRIBUTING.md` and this file are English on
+purpose — their readers are developers and agents, and keeping pages in two languages
+means making every change twice. Do not add a `.tr.md` beside them.
+
+The two READMEs are held to one SHAPE rather than one meaning by `tests/test_docs.py`:
+the same headings at the same levels, the same code blocks and table rows, and the same
+inline code spans, counted. A translation cannot be checked for meaning, but a paragraph
+added to one README and not the other is exactly a heading, a row or a handful of
+identifiers that exist on one side only — so a change to one README is made to both in
+the same commit. It earned its place on the first run, which found the Turkish README
+calling the whole project Apache-2.0 in every release since the meshes arrived in 0.12.0.
+In-page links are checked on every page, against GitHub's slugger exactly, marks
+included: a heading that starts with "İ" gets an anchor with an invisible U+0307 in it,
+so do not start one so.
+
 The language is chosen `--lang` → `PERFBOARD_STUDIO_LANG` → the View menu's stored choice → the
 system locale (`main._preferred_language`), and applies at the **next start**: every label
 is translated once, as the window is built, so a live re-translation would leave whatever

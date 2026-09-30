@@ -1,6 +1,6 @@
 # Releasing Perfboard Studio
 
-Four steps, in this order. `tests/test_version.py` enforces the parts that can be
+Six steps, in this order. `tests/test_version.py` enforces the parts that can be
 enforced, so a half-done release fails the suite rather than shipping.
 
 ## The scheme

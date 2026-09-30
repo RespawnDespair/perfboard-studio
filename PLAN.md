@@ -4,7 +4,7 @@
 > çizmeyi ve bundan **çok detaylı bir lehim rehberi** üretmeyi sağlayan açık kaynak
 > masaüstü uygulaması.
 >
-> **Durum:** uçtan uca çalışıyor ve yayında — **v0.12.0-dev**, PyPI'da ve üç masaüstü
+> **Durum:** uçtan uca çalışıyor ve yayında — **v0.15.0-dev**, PyPI'da ve üç masaüstü
 > platformu için kurulum paketi olarak. Açık kalan iki şey var ve ikisi de kod değil:
 > dogfood testi (§11) ve kod imzalama (§12).
 > **Sahip:** medinstech · **Lisans:** Apache-2.0 · **İsim:** Perfboard Studio
@@ -683,7 +683,6 @@ söyleyen tek şey şu an testler.
 Plandan gelmeyen, kullanımdan gelen işler. Sıra bağlayıcı değil.
 
 - **Hiyerarşik sayfa ve bus.** Yok. 24 parçalık kartlarda ihtiyaç duyulmadı.
-- **`docs/` Türkçesi.** Arayüz tam Türkçe, `README` iki dilde; `docs/` yalnız İngilizce.
 - **Kod imzalama** — §12.
 
 ---
@@ -751,11 +750,18 @@ Kutular gerçek durumu gösterir; yarısı yapılmış bir madde işaretlenmez, 
       yükseltme, macOS'ta /Applications içindeki paketi değiştirme, Linux'ta çalışan
       AppImage'ın üstüne yazma) kötü amaçlı yazılımdan ayırt edilemeyen ve geri dönüşü
       olmayan bir mekanizma. Son tıklama kullanıcının
-- [x] Örnek projeler: 555 flaşör, LM317 güç kaynağı, Arduino shield, gitar pedalı
-      (`examples/`, dördü de netlist + kart)
+- [x] Örnek projeler: 555 flaşör, LM317 güç kaynağı, Arduino shield, gitar pedalı,
+      ATmega328 röle kartı ve katalog parçalarıyla bir Arduino Nano röle sürücü
+      (`examples/`, altısı da netlist + kart), bir de henüz karta konmamış bir tasarım
+      olarak `ne555-blinker/` projesi
 - [x] MCP kurulum dokümanı (`docs/MCP.md`: Claude Code, ve JSON config okuyan her şey —
       Claude Desktop, Antigravity, Cursor)
-- [ ] TR + EN dokümantasyon: README iki dilde ve arayüzün tam Türkçe kataloğu var.
-      **Kalan:** `docs/` (MCP, RELEASING, prior-art) yalnızca İngilizce
+- [x] TR + EN dokümantasyon: README iki dilde, arayüzün ve montaj rehberinin tam Türkçesi
+      var. **`docs/` bilerek yalnız İngilizce**, `CHANGELOG`, `CONTRIBUTING` ve `CLAUDE.md`
+      gibi: okuyanları geliştiriciler ve ajanlar, ve belgeleri iki dilde tutmanın bedeli —
+      her değişikliği iki kere yapmak — kazancından büyük. Türkçe, kartı kuracak kişinin
+      gördüğü yerde: arayüz, montaj rehberi, README. İki README'yi `tests/test_docs.py`
+      aynı biçimde tutuyor; ilk koşusunda Türkçesinin lisansı hâlâ düz Apache-2.0 diye
+      yazdığını buldu
 - [ ] Duyuru: Hackaday, r/diyelectronics, r/AskElectronics, EEVblog, diyAudio, Show HN
       — M5'in dogfood testi kapanmadan yapılmaz

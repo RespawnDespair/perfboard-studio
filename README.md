@@ -327,7 +327,7 @@ src/perfboard_studio/ui/         Qt application: 2D editor, VTK 3D view, 1:1 PDF
 src/perfboard_studio/mcp/        the MCP server (docs/MCP.md)
 src/perfboard_studio/catalog.py  the real parts, by name, each with its datasheet
 examples/                  netlists to import, and the boards they become
-tests/                     ~2800 tests; the engine is mypy --strict clean
+tests/                     ~3500 tests; the engine is mypy --strict clean
 packages/                  the original TypeScript engine, kept as the reference the
                            Python port is proved against
 ```
@@ -386,7 +386,7 @@ Next, in the order [PLAN.md](https://github.com/medinstech/perfboard-studio/blob
 | [docs/prior-art.md](https://github.com/medinstech/perfboard-studio/blob/main/docs/prior-art.md) | the tools that already exist in this space, and the licence boundary this project keeps from them |
 | [CONTRIBUTING.md](https://github.com/medinstech/perfboard-studio/blob/main/CONTRIBUTING.md) | running the suite, which checks are gates and which are reports |
 | [SECURITY.md](https://github.com/medinstech/perfboard-studio/blob/main/SECURITY.md) · [CODE_OF_CONDUCT.md](https://github.com/medinstech/perfboard-studio/blob/main/CODE_OF_CONDUCT.md) | reporting a vulnerability, and how people are expected to behave here |
-| [PLAN.md](https://github.com/medinstech/perfboard-studio/blob/main/PLAN.md) | the original project plan, **written in Turkish** and kept as written, so what was predicted can be read beside what came out |
+| [PLAN.md](https://github.com/medinstech/perfboard-studio/blob/main/PLAN.md) | the project plan, **written in Turkish**: what is to be done and what is deliberately not. It is not frozen; it changes when the plan does, and a prediction that did not hold stays where it was with a sentence saying what happened |
 | [CLAUDE.md](https://github.com/medinstech/perfboard-studio/blob/main/CLAUDE.md) | why the code is shaped the way it is. Written for agents working in the repository, and the most useful thing here for a person about to change something |
 
 ## Contributing
