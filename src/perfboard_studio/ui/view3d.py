@@ -4027,7 +4027,9 @@ def populate_renderer(
     return {"actors": ren.GetActors().GetNumberOfItems(), "pads": board.cols * board.rows}
 
 
-def apply_default_camera(ren: vtk.vtkRenderer, flipped: bool = False) -> None:
+def apply_default_camera(
+    ren: vtk.vtkRenderer, flipped: bool = False, across: bool = False
+) -> None:
     """Frame the board from the standard three-quarter viewpoint.
 
     Called when the view is first shown, when the board is flipped, and by "Reset Camera" --
@@ -4053,11 +4055,15 @@ def apply_default_camera(ren: vtk.vtkRenderer, flipped: bool = False) -> None:
     ``ResetCamera``-ed, which VTK leaves alone rather than guessing. Every caller that
     shows a picture therefore calls this once the window has its size: ``render_offscreen``
     and ``render_step_images`` after ``SetSize``, and the panel on its first real resize.
+
+    ``across`` lays the board's columns up the screen instead of its rows, for a picture of
+    a tall board in a wide frame: a 2 x 8 cm strip framed upright fills a fifth of a
+    landscape animation and leaves the rest of it dark.
     """
     cam = ren.GetActiveCamera()
     cam.SetPosition(0.0, 0.0, 1.0)
     cam.SetFocalPoint(0.0, 0.0, 0.0)
-    cam.SetViewUp(0.0, 1.0, 0.0)
+    cam.SetViewUp(*((-1.0, 0.0, 0.0) if across else (0.0, 1.0, 0.0)))
 
     if flipped:
         cam.Elevation(180)

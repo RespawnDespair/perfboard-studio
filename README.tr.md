@@ -248,8 +248,9 @@ düğmesi sıradaki adımı yapar. Elle yapıldığında akış şöyle:
 sürükleyin, istediğiniz yere taşıyıp döndürün, **Bağla** ile pinden pine ya da çizilmiş
 bir telin üstüne tel çekin (iki ucuna tıklayarak ya da sürükleyerek) — ya da bir pini
 **Etiket** ile adına göre bir nete bağlayın, ya da sağ tıklayıp GND ve +5V'ye bağlayın —
-sonra **Kart Üzerine Yerleştir**; önce hangi hazır kartın kullanılacağını, her birini
-devreniz üzerine yerleştirilmiş hâliyle göstererek sorar.
+sonra **Kart Üzerine Yerleştir**; önce hangi hazır kartın kullanılacağını sorar: devreniz
+geniş bir kartta ve ondan küçük her boyda yerleştirilir, tellenir ve denetlenir, ve öneri
+aynı iyilikte kurulduğu en küçük karttır.
 Oradan **Yerleştir →
 Otomatik Yerleştir** (`Ctrl+Shift+A`), yönlendirme için **`Ctrl+R`**, ardından **Dosya → Montaj
 Rehberini Dışa Aktar** (`Ctrl+B`). Bu akışın hiçbir yerinde KiCad yok.

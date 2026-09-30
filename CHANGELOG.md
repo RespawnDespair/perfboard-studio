@@ -36,6 +36,25 @@ closed without a bump.
   takes a few seconds on a small circuit and about half a minute on a 24-part one -- once per
   design, since the answer is remembered until the design changes.
 
+- **The examples moved onto the boards the application recommends for them**, placed exactly
+  as the window places them. The sizes used to be written into the build script by hand,
+  and each placement was the cheapest of a sweep of seeds -- a little better than anybody
+  pressing the same buttons would get. Now the script asks the Board step's own question and
+  commits the placement that board was judged by, at seed 0:
+
+  | | was | now |
+  |---|---|---|
+  | atmega328-relay | 9 × 15 cm | 7 × 9 cm |
+  | nano-relay | 9 × 15 cm | 6 × 8 cm |
+  | lpb1-booster | 7 × 9 cm | 5 × 7 cm |
+  | lm317-supply | 6 × 8 cm | 4 × 6 cm |
+  | arduino-io-shield | 5 × 7 cm | 2 × 8 cm |
+  | ne555-astable | 4 × 6 cm | 2 × 8 cm |
+  | ne555-blinker (suggested) | 6 × 8 cm | 2 × 8 cm |
+
+  The README's pictures of nano-relay and the assembly animation are redrawn from them, and
+  the animation lays a board taller than it is wide across its frame rather than upright.
+
 - **Place on the Board after choosing a board puts down exactly what the dialog showed**,
   at once. The board was tried with the circuit placed on it, so that placement is committed
   rather than worked out a second time, which took as long again and could come out

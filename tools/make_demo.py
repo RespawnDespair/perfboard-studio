@@ -129,7 +129,10 @@ def main(argv: list[str]) -> int:
     for pass_number, flipped in ((0, False), (1, True)):
         if flipped:
             flip_at = len(frames)
-        view3d.apply_default_camera(renderer, flipped)
+        # A board taller than it is wide is laid across the frame, which is wide: upright,
+        # the NE555's 2 x 8 cm strip filled a fifth of the picture.
+        board = document.board
+        view3d.apply_default_camera(renderer, flipped, across=board.rows > board.cols)
         pass_frames: list[Image.Image] = []
         for index in range(len(steps) + 1):
             # Index 0 is the bare board -- the state before any step -- and index

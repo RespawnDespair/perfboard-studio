@@ -246,7 +246,8 @@ Open the schematic panel (`Ctrl+2`) and draw the circuit: drag parts onto the sh
 of the Parts panel, move and turn them where you want them, **Wire** from pin to pin or
 onto a wire already drawn (click both ends, or drag) — or **Label** a pin to join it to a
 net by name, or right-click it for GND and +5V — then **Place on the Board**, which first
-asks which stock board to use, each shown with your circuit laid out on it. From there
+asks which stock board to use: your circuit is placed, wired and checked on a roomy board
+and on each smaller one, and the suggestion is the smallest it builds as well on. From there
 **Place → Auto-place Board** (`Ctrl+Shift+A`), **`Ctrl+R`** to route, and
 **File → Export Build Guide** (`Ctrl+B`). No KiCad anywhere in that.
 

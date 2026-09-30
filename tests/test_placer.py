@@ -2402,7 +2402,9 @@ def test_a_move_is_scored_exactly_as_asking_every_pair_would_score_it(name: str)
     movable = [position for position, part in enumerate(state.parts) if part.movable]
     rng = random.Random(7)
     checked = 0
-    for _ in range(400):
+    # Six hundred tries for three hundred moves: on a small stock board a good share of
+    # proposals has nowhere to go and is not a move at all.
+    for _ in range(600):
         proposal = _propose(rng, state, movable, 6, DEFAULT_PLACEMENT_OPTIONS)
         if proposal is None:
             continue

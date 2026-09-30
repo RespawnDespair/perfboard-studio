@@ -6563,13 +6563,13 @@ def test_a_placed_part_dragged_from_the_sheet_is_ghosted_the_way_round_it_is() -
             encoding="utf-8"
         )
     ).document
-    relay = next(c for c in doc.components if c.ref == "K1")
-    assert relay.rotation, "the example no longer turns its relay"
+    turned = next((c for c in doc.components if c.rotation), None)
+    assert turned is not None, "the example no longer turns any part"
     window = _window_on(doc)
 
-    ghost = _drag_over_board(window, PART_MIME, "K1", relay.anchor)
+    ghost = _drag_over_board(window, PART_MIME, turned.ref, turned.anchor)
     assert ghost is not None
-    assert (ghost.part_rotation, ghost.part_mirrored) == (int(relay.rotation), relay.mirrored)
+    assert (ghost.part_rotation, ghost.part_mirrored) == (int(turned.rotation), turned.mirrored)
     assert not ghost.blocked, "a part is not in its own way"
     _close(window)
 

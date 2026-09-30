@@ -30,44 +30,38 @@ sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from perfboard_studio import persist  # noqa: E402
 from perfboard_studio.autoroute import AutorouteOptions, plan_autoroute  # noqa: E402
+from perfboard_studio.boardfit import BoardChoice, choose_board  # noqa: E402
 from perfboard_studio.command import CommandBus, CommandContext  # noqa: E402
 from perfboard_studio.commands import (  # noqa: E402
     AddBoardNotePayload,
     AddPartPayload,
+    AddPartsPayload,
     ImportNetlistPayload,
-    PlaceBlockPayload,
-    PlaceComponentPayload,
     create_document_id_generator,
     create_empty_document,
     create_standard_registry,
+    preset_payload,
 )
 from perfboard_studio.drc import placed_body_box, placed_entry, run_drc  # noqa: E402
 from perfboard_studio.footprints import footprint_lookup  # noqa: E402
 from perfboard_studio.geometry import (  # noqa: E402
-    STANDARD_PRESETS,
     BoardFamily,
-    BoardPreset,
-    board_from_preset,
     board_note_anchor,
     hole_to_mm,
     mounting_hole_centre_mm,
-    preset_edge_connectors,
-    preset_mounting_holes,
     substrate_edges_mm,
     unusable_holes,
 )
 from perfboard_studio.guide import build_guide  # noqa: E402
 from perfboard_studio.lvs import run_lvs  # noqa: E402
 from perfboard_studio.model import Board, DocumentMeta, HoleCoord, PerfDocument  # noqa: E402
-from perfboard_studio.netlist_import import import_placements  # noqa: E402
 from perfboard_studio.parsers.kicad import parse_kicad_netlist  # noqa: E402
 from perfboard_studio.parsers.kicad_parts import plan_import  # noqa: E402
 from perfboard_studio.placer import (  # noqa: E402
+    DesignPlacement,
     PlacementOptions,
-    design_entries,
-    plan_placement,
-    recommended_board,
-    suggest_boards,
+    place_design,
+    placement_inputs,
 )
 from perfboard_studio.router import RouterOptions  # noqa: E402
 from perfboard_studio.schematic import build_schematic  # noqa: E402
@@ -90,39 +84,37 @@ ROUTING = AutorouteOptions(router=RouterOptions(wire_path="grid"))
 
 
 class Example:
-    """One example: its netlist, the BOARD PRODUCT to put it on, and what each part is.
+    """One example: its netlist, the board FAMILY it goes on, and what each part is.
 
-    A product, not a hole count. Every example used to be on a grid nobody sells -- 32 x 22,
-    30 x 20, 24 x 18 -- which quietly taught the wrong thing twice over: that a perfboard
-    comes in whatever size you like, and that the finger strips and corner holes a real one
-    arrives with are somebody else's problem. They are not: a finger is solid copper with no
-    bore, and until the placer and the router were taught that (``geometry.unusable_holes``)
-    putting these examples on real boards produced five DRC errors.
+    The family and not the size: the size is what the Board step's question answers, and an
+    example is built the way somebody would build it in the window -- the design first,
+    then ``boardfit.choose_board`` at seed 0 picks the stock board, then the placement that
+    board was judged by goes down, then Ctrl+R. So every example ships on the board this
+    application recommends for it, placed as it would place it, and the moment either
+    changes this script says so rather than the README quietly going stale. The sizes used
+    to be written in here by hand; atmega328-relay's said 9 x 15 cm, and the circuit builds
+    as cleanly on 7 x 9.
 
-    ``preset`` is the name in ``geometry.STANDARD_PRESETS``, which is also what the size
-    suggestion offers a user -- so every example ships on a board this application would
-    have recommended for it, and on a board a supplier actually stocks.
+    A product, not a hole count, still: every example used to be on a grid nobody sells, and
+    the finger strips and corner holes a real board arrives with are what taught the placer
+    and the router about holes nothing can be soldered into (``geometry.unusable_holes``).
     """
 
     def __init__(
         self,
         stem: str,
         title: str,
-        preset: str,
         footprints: dict[str, str],
         family: BoardFamily = "double-sided-fr4",
-        seed: int = 0,
         pin_names: dict[str, dict[str, str]] | None = None,
         labels: tuple[tuple[str, str], ...] = (),
     ) -> None:
         self.stem = stem
         self.title = title
-        self.preset = preset
         #: Empty means the netlist is IMPORTED as a user imports one -- every part read for
         #: what it is by ``parsers.kicad_parts`` -- rather than told what each part is.
         self.footprints = footprints
         self.family = family
-        self.seed = seed
         #: Names for pins the schematic leaves unnamed -- a terminal's "Pin_1" -- by ref.
         self.pin_names = pin_names or {}
         #: Words written on the board: (text, the ref it goes beside).
@@ -133,7 +125,6 @@ CATALOGUE: tuple[Example, ...] = (
     Example(
         stem="ne555-astable",
         title="NE555 Astable",
-        preset="4 x 6 cm",
         footprints={
             "U1": "dip-8",
             "R1": "r-axial-3",
@@ -148,7 +139,6 @@ CATALOGUE: tuple[Example, ...] = (
     Example(
         stem="lm317-supply",
         title="LM317 Adjustable Supply",
-        preset="6 x 8 cm",
         footprints={
             # A TO-220 on its own, which is the whole reason this file names footprints:
             # the regulator is the hot part, and heat-proximity measures from its body
@@ -170,7 +160,6 @@ CATALOGUE: tuple[Example, ...] = (
     Example(
         stem="lpb1-booster",
         title="One-Transistor Guitar Booster",
-        preset="7 x 9 cm",
         # FR-2 phenolic, deliberately: this is the board a pedal actually gets built on,
         # and it is the material whose pads lift. Choosing it here is what makes the
         # guide drop the iron temperature and DRC's pad-lifting rule speak up at all.
@@ -193,7 +182,6 @@ CATALOGUE: tuple[Example, ...] = (
     Example(
         stem="arduino-io-shield",
         title="Arduino I/O Shield",
-        preset="5 x 7 cm",
         footprints={
             "J1": "hdr-1x8",
             "J2": "hdr-1x6",
@@ -211,7 +199,6 @@ CATALOGUE: tuple[Example, ...] = (
     Example(
         stem="atmega328-relay",
         title="ATmega328 Relay Board",
-        preset="9 x 15 cm",
         footprints={
             "U1": "dip-28",
             "U2": "to220",
@@ -238,18 +225,10 @@ CATALOGUE: tuple[Example, ...] = (
             "J3": "hdr-1x6",
             "J4": "hdr-1x8",
         },
-        # Swept, not picked: annealing is a random walk and the outcome genuinely varies.
-        # Over six seeds this board came out between 742 and 788 of routed cost and between
-        # 44 and 52 wires -- every one of them routing all 24 nets with no DRC error, which
-        # is the reassuring half of that measurement. This is the cheapest of them.
-        seed=5,
     ),
     Example(
         stem="nano-relay",
         title="Arduino Nano Relay Driver",
-        # What Place on the Board recommends for it: 7 x 9 cm fits it at half full, past
-        # the ratio that leaves room to wire.
-        preset="9 x 15 cm",
         # No footprints: this one is imported the way a user imports a netlist, and it is
         # the example that shows what that reads -- the Nano, the BC547, the 1N4007 and the
         # 7805 come out of the catalog by their values, with their pin names; the rest by
@@ -261,9 +240,6 @@ CATALOGUE: tuple[Example, ...] = (
             "J2": {"1": "COM", "2": "NO", "3": "NC"},
         },
         labels=(("12V IN", "J1"), ("LOAD", "J2")),
-        # Swept like atmega328-relay's: seeds 0-7 all route clean, and 5 is the first with
-        # the fewest wires and no terminal under a screw head.
-        seed=5,
     ),
 )
 
@@ -271,7 +247,8 @@ CATALOGUE: tuple[Example, ...] = (
 #: The parts of a board a preset does not decide: the pitch every one of these products
 #: is drilled on, the substrate thickness, and the pad and drill diameters. Everything else
 #: -- the grid, the material, whether it is single-sided, the border and the printed legend
-#: -- comes from the product.
+#: -- comes from the product the board question picks. It is also the blank the design sits
+#: on until then, which is what the window opens a new circuit on.
 BASE_BOARD = Board(
     type="pad-per-hole",
     cols=60,
@@ -284,33 +261,14 @@ BASE_BOARD = Board(
 )
 
 
-def _preset(example: Example) -> BoardPreset:
-    for preset in STANDARD_PRESETS:
-        if preset.name == example.preset and preset.family == example.family:
-            return preset
-    raise KeyError(f"no {example.family} preset called {example.preset!r}")
-
-
-def _board(example: Example) -> Board:
-    return board_from_preset(_preset(example), BASE_BOARD)
-
-
 def build(example: Example, lookup, *, write: bool) -> bool:
     net_path = EXAMPLES / f"{example.stem}.net"
     parsed = parse_kicad_netlist(net_path.read_text(encoding="utf-8"))
 
-    preset = _preset(example)
-    board = _board(example)
-    # The whole product, not just the grid: the finger strips down two edges and the screw
-    # hole in each corner are what arrives in the envelope, and leaving them off would make
-    # these examples boards nobody has. They are also the reason the placer and the router
-    # had to learn about holes nothing can be soldered into -- see geometry.unusable_holes.
-    document = replace(
-        create_empty_document(
-            DocumentMeta(name=example.title, created=STAMP, modified=STAMP), board
-        ),
-        edge_connectors=preset_edge_connectors(preset, board),
-        mounting_holes=preset_mounting_holes(preset, board),
+    phenolic = example.family == "single-sided-phenolic"
+    blank = replace(BASE_BOARD, single_sided=phenolic, material="FR2" if phenolic else "FR4")
+    document = create_empty_document(
+        DocumentMeta(name=example.title, created=STAMP, modified=STAMP), blank
     )
     bus = CommandBus(
         document,
@@ -318,98 +276,111 @@ def build(example: Example, lookup, *, write: bool) -> bool:
         CommandContext(next_id=create_document_id_generator(document)),
     )
 
-    # Parts first, then the netlist: importing nets that name a component which is not
-    # on the board yet is legal but leaves the nets pointing at nothing, and the placer
-    # would have no bodies to arrange.
-    #
-    # They go down in a column at the left edge and are immediately rearranged by the
-    # placer, so the starting anchors only have to be legal, not good.
-    if not example.footprints:
-        if not _import_as_a_user_would(example, parsed, bus, lookup):
-            return False
-        return _finish(example, bus, lookup, preset, write=write)
-
-    refs = sorted({node.component_ref for net in parsed.nets for node in net.nodes})
-    missing = [ref for ref in refs if ref not in example.footprints]
-    if missing:
-        print(f"  {example.stem}: netlist names {missing} with no footprint in CATALOGUE")
+    # The design first, as in the window: the parts into the design with no holes, the
+    # netlist joining them. Nothing is on a board until a board has been chosen.
+    if not _the_design(example, parsed, bus, lookup):
         return False
 
-    col, row = 0, 0
-    for ref in refs:
-        footprint_id = example.footprints[ref]
-        footprint = lookup(footprint_id)
-        if footprint is None:
-            print(f"  {example.stem}: no such footprint {footprint_id!r} for {ref}")
-            return False
-        result = bus.dispatch(
-            "component.place",
-            PlaceComponentPayload(
-                ref=ref,
-                value=next(
-                    (c.value or "" for c in parsed.components if c.ref == ref), ""
-                ),
-                footprint_id=footprint_id,
-                anchor=HoleCoord(col, row),
-                id=f"c-{ref.lower()}",
-            ),
-        )
-        if not result.ok:
-            print(f"  {example.stem}: placing {ref} refused [{result.code}] {result.message}")
-            return False
-        row += 3
-        if row >= board.rows - 2:
-            row = 0
-            col += 4
-
-    result = bus.dispatch("netlist.import", ImportNetlistPayload(nets=parsed.nets))
+    choice = choose_board(bus.document, lookup)
+    _print_choice(example, choice)
+    chosen = choice.recommended
+    if chosen is None:
+        print(f"  {example.stem}: no stock board takes this circuit")
+        return False
+    result = bus.dispatch("board.applyPreset", preset_payload(chosen.preset, chosen.board))
     if not result.ok:
-        print(f"  {example.stem}: netlist import refused [{result.code}] {result.message}")
+        print(f"  {example.stem}: board refused [{result.code}] {result.message}")
         return False
-    return _finish(example, bus, lookup, preset, write=write)
 
-
-def _import_as_a_user_would(example: Example, parsed, bus: CommandBus, lookup) -> bool:
-    """File > Import KiCad Netlist and yes to placing the parts, without the dialogs."""
-    plan = plan_import(parsed, bus.document, lookup)
-    for ref, lines in sorted(plan.notes.items()):
-        for line in lines:
-            print(f"      {ref}: {line}")
-    result = bus.dispatch("netlist.import", ImportNetlistPayload(nets=plan.nets))
-    if not result.ok:
-        print(f"  {example.stem}: netlist import refused [{result.code}] {result.message}")
+    # What was judged is what lands, exactly as Place on the Board does after the Board
+    # step -- and when the reference was already the smallest board, nothing was tried,
+    # and the design is placed the way the window places it then.
+    verdict = choice.verdict_for(chosen.preset)
+    placed: DesignPlacement | None = None
+    if (
+        verdict is not None
+        and verdict.trial.document is not None
+        and placement_inputs(verdict.trial.document) == placement_inputs(bus.document)
+    ):
+        placed = verdict.trial.placed
+    if placed is None:
+        placed = place_design(bus.document, lookup, PlacementOptions(seed=0))
+    if placed.unplaced:
+        print(f"  {example.stem}: no room on {chosen.preset.name} for {list(placed.unplaced)}")
         return False
-    suggestions = [
-        replace(
-            suggestion,
-            pin_names=tuple(example.pin_names[suggestion.ref].items()),
-        )
-        if suggestion.ref in example.pin_names
-        else suggestion
-        for suggestion in plan.suggestions.values()
-    ]
-    placements, left_out = import_placements(suggestions, bus.document, lookup)
-    if left_out:
-        print(f"  {example.stem}: no room for {left_out}")
-        return False
-    result = bus.dispatch(
-        "block.place", PlaceBlockPayload(components=tuple(placements), label="import")
-    )
+    result = bus.dispatch("part.place", placed.payload())
     if not result.ok:
         print(f"  {example.stem}: placing refused [{result.code}] {result.message}")
+        return False
+    return _finish(example, bus, lookup, chosen.preset.name, write=write)
+
+
+def _the_design(example: Example, parsed, bus: CommandBus, lookup) -> bool:
+    """Every part into the design and the netlist over them, in one ``part.addMany`` each
+    way round -- told what each part is, or reading it as File > Import KiCad Netlist does."""
+    if example.footprints:
+        refs = sorted({node.component_ref for net in parsed.nets for node in net.nodes})
+        missing = [ref for ref in refs if ref not in example.footprints]
+        if missing:
+            print(f"  {example.stem}: netlist names {missing} with no footprint in CATALOGUE")
+            return False
+        unknown = [ref for ref in refs if lookup(example.footprints[ref]) is None]
+        if unknown:
+            print(f"  {example.stem}: no such footprint for {unknown}")
+            return False
+        parts = tuple(
+            AddPartPayload(
+                ref=ref,
+                footprint_id=example.footprints[ref],
+                value=next((c.value or "" for c in parsed.components if c.ref == ref), ""),
+                id=f"c-{ref.lower()}",
+            )
+            for ref in refs
+        )
+        nets = parsed.nets
+    else:
+        plan = plan_import(parsed, bus.document, lookup)
+        for ref, lines in sorted(plan.notes.items()):
+            for line in lines:
+                print(f"      {ref}: {line}")
+        parts = tuple(
+            AddPartPayload(
+                ref=suggestion.ref,
+                footprint_id=suggestion.footprint_id,
+                value=suggestion.value,
+                pin_names=(
+                    tuple(example.pin_names[suggestion.ref].items())
+                    if suggestion.ref in example.pin_names
+                    else suggestion.pin_names
+                ),
+                symbol=suggestion.symbol,
+                id=f"c-{suggestion.ref.lower()}",
+            )
+            for suggestion in sorted(plan.suggestions.values(), key=lambda s: s.ref)
+        )
+        nets = plan.nets
+
+    result = bus.dispatch("part.addMany", AddPartsPayload(parts=parts))
+    if not result.ok:
+        print(f"  {example.stem}: adding the parts refused [{result.code}] {result.message}")
+        return False
+    result = bus.dispatch("netlist.import", ImportNetlistPayload(nets=nets))
+    if not result.ok:
+        print(f"  {example.stem}: netlist import refused [{result.code}] {result.message}")
         return False
     return True
 
 
-def _finish(example: Example, bus: CommandBus, lookup, preset: BoardPreset, *, write: bool) -> bool:
-    """Place, route, write on the board, check -- the same for every example."""
-    plan = plan_placement(bus.document, lookup, PlacementOptions(seed=example.seed))
-    if not plan.is_empty:
-        result = bus.dispatch("component.moveMany", plan.payload())
-        if not result.ok:
-            print(f"  {example.stem}: placement refused [{result.code}] {result.message}")
-            return False
+def _print_choice(example: Example, choice: BoardChoice) -> None:
+    """The board question's working, one board to a line."""
+    for verdict in choice.verdicts:
+        ratio = "" if verdict.cost_ratio is None else f"x{verdict.cost_ratio:.2f}"
+        extra = " ".join(verdict.new_warnings)
+        print(f"      {verdict.preset.name:>10}  {verdict.kind:13} {ratio:6} {extra}")
 
+
+def _finish(example: Example, bus: CommandBus, lookup, board_name: str, *, write: bool) -> bool:
+    """Route, write on the board, check -- the same for every example."""
     plan = plan_autoroute(bus.document, lookup, ROUTING)
     if not plan.is_empty:
         result = bus.dispatch("conductor.addMany", plan.payload())
@@ -439,7 +410,7 @@ def _finish(example: Example, bus: CommandBus, lookup, preset: BoardPreset, *, w
 
     routing = plan.summary
     status = (
-        f"  {example.stem:20} {preset.name:>10}  {len(document.components):2} parts  "
+        f"  {example.stem:20} {board_name:>10}  {len(document.components):2} parts  "
         f"{len(document.conductors):2} conductors  "
         f"{routing.nets_closed}/{routing.nets_considered} nets closed  "
         f"DRC {len(errors)} err / {len(violations) - len(errors)} warn  "
@@ -545,9 +516,9 @@ PROJECT_STEM = "ne555-blinker"
 PROJECT_TITLE = "NE555 Blinker"
 
 #: Deliberately a board nobody sells: 60 x 40 holes is the blank the application opens on,
-#: and leaving the design on it is what gives "Place on the Board" a real question to ask.
-#: The suggestion it makes -- the smallest stock board with room left to WIRE the circuit --
-#: is the whole point of that step, and it cannot demonstrate itself on a board that is
+#: and leaving the design on it is what gives the Board step a real question to ask. The
+#: answer -- the smallest stock board the circuit builds on as well as on a roomy one -- is
+#: the whole point of that step, and it cannot demonstrate itself on a board that is
 #: already right.
 PROJECT_BOARD = Board(
     type="pad-per-hole",
@@ -628,8 +599,9 @@ def build_project(lookup, *, write: bool) -> bool:
 
     document = bus.document
     drawing = build_schematic(document, lookup)
-    suggestions = suggest_boards(document.board, design_entries(document), document.nets, lookup)
-    best = recommended_board(suggestions)
+    choice = choose_board(document, lookup)
+    _print_choice(Example(PROJECT_STEM, PROJECT_TITLE, {}), choice)
+    best = choice.recommended
 
     print(
         f"  {PROJECT_STEM:20} {len(document.parts):2} parts  "

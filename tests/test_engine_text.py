@@ -65,7 +65,10 @@ from perfboard_studio.placer import describe as describe_placement
 from perfboard_studio.ui.engine_text import TEMPLATES, say
 from perfboard_studio.ui.i18n import TURKISH, language, set_language
 
-EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "ne555-astable.perf"
+#: A realistic board to run the session on. Any example with an R1 does; this one because
+#: its stock board (4 x 6 cm) has a border a finger can reach its hole across -- the NE555
+#: moved to a 2 x 8 cm strip whose borders are too wide for the finger the session adds.
+EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "lm317-supply.perf"
 LOOKUP = footprint_lookup()
 
 
@@ -276,7 +279,8 @@ def _session() -> list[str]:
     # The board itself.
     run("board.note.add", AddBoardNotePayload(text="IN", at=HoleCoord(1, 1)))
     run("board.note.delete", DeleteBoardNotesPayload(ids=tuple(n.id for n in bus.document.board_notes)))
-    run("mounting-hole.add", AddMountingHolePayload(at=HoleCoord(6, 18)))
+    corner = bus.document.board
+    run("mounting-hole.add", AddMountingHolePayload(at=HoleCoord(corner.cols - 1, corner.rows - 2)))
     run("height-limit.set", SetHeightLimitPayload(height_limit_mm=20.0))
     run("height-limit.set", SetHeightLimitPayload(height_limit_mm=None))
     run("document.rename", RenameDocumentPayload(name="Blinker"))

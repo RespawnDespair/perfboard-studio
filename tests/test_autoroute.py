@@ -1343,8 +1343,12 @@ def test_with_no_wire_allowed_fewer_connections_are_left_unrouted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``lpb1-booster`` with no wire at all: three connections left for the builder to work
-    out by hand from criticality and its rip-up; one, from the best of the three orders."""
-    path = Path(__file__).resolve().parents[1] / "examples" / "lpb1-booster.perf"
+    out by hand from criticality and its rip-up; one, from the best of the three orders.
+
+    The board as it shipped up to 0.14, on 7 x 9 cm, frozen here because the test is about
+    the ROUTER: the example itself moved to the 5 x 7 cm board it builds on as well, where
+    the first order already routes everything and there is nothing left to show."""
+    path = Path(__file__).resolve().parent / "router_fixtures" / "lpb1-booster-7x9.perf"
     doc = persist.deserialize_document(path.read_text(encoding="utf-8")).document
     doc = dataclasses.replace(doc, conductors=())
     options = AutorouteOptions(router=SOLDER_COMMITMENTS["no-wire"])

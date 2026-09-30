@@ -222,7 +222,7 @@ def _nano_relay_shots(app: QApplication, shots: list[tuple[str, str]]) -> bool:
     window.act_ratsnest.setChecked(False)
     _settle(app)
 
-    # Framed on the parts rather than the whole 9 x 15 cm board, which is mostly holes: the
+    # Framed on the parts rather than the whole board, which is mostly holes even now: the
     # picture is of the names printed beside the pins and the parts the catalog placed.
     from PySide6.QtCore import Qt
 

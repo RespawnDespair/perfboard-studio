@@ -231,58 +231,28 @@ def test_the_project_examples_sheet_draws_every_part() -> None:
     assert drawing.rails, "ground and power should be drawn as rail glyphs"
 
 
-def test_the_project_example_is_offered_a_stock_board_with_room_to_wire_it() -> None:
-    """What the README's table promises: the smallest board that fits is NOT the one
-    suggested, because a board packed to its last hole has nowhere to run a trace."""
-    from perfboard_studio.placer import design_entries, recommended_board, suggest_boards
+def test_the_project_example_walks_from_a_design_to_a_checked_board() -> None:
+    """The walkthrough its README describes, run end to end, as the window runs it: the
+    board question TRIED on the design (``boardfit.choose_board``), the board it recommends
+    applied, the placement that board was judged by committed, routed, checked.
 
-    document = _project_document()
-    suggestions = suggest_boards(
-        document.board, design_entries(document), document.nets, footprint_lookup()
-    )
-    best = recommended_board(suggestions)
-
-    assert best is not None and best.roomy
-    smallest_that_fits = next(s for s in suggestions if s.fits)
-    assert smallest_that_fits.preset is not best.preset
-    # ...and the boards too small for it are still shown, rather than the list quietly
-    # starting halfway up.
-    assert any(not s.fits for s in suggestions)
-
-
-def test_the_project_example_places_routes_and_checks_out(tmp_path) -> None:
-    """The walkthrough its README describes, run end to end.
-
-    Slower than the rest of this file and worth it: this is the one test that exercises
-    the order of work the application now recommends -- design, board, arrangement, route
-    -- against a real circuit, and the four finished examples cannot, because they arrive
-    already built.
+    Slower than the rest of this file and worth it: this is the one test that exercises the
+    order of work the application recommends -- design, board, placement, route -- against a
+    real circuit, and the finished examples cannot, because they arrive already built. It
+    tries one board below the reference rather than all four, which is the whole mechanism
+    at a quarter of the time; ``tools/build_examples.py`` runs the full question.
     """
-    from perfboard_studio.autoroute import plan_autoroute
+    from perfboard_studio.autoroute import AutorouteOptions, plan_autoroute
+    from perfboard_studio.boardfit import BoardTrialOptions, choose_board
     from perfboard_studio.command import CommandBus, CommandContext
     from perfboard_studio.commands import (
-        ApplyBoardPresetPayload,
-        PartPlacement,
-        PlacePartsPayload,
         create_document_id_generator,
         create_standard_registry,
-        place_parts,
+        preset_payload,
     )
-    from perfboard_studio.geometry import (
-        hole_to_mm,
-        preset_edge_connectors,
-        preset_mounting_holes,
-        substrate_edges_mm,
-        transform_offset,
-    )
-    from perfboard_studio.placer import (
-        PlacementOptions,
-        arrange_design,
-        design_entries,
-        plan_placement,
-        recommended_board,
-        suggest_boards,
-    )
+    from perfboard_studio.geometry import hole_to_mm, substrate_edges_mm, transform_offset
+    from perfboard_studio.placer import placement_inputs
+    from perfboard_studio.router import RouterOptions
 
     lookup = footprint_lookup()
     document = _project_document()
@@ -292,45 +262,21 @@ def test_the_project_example_places_routes_and_checks_out(tmp_path) -> None:
         CommandContext(next_id=create_document_id_generator(document)),
     )
 
-    best = recommended_board(
-        suggest_boards(document.board, design_entries(document), document.nets, lookup)
-    )
-    assert best is not None
-    assert bus.dispatch(
-        "board.applyPreset",
-        ApplyBoardPresetPayload(
-            board=best.board,
-            edge_connectors=preset_edge_connectors(best.preset, best.board),
-            mounting_holes=preset_mounting_holes(best.preset, best.board),
-        ),
-    ).ok
+    choice = choose_board(document, lookup, options=BoardTrialOptions(max_smaller_boards=1))
+    assert choice.complete and choice.reference is not None and choice.recommended is not None
+    assert choice.verdicts[0].kind == "reference"
+    assert len(choice.verdicts) == 2, "the reference, and the one board below it"
+    # The smaller board is the answer whenever it builds as well as the roomy one.
+    if choice.verdicts[1].accepted:
+        assert choice.recommended.preset == choice.verdicts[1].preset
 
-    # Exactly what the window does behind the Place button: arrange, anneal on a preview,
-    # commit the settled anchors as one part.place.
-    arrangement = arrange_design(bus.document, lookup)
-    assert arrangement.fits
-    preview = place_parts.apply(
-        bus.document,
-        PlacePartsPayload(
-            placements=tuple(
-                PartPlacement(id=p.id, anchor=p.anchor, rotation=p.rotation)
-                for p in arrangement.placements
-            )
-        ),
-        CommandContext(next_id=create_document_id_generator(bus.document)),
-    )
-    settled = {c.id: c for c in plan_placement(preview, lookup, PlacementOptions(seed=0)).document.components}
-    assert bus.dispatch(
-        "part.place",
-        PlacePartsPayload(
-            placements=tuple(
-                PartPlacement(
-                    id=p.id, anchor=settled[p.id].anchor, rotation=settled[p.id].rotation
-                )
-                for p in arrangement.placements
-            )
-        ),
-    ).ok
+    chosen = choice.recommended
+    assert bus.dispatch("board.applyPreset", preset_payload(chosen.preset, chosen.board)).ok
+    verdict = choice.verdict_for(chosen.preset)
+    assert verdict is not None and verdict.trial.document is not None
+    assert placement_inputs(bus.document) == placement_inputs(verdict.trial.document)
+    assert verdict.trial.placed is not None and verdict.trial.placed.unplaced == ()
+    assert bus.dispatch("part.place", verdict.trial.placed.payload()).ok
 
     placed = bus.document
     assert placed.parts == ()
@@ -341,9 +287,9 @@ def test_the_project_example_places_routes_and_checks_out(tmp_path) -> None:
     # Measured from the part's COURTYARD to the substrate edge, the way the placer's own
     # ``edge`` term measures it, and not from the anchor. The anchor is pin 1: a three-pin
     # header lying across the right-hand edge has its courtyard on the edge and its anchor
-    # two holes in, and the anchor measure called that "not on an edge" -- which is what it
-    # did the day screw terminals learned which way their wires go in, and the terminal
-    # moved from the left edge (mouth facing the board) to the right (mouth facing out).
+    # two holes in, and the anchor measure called that "not on an edge". "On" is within one
+    # hole of the grid on that side, border included: the border differs per axis on a stock
+    # board, and its outermost row along two edges is a finger strip nothing can stand on.
     board = placed.board
     edges = substrate_edges_mm(board)
     for ref in ("J1", "J2"):
@@ -357,15 +303,17 @@ def test_the_project_example_places_routes_and_checks_out(tmp_path) -> None:
         anchor = hole_to_mm(connector.anchor, board)
         xs = [anchor.x + x for x, _ in corners]
         ys = [anchor.y + y for _, y in corners]
-        inside = min(
-            min(xs) - edges.min_x,
-            edges.max_x - max(xs),
-            min(ys) - edges.min_y,
-            edges.max_y - max(ys),
+        clear_of_the_grid = (
+            min(xs) - edges.min_x - board.border_x_mm,
+            edges.max_x - max(xs) - board.border_x_mm,
+            min(ys) - edges.min_y - board.border_y_mm,
+            edges.max_y - max(ys) - board.border_y_mm,
         )
+        inside = min(clear_of_the_grid)
         assert inside <= board.pitch, f"{ref} was not put on an edge ({inside:.2f} mm in)"
 
-    route = plan_autoroute(placed, lookup)
+    # Routed as Ctrl+R routes, wires along the grid.
+    route = plan_autoroute(placed, lookup, AutorouteOptions(router=RouterOptions(wire_path="grid")))
     assert route.summary.links_unrouted == 0
     assert bus.dispatch("conductor.addMany", route.payload()).ok
 
