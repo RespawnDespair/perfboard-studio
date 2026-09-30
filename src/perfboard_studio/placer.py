@@ -105,6 +105,7 @@ from .geometry import (
     BoardPreset,
     SubstrateEdges,
     board_from_preset,
+    box_centre_distance_mm,
     convex_polygons_overlap,
     edge_overhangs_mm,
     entry_blocked_by,
@@ -114,6 +115,9 @@ from .geometry import (
     format_hole,
     hangs_over_edge,
     is_axis_aligned_box,
+    mounting_head_covers_box,
+    mounting_head_reach_mm,
+    mounting_hole_centre_mm,
     on_edge_reach_mm,
     substrate_edges_mm,
     transform_offset,
@@ -131,6 +135,7 @@ from .model import (
     ComponentInstance,
     Footprint,
     HoleCoord,
+    MountingHole,
     Net,
     PerfDocument,
     Point2,
@@ -274,6 +279,20 @@ class PlacementWeights:
     #: tell those two apart. Kept at the weight of wire (``hpwl``): turning a terminal a half
     #: turn costs a few millimetres of reversed pins, and what it saves is tens.
     entry: float = 1.0
+    #: Per (part, screw) pair where the screw head or its washer would sit over the part's
+    #: COURTYARD -- exactly the pairs DRC's ``mounting-hole-clearance`` names, by the one
+    #: predicate both ask (``geometry.mounting_head_covers_box``).
+    #:
+    #: A count on DRC's predicate for the reason ``overhang_part`` is one, and priced the
+    #: same: a WARNING rather than an error -- the board is buildable, the screw just cannot
+    #: go in afterwards without pressing on a part -- and still above anything a part could
+    #: save by standing in the corner. Nothing priced it before, and on a small stock board
+    #: the corners are where the placer runs out of room first: it was the warning that
+    #: most often separated a board one size down from the one the circuit had room on.
+    mount_part: float = 100.0
+    #: Per mm the head reaches past the courtyard's nearest point, charged only for a pair
+    #: the count above names. The gradient the count does not have, as ``overhang`` is.
+    mount: float = 20.0
     #: Per pair of pins on one strip, in different nets, with no hole between them to
     #: cut. Stripboard only; always zero on a pad-per-hole board.
     #:
@@ -380,6 +399,16 @@ class PlacementCost:
     #: Terminals on an edge whose mouth faces away from it, by the predicate DRC's
     #: ``terminal-entry-faces-in`` uses.
     entry_facing_in: int = 0
+    #: (source, sensitive) pairs closer than ``HEAT_CLEARANCE_MM``, by exactly the measure
+    #: DRC's ``heat-proximity`` uses. Not in :meth:`total` -- ``heat_mm`` already prices the
+    #: same pairs by how far inside the clearance they are -- but in
+    #: :attr:`physical_warnings`, because a count is what the ranking needs.
+    heat_pairs: int = 0
+    #: (part, screw) pairs where the head would sit over the courtyard, by the predicate
+    #: DRC's ``mounting-hole-clearance`` uses, and how far past the courtyard the heads
+    #: reach between them. Both zero on a board with no mounting hole.
+    mount_covered: int = 0
+    mount_mm: float = 0.0
 
     def total(self, weights: PlacementWeights) -> float:
         return (
@@ -399,15 +428,26 @@ class PlacementCost:
             + weights.entry_blocked * self.entry_blocked
             + weights.entry * self.entry_mm
             + weights.entry_faces_in * self.entry_facing_in
+            # Last, so a board with no mounting hole sums exactly as it did: ``x + 0.0`` is
+            # ``x``, and every term before these is added in the order it always was.
+            + weights.mount_part * self.mount_covered
+            + weights.mount * self.mount_mm
         )
+
+    def warning_count(self, rule: str) -> int:
+        """How many of DRC's ``rule`` warnings this placement would draw, in this module's
+        own units -- the field :data:`PHYSICAL_WARNING_RULES` pairs with the rule."""
+        field_name = next(name for name, named in PHYSICAL_WARNING_RULES if named == rule)
+        return int(getattr(self, field_name))
 
     @property
     def physical_warnings(self) -> int:
-        """Parts DRC will warn cannot be built as placed, though the document is legal: a
-        body hanging past the edge, and a (terminal, part) pair where the part stands in the
-        terminal's wire entry, and a terminal on an edge facing away from it. What
-        ``_pick_best`` ranks ahead of the routed cost -- see there for why."""
-        return self.overhanging_parts + self.entry_blocked + self.entry_facing_in
+        """Everything DRC will WARN about in where the parts are, though the document is
+        legal: a body past the edge, a part in a terminal's wire entry, a terminal on an
+        edge facing away from it, a hot part too close to one that minds, and a part under
+        a screw head. What ``_pick_best`` ranks ahead of the routed cost -- see there for
+        why -- and the list :data:`PHYSICAL_WARNING_RULES` names rule by rule."""
+        return sum(self.warning_count(rule) for _, rule in PHYSICAL_WARNING_RULES)
 
     @property
     def is_legal(self) -> bool:
@@ -444,6 +484,22 @@ class PlacementCost:
             and self.off_board_pins == 0
             and self.dead_pins == 0
         )
+
+
+#: Each of :class:`PlacementCost`'s warning counts, and the DRC rule it counts by that
+#: rule's own predicate. ONE table because three things read it and must not disagree:
+#: :attr:`PlacementCost.physical_warnings`, which ``_pick_best`` ranks ahead of the routed
+#: cost; the tests holding every count to the findings DRC makes on the same board; and
+#: ``boardfit``, which judges a smaller board by whether it draws a warning the roomy one
+#: does not. A warning about WHERE a part is belongs here; one about the copper does not,
+#: because the placer cannot see copper.
+PHYSICAL_WARNING_RULES: tuple[tuple[str, str], ...] = (
+    ("overhanging_parts", "component-overhangs-edge"),
+    ("entry_blocked", "terminal-entry-blocked"),
+    ("entry_facing_in", "terminal-entry-faces-in"),
+    ("heat_pairs", "heat-proximity"),
+    ("mount_covered", "mounting-hole-clearance"),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -566,6 +622,10 @@ def describe(plan: PlacementPlan) -> str:
         parts.append(f"{plan.before.entry_blocked} blocked wire entr(ies) cleared")
     if plan.before.entry_facing_in > 0 and plan.after.entry_facing_in == 0:
         parts.append(f"{plan.before.entry_facing_in} terminal(s) turned to face their edge")
+    if plan.before.heat_pairs > 0 and plan.after.heat_pairs == 0:
+        parts.append(f"{plan.before.heat_pairs} hot pair(s) moved apart")
+    if plan.before.mount_covered > 0 and plan.after.mount_covered == 0:
+        parts.append(f"{plan.before.mount_covered} part(s) moved out from under a screw head")
     if plan.route_cost is not None:
         parts.append(f"routing cost {plan.route_cost:.0f}")
     return ", ".join(parts)
@@ -1171,6 +1231,23 @@ def _build_nets(
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True, slots=True)
+class _Mount:
+    """One screw, with where its head is worked out once rather than per move."""
+
+    hole: MountingHole
+    x: float
+    y: float
+    radius: float
+
+
+#: Slack past a screw head's radius inside which :meth:`_Scorer.mount_terms` asks the
+#: predicate at all. A box further than ``radius`` from the centre on one axis is further
+#: than that from all of it, so the skip is exact; the millimetre is so that it stays exact
+#: without leaning on the last bit of ``math.hypot``.
+_MOUNT_SKIP_SLACK_MM = 1.0
+
+
 @dataclass(slots=True)
 class _Scorer:
     board_pitch: float
@@ -1198,9 +1275,15 @@ class _Scorer:
     weights: PlacementWeights
     nets: list[_NetPins]
     nets_of: list[tuple[int, ...]]
+    #: The board itself, for the one predicate that needs it whole
+    #: (``geometry.mounting_head_covers_box``, which finds the screw from its address).
+    board: Board
     #: None on a pad-per-hole board. Only the axis is read here; the conflict count is
     #: kept on the state, because it is not a local question.
     strips: _Strips | None = None
+    #: The document's screw holes. Empty on a board without one, which is every golden
+    #: fixture -- and then nothing below asks about a screw at all.
+    mounts: tuple[_Mount, ...] = ()
 
     # -- individual terms, each returning millimetres (or mm^2) -------------
 
@@ -1347,6 +1430,40 @@ class _Scorer:
         reach = on_edge_reach_mm(self.board_pitch)
         return 1 if entry_faces_away(box, direction, self.edges, reach) else 0
 
+    def mount_terms(self, state: _State, position: int) -> tuple[int, float]:
+        """(screw heads over this part's courtyard, mm they reach past its nearest point).
+
+        DRC's ``mounting-hole-clearance`` spelled out: the courtyard's box, placed by adding
+        the anchor to each relative edge -- which is bit for bit the box DRC builds from the
+        placed outline, since adding one number is monotone -- asked of
+        ``geometry.mounting_head_covers_box``, which is the whole of the rule. Not skipped for
+        a pin off the grid, because DRC does not skip it: the two counts are held equal. A
+        part with no outline has no courtyard to be under anything, for both.
+        """
+        if not self.mounts:
+            return 0, 0.0
+        box = state.parts[position].rel_box[state.rot[position]]
+        if box is None:
+            return 0, 0.0
+        x = state.col[position] * self.board_pitch
+        y = state.row[position] * self.board_pitch
+        placed = (x + box.min_x, x + box.max_x, y + box.min_y, y + box.max_y)
+        covered = 0
+        reach = 0.0
+        for mount in self.mounts:
+            clear = mount.radius + _MOUNT_SKIP_SLACK_MM
+            if (
+                placed[0] - mount.x > clear
+                or mount.x - placed[1] > clear
+                or placed[2] - mount.y > clear
+                or mount.y - placed[3] > clear
+            ):
+                continue
+            if mounting_head_covers_box(mount.hole, placed, self.board):
+                covered += 1
+                reach += mounting_head_reach_mm(mount.hole, placed, self.board)
+        return covered, reach
+
     def entry_pair(self, state: _State, a: int, b: int) -> int:
         """How many of the two stand in the other's wire entry: 0, 1 or 2.
 
@@ -1434,20 +1551,52 @@ class _Scorer:
                     overlap = dx * dy
 
         heat = 0.0
+        distance = self._heat_distance(state, a, b)
+        if distance is not None:
+            heat = max(0.0, HEAT_CLEARANCE_MM - distance)
+        return touching, overlap, heat
+
+    def _heat_distance(self, state: _State, a: int, b: int) -> float | None:
+        """Body-centre distance of a (source, sensitive) pair, mm, or None for any other.
+
+        Between the BODIES, not the anchors. An anchor is pin 1, which on a TO-220 is at
+        one end of a 10 mm tab and on a DIP is a corner -- measuring from it puts the heat
+        source millimetres from where it physically is, in a direction that depends on the
+        rotation. Two parts with courtyards are measured by ``geometry.box_centre_distance_mm``
+        on their placed boxes, which is DRC's own arithmetic, so a board the annealer scores
+        as clear is one DRC agrees is clear to the last place. A part with no outline, which
+        DRC skips, falls back to its anchor -- still a gradient for the annealer, never a
+        count (:meth:`heat_pair`).
+        """
+        part_a, part_b = state.parts[a], state.parts[b]
         hot = (part_a.heat_source and part_b.heat_sensitive) or (
             part_b.heat_source and part_a.heat_sensitive
         )
-        if hot:
-            # Between the BODIES, not the anchors. An anchor is pin 1, which on a TO-220
-            # is at one end of a 10 mm tab and on a DIP is a corner -- measuring from it
-            # puts the heat source millimetres from where it physically is, in a
-            # direction that depends on the rotation. drc.py measures this same pair the
-            # same way, so a board the annealer scores as clear is one DRC agrees is
-            # clear.
-            acx, acy = _body_centre(box_a, ax, ay)
-            bcx, bcy = _body_centre(box_b, bx, by)
-            heat = max(0.0, HEAT_CLEARANCE_MM - math.hypot(acx - bcx, acy - bcy))
-        return touching, overlap, heat
+        if not hot:
+            return None
+        box_a = part_a.rel_box[state.rot[a]]
+        box_b = part_b.rel_box[state.rot[b]]
+        ax = state.col[a] * self.board_pitch
+        ay = state.row[a] * self.board_pitch
+        bx = state.col[b] * self.board_pitch
+        by = state.row[b] * self.board_pitch
+        if box_a is not None and box_b is not None:
+            return box_centre_distance_mm(
+                (ax + box_a.min_x, ax + box_a.max_x, ay + box_a.min_y, ay + box_a.max_y),
+                (bx + box_b.min_x, bx + box_b.max_x, by + box_b.min_y, by + box_b.max_y),
+            )
+        acx, acy = _body_centre(box_a, ax, ay)
+        bcx, bcy = _body_centre(box_b, bx, by)
+        return math.hypot(acx - bcx, acy - bcy)
+
+    def heat_pair(self, state: _State, a: int, b: int) -> int:
+        """1 if DRC's ``heat-proximity`` names this pair: a source and a part that minds,
+        both with a courtyard (DRC measures nothing else), closer than the clearance."""
+        parts = state.parts
+        if parts[a].rel_box[state.rot[a]] is None or parts[b].rel_box[state.rot[b]] is None:
+            return 0
+        distance = self._heat_distance(state, a, b)
+        return 1 if distance is not None and distance < HEAT_CLEARANCE_MM else 0
 
     # -- full and local evaluation -----------------------------------------
 
@@ -1465,6 +1614,8 @@ class _Scorer:
         overhang = 0.0
         entry_run = 0.0
         facing_in = 0
+        mount_covered = 0
+        mount_reach = 0.0
         for position in range(len(state.parts)):
             part_off, part_dead, part_edge = self.part_terms(state, position)
             off_board += part_off
@@ -1475,9 +1626,13 @@ class _Scorer:
             overhang += part_overhang
             entry_run += self.entry_run(state, position)
             facing_in += self.entry_inward(state, position)
+            covered, reach = self.mount_terms(state, position)
+            mount_covered += covered
+            mount_reach += reach
 
         pairs = 0
         blocked = 0
+        heat_pairs = 0
         overlap = heat = 0.0
         for a in range(len(state.parts)):
             for b in range(a + 1, len(state.parts)):
@@ -1486,6 +1641,8 @@ class _Scorer:
                 overlap += pair_overlap
                 heat += pair_heat
                 blocked += self.entry_pair(state, a, b)
+                if pair_heat:
+                    heat_pairs += self.heat_pair(state, a, b)
 
         return PlacementCost(
             hpwl_mm=hpwl,
@@ -1504,6 +1661,9 @@ class _Scorer:
             entry_blocked=blocked,
             entry_mm=entry_run,
             entry_facing_in=facing_in,
+            heat_pairs=heat_pairs,
+            mount_covered=mount_covered,
+            mount_mm=mount_reach,
         )
 
     def local(self, state: _State, positions: tuple[int, ...]) -> float:
@@ -1546,6 +1706,11 @@ class _Scorer:
                 total += weights.entry * run
             if self.entry_inward(state, position):
                 total += weights.entry_faces_in
+            covered, reach = self.mount_terms(state, position)
+            if covered:
+                # Only a part under a head has anything to add, and a board without a
+                # mounting hole never gets here -- its sum is the one it always was.
+                total += weights.mount_part * covered + weights.mount * reach
 
         # Most pairs on a board are nowhere near each other, and for those every pair term
         # is EXACTLY zero -- no courtyard overlap, no heat pair, no wire entry -- so they
@@ -1622,6 +1787,7 @@ def _make_scorer(
     nets_of: list[tuple[int, ...]],
     strips: _Strips | None,
     dead_holes: frozenset[tuple[int, int]] = frozenset(),
+    mounts: Sequence[MountingHole] = (),
 ) -> _Scorer:
     """The one place a board becomes a cost function.
 
@@ -1643,7 +1809,17 @@ def _make_scorer(
         weights=weights,
         nets=nets,
         nets_of=nets_of,
+        board=board,
         strips=strips,
+        mounts=tuple(
+            _Mount(
+                hole=mount,
+                x=mounting_hole_centre_mm(mount, board).x,
+                y=mounting_hole_centre_mm(mount, board).y,
+                radius=mount.head_diameter / 2,
+            )
+            for mount in mounts
+        ),
     )
 
 
@@ -2405,7 +2581,13 @@ def plan_placement(
     state = _initial_state(doc, parts, strips)
 
     scorer = _make_scorer(
-        doc.board, options.weights, nets, nets_of, strips, _dead_hole_keys(doc)
+        doc.board,
+        options.weights,
+        nets,
+        nets_of,
+        strips,
+        _dead_hole_keys(doc),
+        doc.mounting_holes,
     )
     before = scorer.full(state)
     movable = [position for position, part in enumerate(state.parts) if part.movable]

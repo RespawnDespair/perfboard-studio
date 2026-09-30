@@ -745,6 +745,57 @@ def mounting_head_covers(hole_mount: MountingHole, point: Point2, board: Board) 
     return math.hypot(point.x - centre.x, point.y - centre.y) < hole_mount.head_diameter / 2
 
 
+def mounting_head_nearest(
+    hole_mount: MountingHole, box: tuple[float, float, float, float], board: Board
+) -> Point2:
+    """The point of a board-space box ``(min_x, max_x, min_y, max_y)`` nearest the screw.
+
+    Nearest to where the screw IS -- :func:`mounting_hole_centre_mm`, offset included. DRC
+    used to clamp towards ``hole_to_mm(mount.at)`` and then measure the distance to the
+    offset centre, which are the same point only while the offset is zero: a corner hole
+    moved into the border would have been judged from a point it is not at.
+    """
+    centre = mounting_hole_centre_mm(hole_mount, board)
+    return Point2(min(max(centre.x, box[0]), box[1]), min(max(centre.y, box[2]), box[3]))
+
+
+def mounting_head_covers_box(
+    hole_mount: MountingHole, box: tuple[float, float, float, float], board: Board
+) -> bool:
+    """Whether a screw head would sit over any of a board-space box.
+
+    THE verdict for a part under a screw head. ``drc`` asks it of a courtyard to report
+    ``mounting-hole-clearance`` and ``placer`` asks it of the same courtyard to keep parts
+    out from under the heads, so a board the annealer hands back clear is one the checker
+    agrees is clear.
+    """
+    return mounting_head_covers(hole_mount, mounting_head_nearest(hole_mount, box, board), board)
+
+
+def mounting_head_reach_mm(
+    hole_mount: MountingHole, box: tuple[float, float, float, float], board: Board
+) -> float:
+    """How far a screw head reaches past the nearest point of a box, mm; not above zero
+    when it does not reach it. The placer's GRADIENT -- how far a part has to move to be
+    clear -- and never the verdict, which is :func:`mounting_head_covers_box`."""
+    centre = mounting_hole_centre_mm(hole_mount, board)
+    near = mounting_head_nearest(hole_mount, box, board)
+    return hole_mount.head_diameter / 2 - math.hypot(near.x - centre.x, near.y - centre.y)
+
+
+def box_centre_distance_mm(
+    a: tuple[float, float, float, float], b: tuple[float, float, float, float]
+) -> float:
+    """Distance between the centres of two board-space boxes ``(min_x, max_x, min_y, max_y)``.
+
+    What ``heat-proximity`` measures, in exactly the arithmetic DRC always used: each centre
+    from the box's own two absolute edges. ``placer`` reads it too, for its count of hot
+    pairs, rather than adding the anchor to a relative centre -- the two can disagree in the
+    last place, and a count on a threshold is exactly where the last place matters.
+    """
+    return math.hypot((a[0] + a[1]) / 2 - (b[0] + b[1]) / 2, (a[2] + a[3]) / 2 - (b[2] + b[3]) / 2)
+
+
 # ---------------------------------------------------------------------------
 # Edge connectors
 # ---------------------------------------------------------------------------

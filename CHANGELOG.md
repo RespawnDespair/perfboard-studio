@@ -20,8 +20,29 @@ closed without a bump.
 
 ## [Unreleased]
 
+### Changed
+
+- **Auto-place keeps parts out from under the corner screws, and keeps a regulator or a
+  relay away from the electrolytics as a matter of course.** DRC has always warned about
+  both, and the placer only ever priced the second, by millimetres, behind the cost of
+  routing -- so on a small board it would hand back a capacitor under a screw head or
+  beside the regulator whenever that routed a little cheaper. Both are now counted by the
+  same predicate DRC uses and ranked ahead of the routing cost, the way a part hanging off
+  the edge or standing in a terminal's wire entry already was, and the summary says when a
+  part was moved out from under a screw head or a hot pair moved apart. It matters most on
+  the smaller stock boards, where the corners are where the room runs out first: measured
+  on the examples, it is what separated a board one size down from the one they had room
+  on. None of the fifteen golden fixtures has a mounting hole or a part that runs hot, and
+  all of their placements came out byte for byte the same.
+
 ### Fixed
 
+- **DRC measured a screw head from the wrong point when the hole was moved off its grid
+  position.** It took the nearest point of a part towards the hole's grid address and then
+  measured from where the screw actually is, which agree only while the offset is zero: a
+  head standing over the middle of a part could be measured to its far corner and pass.
+  Every stock board's corner holes sit on the grid, so no board shipped with the tool was
+  affected.
 - **The Turkish README said the whole project was Apache-2.0.** Since 0.12.0 the 3D package
   meshes borrowed from KiCad are CC-BY-SA 4.0, and the English README's licence section
   says so and answers the two questions people have about it; the Turkish one was never

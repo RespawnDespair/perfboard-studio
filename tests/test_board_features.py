@@ -262,6 +262,26 @@ def test_a_body_under_the_screw_head_is_a_warning_not_an_error() -> None:
     assert not [v for v in violations if v.rule == "mounting-hole-conflict"]
 
 
+def test_a_screw_head_is_measured_from_where_the_screw_is() -> None:
+    """A mounting hole moved off its grid position by its offset is judged from where the
+    screw IS.
+
+    The rule used to take the nearest point of the part towards the hole's GRID position
+    and then measure from the offset centre. Here the grid hole is three rows under the
+    resistor's left end and the screw has been moved 6 mm along, to sit under the middle of
+    the body: 5.1 mm from it, inside a 6 mm head. Measured to the corner nearest the grid
+    hole it came out 7.9 mm, and the part under the head passed.
+    """
+    doc = _doc(
+        components=(_resistor("R1", HoleCoord(3, 3)),),
+        mounting_holes=(
+            MountingHole(id="mh-1", at=HoleCoord(3, 6), offset_x_mm=6.0, head_diameter=12.0),
+        ),
+    )
+    clearance = [v for v in run_drc(doc, LOOKUP) if v.rule == "mounting-hole-clearance"]
+    assert [v.component_ids for v in clearance] == [("cmp-R1",)]
+
+
 def test_a_screw_head_that_does_not_reach_the_part_says_nothing() -> None:
     doc = _doc(
         components=(_resistor("R1", HoleCoord(7, 5)),),

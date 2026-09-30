@@ -109,7 +109,9 @@ def _scorer_for(doc: PerfDocument, weights: PlacementWeights):
     nets, nets_of, pin_nets = _build_nets(doc, parts)
     strips = _build_strips(doc, parts, pin_nets)
     state = _initial_state(doc, parts, strips)
-    scorer = _make_scorer(doc.board, weights, nets, nets_of, strips, _dead_hole_keys(doc))
+    scorer = _make_scorer(
+        doc.board, weights, nets, nets_of, strips, _dead_hole_keys(doc), doc.mounting_holes
+    )
     return state, scorer
 
 

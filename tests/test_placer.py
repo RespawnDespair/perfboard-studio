@@ -44,10 +44,24 @@ from perfboard_studio.commands import (
     create_standard_registry,
 )
 from perfboard_studio.connectivity import FootprintLookup
-from perfboard_studio.drc import DrcViolation, run_drc
+from perfboard_studio.drc import (
+    DEFAULT_DRC_OPTIONS,
+    DrcViolation,
+    _check_heat_proximity,
+    _check_mounting_hole_clearance,
+    run_drc,
+)
 from perfboard_studio.footprints import footprint_lookup, standard_footprints
-from perfboard_studio.geometry import all_pin_holes, is_inside_board
+from perfboard_studio.geometry import (
+    STANDARD_PRESETS,
+    all_pin_holes,
+    board_from_preset,
+    is_inside_board,
+    preset_edge_connectors,
+    preset_mounting_holes,
+)
 from perfboard_studio.model import (
+    HEAT_SOURCE_ARCHETYPES,
     Board,
     BodyArchetype,
     BodySpec,
@@ -56,6 +70,7 @@ from perfboard_studio.model import (
     Footprint,
     FootprintPin,
     HoleCoord,
+    MountingHole,
     Net,
     NetClass,
     NetNode,
@@ -66,6 +81,8 @@ from perfboard_studio.model import (
 )
 from perfboard_studio.placer import (
     DEFAULT_PLACEMENT_OPTIONS,
+    PHYSICAL_WARNING_RULES,
+    PlacementCost,
     PlacementOptions,
     PlacementWeights,
     _adjacency,
@@ -459,7 +476,9 @@ def _scorer_for(doc: PerfDocument, lookup: FootprintLookup, weights: PlacementWe
     state = _initial_state(doc, parts, strips)
     # The dead holes come from the DOCUMENT (its mounting holes and edge connectors),
     # not from the board, which is why _make_scorer is handed both.
-    scorer = _make_scorer(doc.board, weights, nets, nets_of, strips, _dead_hole_keys(doc))
+    scorer = _make_scorer(
+        doc.board, weights, nets, nets_of, strips, _dead_hole_keys(doc), doc.mounting_holes
+    )
     return state, scorer
 
 
@@ -727,6 +746,226 @@ def test_local_delta_matches_a_full_recompute_with_bodies_over_the_edge() -> Non
         checked += 1
 
     assert checked > 200
+
+
+# ---------------------------------------------------------------------------
+# Screw heads and hot pairs: what DRC warns about, counted by DRC's own measure
+# ---------------------------------------------------------------------------
+
+#: One screw on its grid position and one moved off it, both with a head wide enough to
+#: reach a part standing a few holes away. The offset one is what holds the placer to the
+#: centre DRC measures from (``geometry.mounting_head_nearest``), not the grid hole.
+_SCREWS = (
+    MountingHole(id="mh-1", at=hole(12, 20), head_diameter=8.0),
+    MountingHole(id="mh-2", at=hole(28, 20), offset_x_mm=1.3, offset_y_mm=-0.9, head_diameter=8.0),
+)
+
+
+@pytest.mark.parametrize("mirrored", (False, True))
+def test_the_placer_and_drc_agree_on_every_body_under_every_screw_head(mirrored: bool) -> None:
+    """One fact, two consumers, measured over the whole library -- the screw-head twin of
+    the edge test above.
+
+    Every one of the 61 registry footprints, at every rotation, walked towards each screw
+    along a row and along a column, two holes at a time, from outside the head to right on
+    top of it: the placer's count of (part, screw) pairs under a head must be the number of
+    ``mounting-hole-clearance`` findings, every time. Both read the courtyard box and ask
+    ``geometry.mounting_head_covers_box``, and this is what would notice one of them growing
+    a second opinion.
+    """
+    board = dataclasses.replace(BOARD, cols=40, rows=40)
+    checked = covered = 0
+    for footprint_id, _fp in sorted(standard_footprints().items()):
+        for rotation in (0, 90, 180, 270):
+            probe = dataclasses.replace(
+                component("X1", footprint_id, hole(0, 0), rotation=rotation), mirrored=mirrored
+            )
+            for screw in _SCREWS:
+                for step in (-4, -2, 0, 2, 4):
+                    for anchor in (
+                        hole(screw.at.col + step, screw.at.row),
+                        hole(screw.at.col, screw.at.row + step),
+                    ):
+                        doc = dataclasses.replace(
+                            make_doc(components=(dataclasses.replace(probe, anchor=anchor),), board=board),
+                            mounting_holes=_SCREWS,
+                        )
+                        state, scorer = _scorer_for(doc, REGISTRY, PlacementWeights())
+                        placer_count = scorer.full(state).mount_covered
+                        drc_count = len(_check_mounting_hole_clearance(doc, REGISTRY))
+                        assert placer_count == drc_count, (footprint_id, rotation, anchor)
+                        checked += 1
+                        covered += drc_count
+    # Not vacuous in either direction: plenty of parts are under a head, plenty are clear.
+    assert checked == 61 * 4 * len(_SCREWS) * 10
+    assert 0 < covered < checked
+
+
+def test_the_placer_counts_the_heat_pairs_drc_names() -> None:
+    """The heat twin: random boards of regulators, relays and electrolytics, turned and
+    mirrored at random, and the placer's count of hot pairs held to DRC's
+    ``heat-proximity`` findings on every one. The distance is DRC's own arithmetic
+    (``geometry.box_centre_distance_mm``), and a count on a threshold is where the last
+    place of a float decides the answer."""
+    rng = random.Random(1234)
+    board = dataclasses.replace(BOARD, cols=30, rows=30)
+    sources = ("to220", "relay-spdt")
+    minders = ("c-elec-d5-p2", "c-elec-d6.3-p2", "c-elec-d8-p3", "c-elec-d10-p3")
+    total = 0
+    for trial in range(300):
+        parts = []
+        for index in range(rng.randint(2, 4)):
+            footprint_id = rng.choice(sources if index == 0 else sources + minders)
+            parts.append(
+                dataclasses.replace(
+                    component(
+                        f"X{index}",
+                        footprint_id,
+                        hole(rng.randint(4, 24), rng.randint(4, 24)),
+                        rotation=rng.choice((0, 90, 180, 270)),
+                    ),
+                    mirrored=rng.random() < 0.5,
+                )
+            )
+        doc = make_doc(components=tuple(parts), board=board)
+        state, scorer = _scorer_for(doc, REGISTRY, PlacementWeights())
+        drc_count = len(_check_heat_proximity(doc, REGISTRY, DEFAULT_DRC_OPTIONS))
+        assert scorer.full(state).heat_pairs == drc_count, trial
+        total += drc_count
+    assert total > 0
+
+
+def test_local_delta_matches_a_full_recompute_under_the_screw_heads() -> None:
+    """The load-bearing delta test, on a stock board whose four corner screws are LIVE:
+    parts start under two of them and every proposal can move one in or out."""
+    weights = PlacementWeights()
+    preset = next(p for p in STANDARD_PRESETS if p.name == "5 x 7 cm" and not p.single_sided)
+    board = board_from_preset(preset, BOARD)
+    doc = dataclasses.replace(
+        make_doc(
+            components=(
+                component("U1", "dip-8", hole(1, 1)),
+                component("C1", "c-elec-d8-p3", hole(board.cols - 3, board.rows - 3)),
+                component("Q1", "to220", hole(6, 10)),
+                component("R1", "r-axial-3", hole(8, 4)),
+            ),
+            nets=(net("n1", "N1", "signal", (("U1", "1"), ("C1", "1"), ("Q1", "2"), ("R1", "1"))),),
+            board=board,
+        ),
+        mounting_holes=preset_mounting_holes(preset, board),
+    )
+    state, scorer = _scorer_for(doc, REGISTRY, weights)
+    assert scorer.full(state).mount_covered >= 2  # the term starts out live
+    movable = list(range(len(state.parts)))
+    rng = random.Random(77)
+    checked = 0
+    for _ in range(400):
+        proposal = _propose(rng, state, movable, 4, DEFAULT_PLACEMENT_OPTIONS)
+        if proposal is None:
+            continue
+        positions, placements = proposal
+        full_before = scorer.full(state).total(weights)
+        local_before = scorer.local(state, positions)
+        global_before = _global_counts(state)
+        snapshot = tuple((state.col[p], state.row[p], state.rot[p]) for p in positions)
+        for position, (col, row, rot) in zip(positions, placements, strict=True):
+            state.set_placement(position, col, row, rot)
+        tracked = (scorer.local(state, positions) - local_before) + _global_delta(
+            state, global_before, weights
+        )
+        actual = scorer.full(state).total(weights) - full_before
+        assert tracked == pytest.approx(actual, abs=1e-9)
+        for position, (col, row, rot) in zip(positions, snapshot, strict=True):
+            state.set_placement(position, col, row, rot)
+        checked += 1
+    assert checked > 200
+
+
+def test_the_placer_moves_parts_out_from_under_the_screws_and_hot_parts_apart() -> None:
+    """What the two counts are FOR: a stock board with a DIP on a corner screw and a
+    regulator hard against an electrolytic comes back with neither, and DRC agrees, and the
+    summary says so. Nothing priced a screw head before this, and on a small board the
+    corners are where the room runs out first."""
+    preset = next(p for p in STANDARD_PRESETS if p.name == "5 x 7 cm" and not p.single_sided)
+    board = board_from_preset(preset, BOARD)
+    doc = dataclasses.replace(
+        make_doc(
+            components=(
+                component("U1", "dip-8", hole(1, 1)),
+                component("Q1", "to220", hole(8, 12)),
+                component("C1", "c-elec-d8-p3", hole(8, 14)),
+                component("R1", "r-axial-3", hole(4, 18)),
+            ),
+            nets=(
+                net("n1", "VIN", "signal", (("Q1", "1"), ("C1", "1"), ("U1", "8"))),
+                net("n2", "SIG", "signal", (("U1", "3"), ("R1", "1"))),
+            ),
+            board=board,
+        ),
+        mounting_holes=preset_mounting_holes(preset, board),
+        edge_connectors=preset_edge_connectors(preset, board),
+    )
+    plan = plan_placement(doc, REGISTRY, PlacementOptions(seed=0, restarts=2))
+    assert plan.before.mount_covered >= 1 and plan.before.heat_pairs >= 1
+    assert plan.after.mount_covered == 0 and plan.after.heat_pairs == 0
+    findings = {v.rule for v in run_drc(plan.document, REGISTRY)}
+    assert not findings & {"mounting-hole-clearance", "heat-proximity"}
+    summary = describe(plan)
+    assert "moved out from under a screw head" in summary
+    assert "hot pair(s) moved apart" in summary
+
+
+def test_physical_warnings_are_the_warnings_drc_gives_a_placement() -> None:
+    """ONE table says which of the placer's counts is which DRC warning, and three things
+    read it: the ranking in ``_pick_best``, these agreement tests, and ``boardfit`` judging a
+    smaller board. Each count is one warning, every rule named is a warning DRC really
+    raises, and no count is left out of ``physical_warnings``."""
+    import inspect
+    import re
+
+    from perfboard_studio import drc as drc_module
+
+    source = inspect.getsource(drc_module)
+    fields = {f.name for f in dataclasses.fields(PlacementCost)}
+    for field_name, rule in PHYSICAL_WARNING_RULES:
+        assert field_name in fields
+        raised = re.findall(rf'rule="{re.escape(rule)}",\s*severity="(\w+)"', source)
+        assert raised == ["warning"], f"{rule} is raised as {raised}"
+        one = dataclasses.replace(_zero_cost(), **{field_name: 1})
+        assert one.physical_warnings == 1
+        assert one.warning_count(rule) == 1
+    assert len({rule for _, rule in PHYSICAL_WARNING_RULES}) == len(PHYSICAL_WARNING_RULES)
+
+
+def _zero_cost() -> PlacementCost:
+    return PlacementCost(
+        hpwl_mm=0.0,
+        alignment_mm=0.0,
+        lane_mm=0.0,
+        overlap_pairs=0,
+        overlap_mm2=0.0,
+        collisions=0,
+        off_board_pins=0,
+        dead_pins=0,
+        edge_mm=0.0,
+        heat_mm=0.0,
+    )
+
+
+def test_no_golden_fixture_gives_the_screw_or_the_heat_count_anything_to_count() -> None:
+    """Why no golden placement moved when the placer learned to rank these two warnings
+    ahead of the routed cost: none of the fifteen fixtures has a mounting hole, and none
+    has a part that runs hot. If a fixture ever gains either, the byte-for-byte placement
+    comparison has to be run again rather than assumed."""
+    for path in sorted(GOLDEN_DIR.glob("*.perf")):
+        doc = golden_document(path.stem)
+        assert doc.mounting_holes == (), path.name
+        archetypes = {
+            fp.body.archetype
+            for c in doc.components
+            if (fp := REGISTRY(c.footprint_id)) is not None
+        }
+        assert not archetypes & HEAT_SOURCE_ARCHETYPES, path.name
 
 
 def test_alignment_rewards_pins_that_share_a_row() -> None:
@@ -1985,6 +2224,9 @@ def _every_pair_local(scorer, state, positions) -> float:
             total += weights.entry * run
         if scorer.entry_inward(state, position):
             total += weights.entry_faces_in
+        covered, reach = scorer.mount_terms(state, position)
+        if covered:
+            total += weights.mount_part * covered + weights.mount * reach
     for a in positions:
         for b in range(len(state.parts)):
             if b == a or (b in moved and b < a):
@@ -2018,7 +2260,13 @@ def test_a_move_is_scored_exactly_as_asking_every_pair_would_score_it(name: str)
     strips = _build_strips(doc, parts, pin_nets)
     state = _initial_state(doc, parts, strips)
     scorer = _make_scorer(
-        doc.board, DEFAULT_PLACEMENT_OPTIONS.weights, nets, nets_of, strips, _dead_hole_keys(doc)
+        doc.board,
+        DEFAULT_PLACEMENT_OPTIONS.weights,
+        nets,
+        nets_of,
+        strips,
+        _dead_hole_keys(doc),
+        doc.mounting_holes,
     )
     movable = [position for position, part in enumerate(state.parts) if part.movable]
     rng = random.Random(7)

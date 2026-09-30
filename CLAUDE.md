@@ -265,8 +265,10 @@ Four consumers, one fact:
   predicate (`geometry.entry_blocked_by`), and `entry_run` prices the board between a mouth
   and the edge it faces — a preference only the placer holds. Both are added to `local` only
   when non-zero. `test_the_placer_counts_the_pairs_drc_names` holds the two counts equal.
-- **`_pick_best` and `_settle_winner` rank `PlacementCost.physical_warnings`** (overhanging
-  parts + blocked entries) **ahead of the routed cost.** The router cannot see either, and
+- **`_pick_best` and `_settle_winner` rank `PlacementCost.physical_warnings`** **ahead of the
+  routed cost** — every warning DRC gives about where a part IS, one count per rule, listed in
+  `placer.PHYSICAL_WARNING_RULES`: overhangs, blocked entries, terminals facing in, hot pairs
+  and parts under a screw head. The router cannot see any of them, and
   ranking by routed cost alone handed back a board with two unwirable terminals because the
   one with them cleared routed 812 against 726. Zero on every fixture, so nothing moved.
   The mouth-facing PREFERENCE (`entry_run`) was not in that key and lost to routing: over
@@ -281,6 +283,20 @@ Four consumers, one fact:
   off the grid is skipped by both, as rule 2 already reports it —
   `test_the_placer_counts_what_drc_reports_facing_in` found the placer counting one DRC
   skipped. Mid-board terminals stay unreported: that is still only a preference.
+- **`mounting-hole-clearance` and the placer** ask one predicate,
+  `geometry.mounting_head_covers_box`, of the COURTYARD box — the placer builds it by adding
+  the anchor to each relative edge, which is bit for bit the box DRC builds from the placed
+  outline because adding one number is monotone. Nothing priced a screw head before, and on
+  a small stock board the corners are where the room runs out first: it was the warning that
+  most often separated a board one size down from the one the circuit had room on.
+  `PlacementWeights.mount_part` (100 per pair, a warning's price) and `mount` (20 per mm of
+  head past the courtyard) are appended to `total()` and added to `local` only when a part is
+  under a head, and no golden fixture has a mounting hole or a heat source — pinned, because
+  that is why no golden placement moved. The screw is found where it IS,
+  `mounting_hole_centre_mm`: DRC used to clamp towards `hole_to_mm(mount.at)` and measure
+  from the offset centre, which only agree while the offset is zero.
+  `test_the_placer_and_drc_agree_on_every_body_under_every_screw_head` walks all 61
+  footprints at every rotation towards a screw on the grid and one off it.
 - **`arrange._edge_rotation`** breaks the narrow/flat tie toward the rotation whose mouth
   faces out of the edge; a part without an entry breaks it exactly as before.
 
@@ -454,7 +470,11 @@ must not be allowed to disagree with it:
   which on a TO-220 is one end of the tab: rotating the part moves the body and not the
   anchor. Two numbers here would mean the optimiser separating parts to a standard DRC
   declines to confirm. `EDGE_SEEKING_ARCHETYPES` stays in `placer.py` on purpose — it is
-  a placement preference, not a fact any rule checks.
+  a placement preference, not a fact any rule checks. The COUNT of hot pairs goes through
+  `geometry.box_centre_distance_mm` on the placed boxes, DRC's own arithmetic, because the
+  placer's old `anchor + (min+max)/2` could land a pair on the other side of 12 mm from
+  DRC's `((anchor+min)+(anchor+max))/2` in the last place — and a count on a threshold is
+  exactly where the last place decides.
 - **`jumper-under-body` and the router** both ask `occupancy.body_covers`. The router
   refuses to lay such a jumper at all, so DRC deliberately checks *less*: only holes
   strictly between the jumper's ends, because a body's bounding box covers its own pin

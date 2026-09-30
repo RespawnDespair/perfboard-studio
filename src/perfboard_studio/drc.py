@@ -45,6 +45,7 @@ from .footprints import WIRE_ENTRY_CLEARANCE_MM, body_extent, entry_corridor, wi
 from .geometry import (
     BODY_OVERHANG_TOLERANCE_MM,
     all_pin_holes,
+    box_centre_distance_mm,
     consumed_holes,
     convex_polygons_overlap,
     copper_gap_mm,
@@ -61,7 +62,7 @@ from .geometry import (
     is_axis_aligned_box,
     is_inside_board,
     manhattan,
-    mounting_head_covers,
+    mounting_head_covers_box,
     neighbors4,
     neighbour_axis,
     on_edge_reach_mm,
@@ -1507,13 +1508,12 @@ def _check_mounting_hole_clearance(
         if box is None:
             continue
         for mount in doc.mounting_holes:
-            centre = hole_to_mm(mount.at, doc.board)
             # Nearest point of the body box to the screw centre. Cheaper and no less
             # honest than a polygon test, given the box is already an approximation
-            # (see _component_aabb).
-            near_x = min(max(centre.x, box.min_x), box.max_x)
-            near_y = min(max(centre.y, box.min_y), box.max_y)
-            if not mounting_head_covers(mount, Point2(near_x, near_y), doc.board):
+            # (see _component_aabb) -- and the one predicate placer.py keeps parts clear by.
+            if not mounting_head_covers_box(
+                mount, (box.min_x, box.max_x, box.min_y, box.max_y), doc.board
+            ):
                 continue
             violations.append(
                 DrcViolation(
@@ -1993,9 +1993,9 @@ def _check_heat_proximity(
             source, source_box, source_archetype = b_component, b_box, b_archetype
             victim, victim_box, victim_archetype = a_component, a_box, a_archetype
 
-        distance = math.hypot(
-            (source_box.min_x + source_box.max_x) / 2 - (victim_box.min_x + victim_box.max_x) / 2,
-            (source_box.min_y + source_box.max_y) / 2 - (victim_box.min_y + victim_box.max_y) / 2,
+        distance = box_centre_distance_mm(
+            (source_box.min_x, source_box.max_x, source_box.min_y, source_box.max_y),
+            (victim_box.min_x, victim_box.max_x, victim_box.min_y, victim_box.max_y),
         )
         if distance >= options.heat_clearance_mm:
             continue

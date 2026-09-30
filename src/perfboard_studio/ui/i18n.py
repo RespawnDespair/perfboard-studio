@@ -1953,6 +1953,8 @@ TURKISH: Mapping[str, str] = {
     "{count} part(s) brought back over the board": "{count} parça kartın üstüne geri getirildi",
     "{count} blocked wire entr(ies) cleared": "kapalı {count} tel girişi açıldı",
     "{count} terminal(s) turned to face their edge": "{count} klemens kenarına bakacak şekilde döndü",
+    "{count} hot pair(s) moved apart": "ısınan {count} parça çifti birbirinden uzaklaştırıldı",
+    "{count} part(s) moved out from under a screw head": "{count} parça vida başının altından çıkarıldı",
     "routing cost {cost}": "yönlendirme maliyeti {cost}",
     "{made} connection(s) routed across {closed}/{considered} nets": "{closed}/{considered} nette {made} bağlantı yönlendirildi",
     "{count} could NOT be routed": "{count} tanesi YÖNLENDİRİLEMEDİ",

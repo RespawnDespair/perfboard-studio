@@ -148,6 +148,8 @@ TEMPLATES: tuple[str, ...] = (
     "{count} part(s) brought back over the board",
     "{count} blocked wire entr(ies) cleared",
     "{count} terminal(s) turned to face their edge",
+    "{count} hot pair(s) moved apart",
+    "{count} part(s) moved out from under a screw head",
     "routing cost {cost}",
     "{made} connection(s) routed across {closed}/{considered} nets",
     "{count} could NOT be routed",
