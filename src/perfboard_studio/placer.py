@@ -95,8 +95,12 @@ from .command import CommandContext
 from .commands import (
     ComponentPlacement,
     MoveComponentsPayload,
+    PartPlacement,
+    PlacePartsPayload,
     create_document_id_generator,
     move_components,
+    place_parts,
+    preset_payload,
 )
 from .connectivity import FootprintLookup
 from .footprints import body_extent, entry_corridor, wire_entry
@@ -133,6 +137,7 @@ from .model import (
     BodyArchetype,
     ComponentId,
     ComponentInstance,
+    DocumentMeta,
     Footprint,
     HoleCoord,
     MountingHole,
@@ -2451,19 +2456,282 @@ def _reserve(
 
 
 # ---------------------------------------------------------------------------
+# Putting the design on the board
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class DesignPlacement:
+    """Where the parts in the design go, as one ``part.place``, and what did not go.
+
+    ``document`` is the input with :attr:`placements` applied through the real command --
+    what the bus holds once :meth:`payload` is dispatched -- so a caller that judges the
+    board (a board trial) and a caller that commits it (the window) are talking about one
+    board, not two that were worked out alike.
+    """
+
+    placements: tuple[PartPlacement, ...]
+    #: Refs left in the design: a footprint the registry does not have, one wider than the
+    #: board at every rotation, or a part the annealer could not find a legal place for.
+    unplaced: tuple[str, ...]
+    #: Refs :func:`arrange` had no room for, put down overlapping for the annealer to sort
+    #: out. Not a failure: the arrangement packs coarse boxes into lanes with a hole between
+    #: them, and the annealer fits the real courtyards far tighter than that.
+    crowded: tuple[str, ...]
+    document: PerfDocument
+    plan: PlacementPlan | None
+
+    def payload(self) -> PlacePartsPayload:
+        return PlacePartsPayload(
+            placements=self.placements,
+            label=f"Place and arrange {len(self.placements)} part(s) from the schematic",
+        )
+
+
+def place_design(
+    doc: PerfDocument,
+    lookup: FootprintLookup,
+    options: PlacementOptions = DEFAULT_PLACEMENT_OPTIONS,
+    should_stop: Callable[[], bool] | None = None,
+) -> DesignPlacement:
+    """Every part in the design onto the board, arranged and then annealed -- the whole of
+    "Place on the Board", as a question about a document.
+
+    1. :func:`arrange_design` lays the design out in lanes around whatever is already down.
+    2. What it had no room for is CROWDED IN (:func:`_crowd_in`): put wherever it overlaps
+       least, deterministically. This step is the reason the function exists. The window
+       used to leave such parts in the design and report a count, so a board the annealer
+       could lay out comfortably -- a 24-part design on 7 x 9 cm, which the lanes cannot
+       pack -- came back with five parts missing, and the board looked too small when the
+       packing was.
+    3. :func:`plan_placement` anneals the lot, with every part already on the board LOCKED:
+       placing a design is not rearranging a board, which is auto-place's job.
+
+    If the annealer cannot make the board legal, the parts with the most conflicts go back
+    to the design one at a time until it is (:func:`_conflicts_by_part`), so nothing illegal
+    is ever proposed. Those refs are in ``unplaced``, and a board that leaves any there is
+    too small for the design.
+    """
+    arrangement = arrange_design(doc, lookup)
+    positions: dict[ComponentId, tuple[HoleCoord, Rotation]] = {
+        placed.id: (placed.anchor, placed.rotation) for placed in arrangement.placements
+    }
+    refs: dict[ComponentId, str] = {placed.id: placed.ref for placed in arrangement.placements}
+    crowded: list[str] = []
+    unplaced: list[str] = []
+    if arrangement.unplaced:
+        by_ref = {part.ref: part for part in doc.parts}
+        taken = _taken_cells(doc, lookup, arrangement)
+        dead = _dead_hole_keys(doc)
+        for ref in arrangement.unplaced:
+            part = by_ref.get(ref)
+            footprint = lookup(part.footprint_id) if part is not None else None
+            spot = None if footprint is None else _crowd_in(footprint, doc.board, taken, dead)
+            if part is None or spot is None:
+                unplaced.append(ref)
+                continue
+            anchor, rotation, cells = spot
+            taken |= cells
+            positions[part.id] = (anchor, rotation)
+            refs[part.id] = ref
+            crowded.append(ref)
+
+    if not positions:
+        return DesignPlacement((), tuple(sorted(unplaced)), (), doc, None)
+
+    ctx = CommandContext(next_id=create_document_id_generator(doc))
+    preview = place_parts.apply(
+        doc,
+        PlacePartsPayload(
+            placements=tuple(
+                PartPlacement(id=id_, anchor=anchor, rotation=rotation)
+                for id_, (anchor, rotation) in sorted(positions.items())
+            ),
+            label="preview",
+        ),
+        ctx,
+    )
+    preview = replace(
+        preview,
+        components=tuple(
+            c if c.id in positions else replace(c, locked=True) for c in preview.components
+        ),
+    )
+    plan = plan_placement(preview, lookup, options, should_stop=should_stop)
+
+    placed = plan.document
+    crowded_ids = {id_ for id_, ref in refs.items() if ref in crowded}
+    while True:
+        conflicts = {
+            id_: count
+            for id_, count in _conflicts_by_part(placed, lookup).items()
+            if id_ in positions
+        }
+        if not conflicts:
+            break
+        # The part in the most trouble goes back first; a crowded one before one the
+        # arrangement had room for, then by reference, so the answer is the same every run.
+        worst = max(conflicts, key=lambda id_: (conflicts[id_], id_ in crowded_ids, refs[id_]))
+        placed = replace(placed, components=tuple(c for c in placed.components if c.id != worst))
+        unplaced.append(refs.pop(worst))
+        del positions[worst]
+
+    final = {c.id: c for c in placed.components}
+    placements = tuple(
+        PartPlacement(id=id_, anchor=final[id_].anchor, rotation=final[id_].rotation)
+        for id_ in sorted(positions)
+    )
+    document = (
+        place_parts.apply(doc, PlacePartsPayload(placements=placements), ctx)
+        if placements
+        else doc
+    )
+    return DesignPlacement(
+        placements=placements,
+        unplaced=tuple(sorted(unplaced)),
+        crowded=tuple(sorted(ref for ref in crowded if ref in refs.values())),
+        document=document,
+        plan=plan,
+    )
+
+
+def _cells(
+    footprint: Footprint, board: Board, anchor: HoleCoord, rotation: Rotation, mirrored: bool
+) -> set[tuple[int, int]]:
+    shape = _shapes_of(footprint, board.pitch, mirrored)[_rotation_index(rotation)]
+    return {
+        (anchor.col + c, anchor.row + r)
+        for c in range(shape.lo_col, shape.hi_col + 1)
+        for r in range(shape.lo_row, shape.hi_row + 1)
+    }
+
+
+def _taken_cells(
+    doc: PerfDocument, lookup: FootprintLookup, arrangement: Arrangement
+) -> set[tuple[int, int]]:
+    """Every cell something already stands in: the dead holes, the parts on the board, and
+    the ones the arrangement just put down."""
+    taken: set[tuple[int, int]] = set(_dead_hole_keys(doc))
+    for component in doc.components:
+        _reserve(taken, component, doc.board, lookup)
+    footprints = {part.id: part.footprint_id for part in doc.parts}
+    for placed in arrangement.placements:
+        footprint = lookup(footprints.get(placed.id, ""))
+        if footprint is not None:
+            taken |= _cells(footprint, doc.board, placed.anchor, placed.rotation, False)
+    return taken
+
+
+def _crowd_in(
+    footprint: Footprint,
+    board: Board,
+    taken: set[tuple[int, int]],
+    dead: frozenset[tuple[int, int]],
+) -> tuple[HoleCoord, Rotation, set[tuple[int, int]]] | None:
+    """(anchor, rotation, cells) for a part :func:`arrange` had no room for: every pin on
+    the grid, as few pins on a dead hole as there can be, then as few cells on top of
+    something else, then the first rotation, row and column -- a total order, so the same
+    design always crowds in the same way. None only when the part is wider than the board
+    at every rotation, which no amount of annealing can fix.
+
+    Overlap is ALLOWED here, and that is the point. The annealer prices an overlap as a
+    gradient and walks out of it; what it cannot do is bring a part back from nowhere.
+    """
+    best: tuple[tuple[int, int, int, int, int], HoleCoord, Rotation] | None = None
+    shapes = _shapes_of(footprint, board.pitch)
+    for index, rotation in enumerate(VALID_ROTATIONS):
+        pins = [
+            (int(dc), int(dr))
+            for dc, dr in (
+                transform_offset(p.d_col, p.d_row, rotation, False) for p in footprint.pins
+            )
+        ] or [(0, 0)]
+        lo_col, hi_col = -min(dc for dc, _ in pins), board.cols - 1 - max(dc for dc, _ in pins)
+        lo_row, hi_row = -min(dr for _, dr in pins), board.rows - 1 - max(dr for _, dr in pins)
+        shape = shapes[index]
+        for row in range(lo_row, hi_row + 1):
+            for col in range(lo_col, hi_col + 1):
+                on_dead = sum((col + dc, row + dr) in dead for dc, dr in pins)
+                overlap = sum(
+                    (col + c, row + r) in taken
+                    for c in range(shape.lo_col, shape.hi_col + 1)
+                    for r in range(shape.lo_row, shape.hi_row + 1)
+                )
+                key = (on_dead, overlap, index, row, col)
+                if best is None or key < best[0]:
+                    best = (key, HoleCoord(col, row), rotation)
+                    if on_dead == 0 and overlap == 0:
+                        # Nothing later in the scan can beat a clean spot: the key's
+                        # remaining fields are the scan order itself.
+                        return best[1], rotation, _cells(footprint, board, best[1], rotation, False)
+    if best is None:
+        return None
+    _, anchor, rotation = best
+    return anchor, rotation, _cells(footprint, board, anchor, rotation, False)
+
+
+def _conflicts_by_part(doc: PerfDocument, lookup: FootprintLookup) -> dict[ComponentId, int]:
+    """How many of the placer's hard errors each part is in: overlapping courtyards, pins
+    sharing a hole, pins off the grid, pins on a dead hole. Exactly the terms
+    :attr:`PlacementCost.is_legal` reads, attributed to the parts that caused them, so an
+    empty answer is a legal board."""
+    parts = _build_parts(doc, lookup)
+    nets, nets_of, pin_nets = _build_nets(doc, parts)
+    strips = _build_strips(doc, parts, pin_nets)
+    state = _initial_state(doc, parts, strips)
+    scorer = _make_scorer(
+        doc.board, PlacementWeights(), nets, nets_of, strips, _dead_hole_keys(doc), doc.mounting_holes
+    )
+    counts = [0] * len(parts)
+    occupants: dict[tuple[int, int], list[int]] = {}
+    for position in range(len(parts)):
+        off, dead, _ = scorer.part_terms(state, position)
+        counts[position] += off + dead
+        for pin in state.pins(position):
+            occupants.setdefault(pin, []).append(position)
+    for sharing in occupants.values():
+        if len(sharing) > 1:
+            for position in sharing:
+                counts[position] += len(sharing) - 1
+    for a in range(len(parts)):
+        for b in range(a + 1, len(parts)):
+            if scorer.pair_terms(state, a, b)[0]:
+                counts[a] += 1
+                counts[b] += 1
+    return {parts[i].component_id: n for i, n in enumerate(counts) if n}
+
+
+#: What a placement cannot see and must not be keyed on: the drawing, and the document's
+#: name and dates. See :func:`placement_inputs`.
+_BLANK_META = DocumentMeta(name="", created="", modified="")
+
+
+def placement_inputs(doc: PerfDocument) -> PerfDocument:
+    """``doc`` with the fields no placement depends on blanked, for comparing with ``==``:
+    whether a placement worked out earlier is still one for THIS document.
+
+    Blind only to what is declared blind here -- the schematic drawing, and the name and
+    dates a save changes. Every other field counts, including any added later, because a
+    stale placement committed onto a changed board is the failure this key exists to stop.
+    """
+    return replace(doc, meta=_BLANK_META, sheet=(), sheet_wires=(), sheet_notes=())
+
+
+# ---------------------------------------------------------------------------
 # Which board to buy
 # ---------------------------------------------------------------------------
 
 
-#: How much of a board's holes an arrangement may cover and still be a board somebody can
-#: wire.
+#: How much of a board's holes an arrangement may cover and still be a board the circuit
+#: certainly has room on.
 #:
-#: Measured rather than guessed: the four worked examples that ship with this project sit
-#: between 21% and 30% on the stock boards this application itself recommended for them,
-#: and every one routes with no connection the tool could not make. A third is past all of
-#: them and still leaves two holes in three for copper, which is the ratio a perfboard
-#: actually needs -- a solder trace is as wide as the parts are and every run wants a lane
-#: of its own.
+#: This picks the REFERENCE, not the board to buy. The board to buy is ``boardfit``'s answer,
+#: which builds the design on this board and on the smaller ones and keeps the smallest that
+#: builds as well. The number was set by looking at where the shipped examples sat on the
+#: boards this very rule had recommended for them -- between 21% and 30% -- which is to say
+#: it was calibrated on itself, and it was a board and a half too big: atmega328-relay was
+#: sent to 9 x 15 cm and builds as cleanly on 7 x 9. As a yardstick that is exactly what is
+#: wanted: a board with room to spare, that the smaller ones are measured against.
 ARRANGEMENT_FILL_LIMIT = 0.33
 
 
@@ -2508,19 +2776,33 @@ def suggest_boards(
     Only boards of the family ``base`` is already on are offered. A phenolic board and a
     plated double-sided one are different products with different pads, and a size
     suggestion is not the place to change which one somebody bought.
+
+    Each board is laid out as the PRODUCT, not the grid: its finger strips and the pads its
+    corner screws take are reserved, as they are when the design is placed on it for real.
+    They used to be ignored here, so the arrangement counted a strip of holes nothing can be
+    soldered into as room.
     """
     suggestions: list[BoardSuggestion] = []
     for preset in sorted(presets, key=lambda p: (p.width_mm * p.height_mm, p.name)):
         if preset.single_sided != base.single_sided:
             continue
         board = board_from_preset(preset, base)
-        suggestions.append(BoardSuggestion(preset, board, arrange(board, entries, nets, lookup)))
+        features = preset_payload(preset, board)
+        product = PerfDocument(
+            meta=_BLANK_META,
+            board=board,
+            edge_connectors=features.edge_connectors,
+            mounting_holes=features.mounting_holes,
+        )
+        arrangement = arrange(board, entries, nets, lookup, _dead_hole_keys(product))
+        suggestions.append(BoardSuggestion(preset, board, arrangement))
     return tuple(suggestions)
 
 
 def recommended_board(suggestions: Sequence[BoardSuggestion]) -> BoardSuggestion | None:
-    """The smallest board worth buying: the first with room to wire it, or failing that
-    the first the circuit fits on at all.
+    """The board the circuit certainly has room on: the first with room to wire it, or
+    failing that the first the circuit fits on at all. ``boardfit.choose_board`` measures
+    the smaller boards against it; on its own it is a board and a half too big.
 
     The fallback matters. A design that fills every stock board past the comfortable ratio
     still has to be offered the biggest one rather than nothing -- "no board suits this"

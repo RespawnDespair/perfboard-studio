@@ -37,6 +37,11 @@ closed without a bump.
 
 ### Fixed
 
+- **The board-size question counted the finger strips as room.** Each stock board was laid
+  out as a bare grid, so the two edge strips a board is sold with -- holes nothing can be
+  soldered into -- and the pads its corner screws take were counted as space for parts, and
+  a board could be called a fit that placing on it would then fall short on. They are
+  reserved now, as they are when the design is placed for real.
 - **DRC measured a screw head from the wrong point when the hole was moved off its grid
   position.** It took the nearest point of a part towards the hole's grid address and then
   measured from where the screw actually is, which agree only while the offset is zero: a

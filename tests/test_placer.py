@@ -104,6 +104,8 @@ from perfboard_studio.placer import (
     arrange_document,
     describe,
     design_entries,
+    place_design,
+    placement_inputs,
     plan_placement,
     recommended_board,
     suggest_boards,
@@ -1991,6 +1993,135 @@ def test_the_plan_is_never_worse_than_leaving_the_board_alone() -> None:
         if plan.route_cost is None:
             continue
         assert plan.route_cost <= plan_autoroute(doc, registry).summary.total_cost + 1e-9
+
+
+# ---------------------------------------------------------------------------
+# Putting the design on the board
+# ---------------------------------------------------------------------------
+
+#: Tiny and quick: these tests are about which parts land and how, not about how good the
+#: arrangement is.
+_QUICK = PlacementOptions(seed=0, restarts=1, iterations=3000, score_with_router=False)
+
+
+def _placement_errors(document: PerfDocument) -> list[DrcViolation]:
+    return [
+        v
+        for v in run_drc(document, REGISTRY)
+        if v.severity == "error" and v.rule in PLACEMENT_ERRORS
+    ]
+
+
+def _design(board: Board, resistors: int, dips: int) -> PerfDocument:
+    parts = tuple(
+        SchematicPart(id=f"p-R{i}", ref=f"R{i}", value="1k", footprint_id="r-axial-3")
+        for i in range(1, resistors + 1)
+    ) + tuple(
+        SchematicPart(id=f"p-U{i}", ref=f"U{i}", value="x", footprint_id="dip-8")
+        for i in range(1, dips + 1)
+    )
+    nets = (
+        Net(
+            id="n1",
+            name="A",
+            net_class="signal",
+            nodes=tuple(NetNode(component_ref=part.ref, pin="1") for part in parts),
+        ),
+    )
+    return dataclasses.replace(make_doc(board=board), parts=parts, nets=nets)
+
+
+def test_placing_a_design_is_one_part_place() -> None:
+    """What the window dispatches IS what was worked out: the payload through the bus
+    gives exactly ``document``, and one undo takes the whole design back off the board."""
+    doc = _design(dataclasses.replace(BOARD, cols=16, rows=10), resistors=3, dips=1)
+    placed = place_design(doc, REGISTRY, _QUICK)
+    assert placed.unplaced == ()
+    bus = CommandBus(doc, create_standard_registry(), CommandContext(next_id=create_document_id_generator(doc)))
+    result = bus.dispatch("part.place", placed.payload())
+    assert result.ok, result.message
+    assert bus.document == placed.document
+    assert len(bus.document.components) == 4 and bus.document.parts == ()
+    bus.undo()
+    assert bus.document == doc
+
+
+def test_what_the_arrangement_has_no_room_for_is_crowded_on_for_the_annealer() -> None:
+    """THE reason ``place_design`` exists. The lanes ``arrange`` packs keep a hole between
+    parts and a row between lanes, so on a small board they run out long before the board
+    does -- here three of seven parts. They used to stay in the design with a count in the
+    status bar, and a board the annealer lays out comfortably looked too small. Now they
+    are put down where they overlap least and the annealer walks them clear."""
+    doc = _design(dataclasses.replace(BOARD, cols=12, rows=8), resistors=6, dips=1)
+    assert set(arrange_design(doc, REGISTRY).unplaced) == {"R5", "R6", "U1"}
+
+    placed = place_design(doc, REGISTRY, _QUICK)
+
+    assert placed.unplaced == ()
+    assert placed.crowded == ("R5", "R6", "U1")
+    assert placed.document.parts == ()
+    assert _placement_errors(placed.document) == []
+
+
+def test_a_part_the_annealer_cannot_legalise_is_left_in_the_design() -> None:
+    """Nothing illegal is ever proposed. When the board really is too small, the parts in
+    the most trouble go back to the design one at a time until what is left is legal --
+    and they are named, because a board that leaves any behind is too small for it."""
+    doc = _design(dataclasses.replace(BOARD, cols=12, rows=8), resistors=14, dips=3)
+
+    placed = place_design(doc, REGISTRY, _QUICK)
+
+    assert placed.unplaced
+    assert {part.ref for part in placed.document.parts} == set(placed.unplaced)
+    assert _placement_errors(placed.document) == []
+
+
+def test_a_footprint_wider_than_the_board_is_left_in_the_design() -> None:
+    """A DIP-40 is twenty holes long at every rotation. No crowding helps that."""
+    doc = dataclasses.replace(
+        make_doc(board=dataclasses.replace(BOARD, cols=10, rows=10)),
+        parts=(SchematicPart(id="p-U1", ref="U1", value="x", footprint_id="dip-40"),),
+    )
+    placed = place_design(doc, REGISTRY, _QUICK)
+    assert placed.unplaced == ("U1",) and placed.crowded == () and placed.placements == ()
+    assert placed.document == doc
+
+
+def test_placing_a_design_leaves_the_components_already_placed_alone() -> None:
+    """Putting a design on the board is not rearranging it -- that is auto-place, with its
+    own undo step. What is already down is locked for the anneal and stays where it was."""
+    board = dataclasses.replace(BOARD, cols=16, rows=10)
+    already = component("R9", "r-axial-3", hole(2, 2))
+    doc = dataclasses.replace(_design(board, resistors=3, dips=1), components=(already,))
+    placed = place_design(doc, REGISTRY, _QUICK)
+    assert placed.unplaced == ()
+    kept = next(c for c in placed.document.components if c.ref == "R9")
+    assert kept == already
+
+
+def test_placing_a_design_is_deterministic() -> None:
+    doc = _design(dataclasses.replace(BOARD, cols=12, rows=8), resistors=6, dips=1)
+    assert place_design(doc, REGISTRY, _QUICK) == place_design(doc, REGISTRY, _QUICK)
+
+
+def test_placement_inputs_ignore_the_drawing_and_the_name() -> None:
+    """The key a placement worked out earlier is reused by: blind to the sheet and to what
+    a save changes, and to nothing else -- a net, the board or a part is a different
+    question with a different answer."""
+    from perfboard_studio.model import SymbolPlacement
+
+    doc = _design(dataclasses.replace(BOARD, cols=12, rows=8), resistors=2, dips=1)
+    key = placement_inputs(doc)
+    assert placement_inputs(
+        dataclasses.replace(
+            doc,
+            meta=DocumentMeta(name="renamed", created="x", modified="y"),
+            sheet=(SymbolPlacement(id="p-R1", at=Point2(10.0, 10.0)),),
+        )
+    ) == key
+    assert placement_inputs(dataclasses.replace(doc, nets=())) != key
+    assert placement_inputs(dataclasses.replace(doc, board=dataclasses.replace(doc.board, cols=13))) != key
+    assert placement_inputs(dataclasses.replace(doc, parts=doc.parts[:-1])) != key
 
 
 # ---------------------------------------------------------------------------

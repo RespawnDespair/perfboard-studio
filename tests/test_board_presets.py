@@ -504,6 +504,23 @@ def test_a_preset_still_refuses_to_strand_a_part() -> None:
     assert bus.document.board.cols == board.cols, "and nothing moved"
 
 
+@pytest.mark.parametrize("preset", STANDARD_PRESETS, ids=lambda p: p.key)
+def test_a_document_on_a_preset_is_what_board_apply_preset_makes_of_it(preset) -> None:
+    """``commands.document_on_preset`` is how a board trial and the size question's pictures
+    put a design on a stock board, and ``preset_payload`` is what the window dispatches. A
+    placement worked out on the first is committed onto the second, so the two must be the
+    same document, field for field, for every product in the list."""
+    from perfboard_studio.commands import document_on_preset, preset_payload
+
+    doc = _doc()
+    board = board_from_preset(preset, doc.board)
+    bus = _bus(doc)
+    result = bus.dispatch("board.applyPreset", preset_payload(preset, board))
+    assert result.ok, result.message
+    assert document_on_preset(doc, preset) == bus.document
+    assert bus.history()[-1] == f"Use a {preset.name} board"
+
+
 def test_a_connector_finger_has_no_hole_through_it() -> None:
     """A finger is a solid contact, soldered to from the surface. There is nothing to put
     a lead through, and that is the whole difference between a finger and a pad.

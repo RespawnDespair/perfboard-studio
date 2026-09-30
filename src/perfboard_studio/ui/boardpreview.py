@@ -24,15 +24,12 @@ from perfboard_studio.commands import (
     PartPlacement,
     PlacePartsPayload,
     create_document_id_generator,
+    document_on_preset,
     place_parts,
+    preset_payload,
 )
 from perfboard_studio.connectivity import FootprintLookup
-from perfboard_studio.geometry import (
-    BoardPreset,
-    board_outline_mm,
-    preset_edge_connectors,
-    preset_mounting_holes,
-)
+from perfboard_studio.geometry import BoardPreset, board_outline_mm
 from perfboard_studio.model import Board, PerfDocument
 from perfboard_studio.placer import Arrangement
 
@@ -73,15 +70,24 @@ def with_board(
     document: PerfDocument, board: Board, preset: BoardPreset | None
 ) -> PerfDocument:
     """``document`` on ``board``, with the finger strips and corner holes a product comes
-    with -- what ``board.applyPreset`` would make of it, without the command."""
+    with -- what ``board.applyPreset`` makes of it (``commands.document_on_preset``).
+
+    A picture of a board the command would refuse -- a part already down that the smaller
+    grid strands -- is still a picture of that board: it is drawn with the preset's features
+    swapped in by hand, and the dialog says why it cannot be chosen.
+    """
     if preset is None:
         return dataclasses.replace(document, board=board)
-    return dataclasses.replace(
-        document,
-        board=board,
-        edge_connectors=preset_edge_connectors(preset, board),
-        mounting_holes=preset_mounting_holes(preset, board),
-    )
+    try:
+        return document_on_preset(document, preset, board)
+    except CommandError:
+        payload = preset_payload(preset, board)
+        return dataclasses.replace(
+            document,
+            board=board,
+            edge_connectors=payload.edge_connectors,
+            mounting_holes=payload.mounting_holes,
+        )
 
 
 def with_arrangement(document: PerfDocument, arrangement: Arrangement) -> PerfDocument:

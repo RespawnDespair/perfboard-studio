@@ -547,11 +547,58 @@ arrangement.
 from the user's board, so nothing else would stop it winning the routing comparison while
 still being worse than leaving the board alone.
 
-`placer.suggest_boards` answers which stock board a circuit needs by ARRANGING it on each
-`geometry.STANDARD_PRESETS` size, not by summing footprint areas: a design is limited by its
-biggest part and the lanes it packs into. `ARRANGEMENT_FILL_LIMIT` is what separates "fits"
-from "fits with room to wire it", and `recommended_board` falls back to the smallest board
-that merely fits, because "no board suits this" is not an answer anybody can act on.
+**`placer.place_design` is "Place on the Board"**, as an engine function the window, a board
+trial and `tools/build_examples.py` all call: `arrange_design`, then everything the lanes had
+no room for CROWDED IN where it overlaps least (`_crowd_in`), then `plan_placement` with the
+parts already on the board locked. The crowding step is the reason it exists: the lanes keep
+a hole between parts and a row between lanes, so they run out long before the board does,
+and the window used to leave those parts in the design with a count in the status bar — a
+24-part design on 7 × 9 cm came back five parts short, and the board looked too small when
+it was the packing that was. If the annealer cannot make the board legal, the part in the
+most trouble goes back to the design, one at a time, until it is (`_conflicts_by_part`, the
+same terms `is_legal` reads). `DesignPlacement.document` is the input with the payload
+applied through the real `part.place`, so what a trial judged is what the bus will hold.
+
+### Which board to buy is tried, not estimated
+
+`placer.suggest_boards` lays the circuit out on every stock board with `arrange` — as the
+PRODUCT, fingers and corner bores reserved (`commands.preset_payload`) — and
+`recommended_board` takes the first it fills to `ARRANGEMENT_FILL_LIMIT` or less. That used
+to be the answer, and it was calibrated on itself (the examples sat at 21–30% on the boards it
+had recommended for them) and a board and a half too big: atmega328-relay went to 9 × 15 cm
+and builds just as cleanly on 7 × 9. It is now only the REFERENCE.
+
+`boardfit.choose_board` answers the question by building. It tries the reference, then every
+smaller board of the family largest first, each with `try_board`: `commands.document_on_preset`
+(`board.applyPreset` without a history — ONE function, three consumers: the bus, the trial and
+the dialog's pictures, pinned field for field over every preset), `place_design`, the
+autoroute with the engine's defaults, DRC. A smaller board is accepted when every part is on,
+every connection routed, no DRC error, no warning of `PLACEMENT_WARNING_RULES` the reference
+does not have — the placer's own `PHYSICAL_WARNING_RULES`, so the judge and the placer's
+ranking cannot disagree about what a placement is responsible for — and the routing cost is
+within `ROUTE_COST_TOLERANCE` (1.20, the user's choice of "balanced") of the reference's. The
+search stops at the first rejection or after `MAX_SMALLER_BOARDS_TRIED`, and recommends the
+smallest accepted board.
+
+Four things about it are load-bearing:
+
+- **A trial places exactly as the window does** (`TRIAL_PLACEMENT_OPTIONS` is the placer's
+  default at seed 0). Lighter options were measured and rejected: a verdict compares ONE
+  placement with ONE, an anneal's routed cost varies by seed, and a lucky reference rejects a
+  board that builds perfectly well. `tools/measure_board_choice.py --seeds 0 1 2 3` is the
+  measurement, and the constants' docstrings quote it; run it again before changing either.
+- **A trial cut short is thrown away, not judged.** `try_board` returns None when
+  `should_stop` fired, and `BoardChoice.complete` says the search did not finish.
+- **Labels written on the board do not stop a trial**: text somebody placed for the board they
+  had says nothing about where parts go, and is dropped if the smaller grid cannot hold it. A
+  part already DOWN that the smaller grid strands is different — that board cannot take the
+  design, and says so as `too-small`.
+- **Nothing is tried on a stripboard**, whose boards are judged by `striproute` and on which no
+  tolerance here was measured; the reference is the answer, as it always was.
+
+`placer.placement_inputs(doc)` is the key a placement worked out earlier is reused by — blind to
+the sheet and to what a save changes, and to nothing else, so a field added later counts until
+somebody declares it blind.
 
 ### A pad is not always round, and the board may say where it is
 
@@ -1299,9 +1346,13 @@ nobody is going to follow.
 model → geometry → stripboard → connectivity / occupancy
                                     → drc, lvs, router, autoroute, placer, ratsnest,
                                       striproute, schematic
+                                                        → boardfit
                                                         → guide → guide_export
                                                         → ui/, mcp/
 ```
+
+`boardfit.py` sits below `placer`, `autoroute` and `drc` because it is all three run in a row
+on a candidate board and then compared; nothing in the engine imports it.
 
 `wiregauge.py` hangs off `model` alone — it is arithmetic on a gauge number — and is read
 by `drc`, `router`, `striproute` and `guide`, which is how three siblings and their

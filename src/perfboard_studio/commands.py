@@ -41,6 +41,7 @@ from .command import (
 )
 from .geometry import (
     STANDARD_PRESETS,
+    BoardPreset,
     board_edge_margin_mm,
     board_from_preset,
     default_finger_length_mm,
@@ -3228,3 +3229,40 @@ def create_standard_registry() -> CommandRegistry:
     for definition in STANDARD_COMMANDS:
         registry.register(definition)
     return registry
+
+
+# ---------------------------------------------------------------------------
+# A stock board, as one fact
+# ---------------------------------------------------------------------------
+
+
+def preset_payload(
+    preset: BoardPreset, board: Board, label: str | None = None
+) -> ApplyBoardPresetPayload:
+    """``board.applyPreset`` for a stock product: the grid, and the finger strips and corner
+    screws it is sold with. What the window dispatches, what a board trial is placed on and
+    what the size question draws -- built once, so the three cannot describe three boards."""
+    return ApplyBoardPresetPayload(
+        board=board,
+        edge_connectors=preset_edge_connectors(preset, board),
+        mounting_holes=preset_mounting_holes(preset, board),
+        label=label if label is not None else f"Use a {preset.name} board",
+    )
+
+
+def document_on_preset(
+    document: PerfDocument, preset: BoardPreset, board: Board | None = None
+) -> PerfDocument:
+    """``document`` on a stock board, exactly as the bus would leave it after
+    ``board.applyPreset`` -- the same command applied without a history to put it in.
+
+    ``board`` defaults to the preset laid over ``document``'s own board, which keeps its
+    type and pad details. Raises ``CommandError`` where the command would refuse: a part
+    already on the board that the new grid would strand.
+    """
+    on = board if board is not None else board_from_preset(preset, document.board)
+    return apply_board_preset.apply(
+        document,
+        preset_payload(preset, on),
+        CommandContext(next_id=create_document_id_generator(document)),
+    )
