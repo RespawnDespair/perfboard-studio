@@ -2819,7 +2819,7 @@ class WelcomeDialog(QDialog):
                 button.setDefault(True)
                 button.setStyleSheet(
                     f"QPushButton {{ background: {ACCENT}; color: white; font-weight: 600; "
-                    "border: none; border-radius: 6px; padding: 6px 12px; }}"
+                    "border: none; border-radius: 6px; padding: 6px 12px; }"
                 )
             button.clicked.connect(lambda _checked=False, c=choice: self._pick(c))
             begin.addWidget(button)
@@ -4127,6 +4127,13 @@ class MainWindow(QMainWindow):
             from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
             widget: Any = QVTKRenderWindowInteractor()  # type: ignore[no-untyped-call]
+            if sys.platform == "darwin":
+                # With Qt >= 6.10 on macOS every Render() of a WA_PaintOnScreen widget
+                # posts a fresh expose, so paintEvent renders forever and starves the
+                # event loop: the window hangs the moment the panel opens. Measured on a
+                # bare QVTKRenderWindowInteractor (PySide6 6.10/6.11, VTK 9.6/9.7); 6.9
+                # paints once.
+                widget.setAttribute(Qt.WidgetAttribute.WA_PaintOnScreen, False)
             ren, _stats = view3d.build_renderer(
                 self.bus.document,
                 self.lookup,
