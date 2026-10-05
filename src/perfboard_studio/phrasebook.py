@@ -658,6 +658,29 @@ TURKISH: dict[str, str] = {
     "AWG": "AWG",
     "Colour": "Renk",
     "trace spine": "yol omurgası",
+    "component side": "komponent yüzünden",
+    "solder side": "lehim yüzünden",
+    "Cut {length:.0f} mm of {colour} AWG {awg} · seen from the {side}": (
+        "{length:.0f} mm {colour} AWG {awg} tel kes · {side} bakılmış"
+    ),
+    "turned a quarter to fit the page": "sayfaya sığsın diye çeyrek döndürülmüş",
+    "Wire templates (1:1)": "Tel şablonları (1:1)",
+    "Print these pages at 100 % (actual size, not fit to page) and check the bar below "
+    "against a ruler. Lay each wire on its drawing: cut it at the tips, strip the "
+    "copper-coloured ends, bend it 90° down through the board at the two end rings and "
+    "along the board at every other ring. Beside each one is the same wire straight, to "
+    "mark before bending: above it the length of each piece, below it each mark's distance "
+    "from the left tip. A solid blue mark bends down through the board, a dashed one along "
+    "it, and a dark one is where to cut the insulation.": (
+        "Bu sayfaları %100 ölçekte yazdır (gerçek boyut, sayfaya sığdırma değil) ve "
+        "aşağıdaki çubuğu bir cetvelle karşılaştır. Her teli kendi çiziminin üstüne koy: "
+        "uçlarından kes, bakır renkli uçlarını soy, iki uçtaki halkada kartın içinden 90° "
+        "aşağı, diğer her halkada kartın üzerinde bük. Her birinin yanında aynı tel düz "
+        "hâliyle durur, bükmeden önce işaretlemek için: üstünde her parçanın uzunluğu, "
+        "altında her işaretin sol uçtan uzaklığı. Düz mavi işaret kartın içinden aşağı, "
+        "kesikli mavi işaret kartın üzerinde bükülür; koyu işaret izolasyonun kesileceği "
+        "yerdir."
+    ),
     "bare wire": "çıplak tel",
     "insulated wire": "izoleli tel",
     "{gauge:g} mm, laid along {pads} pads": "{gauge:g} mm, {pads} ped boyunca",

@@ -31,7 +31,9 @@ from __future__ import annotations
 import base64
 import csv
 import io
+import itertools
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import fields, is_dataclass
 from html import escape
@@ -40,13 +42,17 @@ from typing import Any
 from .drc import MATERIAL_LABELS
 from .geometry import board_size_mm, format_hole
 from .guide import (
+    WIRE_TEMPLATE_MARGIN_MM,
     Checkpoint,
     ConductorStep,
     Guide,
     GuideStep,
     PartStep,
+    WireTemplate,
+    all_steps,
     conductor_word,
     step_focus,
+    wire_template,
 )
 from .model import HoleCoord
 from .phrasebook import Phrasebook, phrasebook
@@ -288,7 +294,16 @@ button { font: inherit; color: var(--text); background: var(--panel-2);
   body { background: #fff; color: #000; }
   .step, .check { break-inside: avoid; }
   .shot { break-inside: avoid; max-width: 20rem; }
+  /* The preview in a step is for the screen; paper gets the 1:1 sheets at the end. */
+  .tpl-preview { display: none; }
+  .templates { break-before: page; }
 }
+.tpl-preview svg { display: block; max-width: 100%; height: auto; margin: .5rem 0 .1rem;
+                   background: #fff; border-radius: 6px; }
+.tpl { break-inside: avoid; margin: 1rem 0 1.5rem; }
+.tpl-pair { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; align-items: flex-start; }
+.tpl svg, .ruler { display: block; background: #fff; }
+@media screen { .tpl svg { max-width: 100%; height: auto; } }
 """
 
 _SCRIPT = """
@@ -398,7 +413,7 @@ def guide_to_html(guide: Guide, step_images: Mapping[str, bytes] | None = None) 
         )
         for step in phase.steps:
             step_id += 1
-            parts.append(_html_step(step, f"s{step_id}", images, say))
+            parts.append(_html_step(step, f"s{step_id}", images, say, guide))
         if phase.checkpoints:
             parts.append("<h3>" + say("Check before moving on") + "</h3>")
             for check in phase.checkpoints:
@@ -407,6 +422,7 @@ def guide_to_html(guide: Guide, step_images: Mapping[str, bytes] | None = None) 
         parts.append("</section>")
 
     parts.append(_html_tables(guide, say))
+    parts.append(_html_templates(guide, say))
     # The counter's words go into the script as JavaScript string literals, which is why
     # a translation of them may hold no quote or backslash (tests/test_phrasebook.py).
     script = _SCRIPT.replace("__OF__", say(" of ")).replace("__DONE__", say(" done"))
@@ -500,12 +516,17 @@ def _html_preparation(guide: Guide, say: Phrasebook) -> str:
 
 
 def _html_step(
-    step: GuideStep, dom_id: str, images: Mapping[str, bytes], say: Phrasebook
+    step: GuideStep,
+    dom_id: str,
+    images: Mapping[str, bytes],
+    say: Phrasebook,
+    guide: Guide | None = None,
 ) -> str:
     picture = _html_step_image(step, images)
     if isinstance(step, PartStep):
         return _html_part_step(step, dom_id, picture, say)
-    return _html_conductor_step(step, dom_id, picture, say)
+    template = wire_template(step, guide.board) if guide is not None else None
+    return _html_conductor_step(step, dom_id, picture, say, template)
 
 
 #: Magic bytes to media type, longest signature first. A data URI carries its own type,
@@ -592,7 +613,11 @@ def _conductor_word(step: ConductorStep, say: Phrasebook) -> str:
 
 
 def _html_conductor_step(
-    step: ConductorStep, dom_id: str, picture: str = "", say: Phrasebook | None = None
+    step: ConductorStep,
+    dom_id: str,
+    picture: str = "",
+    say: Phrasebook | None = None,
+    template: WireTemplate | None = None,
 ) -> str:
     say = say or phrasebook("en")
     bits = [
@@ -655,6 +680,8 @@ def _html_conductor_step(
         )
     for note in step.notes:
         bits.append(f'<div class="note sub">{escape(note)}</div>')
+    if template is not None:
+        bits.append(f'<div class="tpl-preview">{_template_pair(template, step, PREVIEW_SCALE)}</div>')
     for risk in step.risks:
         bits.append(f'<div class="note risk">⚠ {escape(risk.message)}</div>')
     return (
@@ -690,6 +717,229 @@ def _html_check(check: Checkpoint, dom_id: str, say: Phrasebook | None = None) -
         + say("Expect: {expected}", expected=escape(check.expected))
         + f"</div>{gate}</span>"
         f'<span class="tag">{escape(say(check.kind))}</span></label>'
+    )
+
+
+#: Insulation colours as ink. Keyed on the guide's colour ids (``guide.SIGNAL_COLORS`` and
+#: ``COLOR_BY_NET_CLASS``); a colour this does not know is drawn grey rather than refused.
+_WIRE_INK: dict[str, str] = {
+    "red": "#d62828", "black": "#222222", "yellow": "#e9b91c", "green": "#2a9d4f",
+    "blue": "#1d6fd8", "white": "#f4f4f4", "orange": "#f07c1c", "violet": "#8a4fd0",
+    "grey": "#8c8c8c", "brown": "#7a4a22",
+}
+_BARE_INK = "#9a9a9a"
+_COPPER_INK = "#c87533"
+#: Drawn widths, in mm. Roughly the wire's own -- what matters is that the bends and the
+#: strip marks read at arm's length, not the gauge.
+_INSULATED_MM = 1.2
+_BARE_MM = 0.6
+#: A generous width per character of a 2.6 mm label, for deciding which side it fits on.
+_LABEL_EM_MM = 1.8
+
+
+#: How much bigger than life the preview inside a step is drawn. A screen has no real
+#: millimetres anyway, and at 1:1 a 20 mm wire is a smudge beside its instructions.
+PREVIEW_SCALE = 3
+
+
+def _template_svg(template: WireTemplate, step: ConductorStep, scale: float = 1) -> str:
+    """One wire's cut-and-bend pattern as SVG, sized in real millimetres.
+
+    The width and height carry ``mm`` and the viewBox is in mm, so printed at 100 % the
+    drawing IS the wire: lay it on the paper, bend where the rings are, cut at the tips.
+    The grid under it is the board's own holes, so a corner can be checked against them.
+    ``scale`` enlarges the drawing without changing the viewBox -- for the preview only.
+    """
+    cut = step.cut
+    assert cut is not None
+    ink = _WIRE_INK.get(cut.colour, "#8c8c8c") if cut.insulated else _BARE_INK
+    width = _INSULATED_MM if cut.insulated else _BARE_MM
+    points = template.points
+    line = " ".join(f"{x:.2f},{y:.2f}" for x, y in points)
+    holes = "".join(f'<circle cx="{x:.2f}" cy="{y:.2f}" r=".5"/>' for x, y in template.holes)
+    shapes = [
+        f'<g fill="#d8d8d8">{holes}</g>',
+        # A dark underlay, so a white or yellow wire still has an edge on white paper.
+        f'<polyline points="{line}" fill="none" stroke="#555" stroke-width="{width + .3:.2f}" '
+        'stroke-linejoin="round"/>',
+        f'<polyline points="{line}" fill="none" stroke="{ink}" stroke-width="{width:.2f}" '
+        'stroke-linejoin="round"/>',
+    ]
+    if template.strip_mm > 0:
+        for tip, inner in ((points[0], points[1]), (points[-1], points[-2])):
+            run = math.dist(tip, inner)
+            k = template.strip_mm / run
+            end = (tip[0] + (inner[0] - tip[0]) * k, tip[1] + (inner[1] - tip[1]) * k)
+            shapes.append(
+                f'<line x1="{tip[0]:.2f}" y1="{tip[1]:.2f}" x2="{end[0]:.2f}" y2="{end[1]:.2f}" '
+                f'stroke="{_COPPER_INK}" stroke-width="{width + .35:.2f}"/>'
+            )
+    # A ring at every bend: the two end holes, where the legs go 90° down through the
+    # board, and every corner, where the wire turns along it.
+    for x, y in points[1:-1]:
+        shapes.append(
+            f'<circle cx="{x:.2f}" cy="{y:.2f}" r="1.3" fill="none" stroke="#1667c8" '
+            'stroke-width=".35"/>'
+        )
+    for hole, (x, y) in ((step.path[0], points[1]), (step.path[-1], points[-2])):
+        name = format_hole(hole)
+        # Beside the ring, on whichever side the template has room for it: a label run
+        # off the edge of the drawing is a hole address with its last letter missing.
+        right = x + 1.8 + len(name) * _LABEL_EM_MM <= template.width_mm
+        anchor = "start" if right else "end"
+        shapes.append(
+            f'<text x="{x + 1.8 if right else max(x - 1.8, len(name) * _LABEL_EM_MM):.2f}" '
+            f'y="{max(y - 1.6, 2.6):.2f}" '
+            f'text-anchor="{anchor}" font-size="2.6" font-family="sans-serif" fill="#333">'
+            f"{escape(name)}</text>"
+        )
+    return (
+        f'<svg width="{template.width_mm * scale:.2f}mm" '
+        f'height="{template.height_mm * scale:.2f}mm" '
+        f'viewBox="0 0 {template.width_mm:.2f} {template.height_mm:.2f}">'
+        + "".join(shapes)
+        + "</svg>"
+    )
+
+
+#: The straightened wire's marks: blue where it bends, like the rings on the shape beside
+#: it -- solid down through the board, dashed along it -- and dark where the insulation
+#: is cut, which a mark in the strip's own copper colour would vanish into.
+_MARK_INK = {"strip": "#333", "drop": "#1667c8", "turn": "#1667c8"}
+_MARK_DASH = {"strip": "", "drop": "", "turn": ' stroke-dasharray=".8 .5"'}
+#: The two label rows under the marks, in mm below the wire. Neighbouring marks alternate
+#: rows: a corner one pitch from a bend puts two distances 2.54 mm apart, and one row of
+#: "12.3" and "14.8" would print them on top of each other.
+_TOTAL_ROWS_MM = (8.8, 11.6)
+#: The same trouble above the wire: a piece one pitch long has room under its "2.5" for
+#: about three characters, so a short piece's length goes up a row when the last one
+#: did not.
+_SHORT_PIECE_MM = 3.6
+
+
+def _straight_svg(template: WireTemplate, step: ConductorStep, scale: float = 1) -> str:
+    """The wire straightened, at 1:1: what is cut and marked BEFORE anything is bent.
+
+    Above the wire, the distance from each mark to the next -- what to measure off
+    with a ruler. Below it, each mark's distance from the left tip, so a whole wire can be
+    marked from one end without adding up the errors of every step. A mark's ink says what
+    happens there: blue is a bend, the copper colour is where the insulation is cut.
+    """
+    cut = step.cut
+    assert cut is not None
+    m = WIRE_TEMPLATE_MARGIN_MM
+    length = template.length_mm
+    width, height, y = length + 2 * m, 14.6, 6.0
+    ink = _WIRE_INK.get(cut.colour, "#8c8c8c") if cut.insulated else _BARE_INK
+    stroke = _INSULATED_MM if cut.insulated else _BARE_MM
+    shapes = [
+        f'<line x1="{m:.2f}" y1="{y}" x2="{m + length:.2f}" y2="{y}" stroke="#555" '
+        f'stroke-width="{stroke + .3:.2f}"/>',
+        f'<line x1="{m:.2f}" y1="{y}" x2="{m + length:.2f}" y2="{y}" stroke="{ink}" '
+        f'stroke-width="{stroke:.2f}"/>',
+    ]
+    if template.strip_mm > 0:
+        for start in (0.0, length - template.strip_mm):
+            shapes.append(
+                f'<line x1="{m + start:.2f}" y1="{y}" x2="{m + start + template.strip_mm:.2f}" '
+                f'y2="{y}" stroke="{_COPPER_INK}" stroke-width="{stroke + .35:.2f}"/>'
+            )
+    text = 'font-family="sans-serif" fill="#333" text-anchor="middle"'
+    stops = [0.0, *(mark.at_mm for mark in template.marks), length]
+    raised = False
+    for left, right in itertools.pairwise(stops):
+        raised = right - left < _SHORT_PIECE_MM and not raised
+        shapes.append(
+            f'<text x="{m + (left + right) / 2:.2f}" y="{y - (3.8 if raised else 1.3):.2f}" '
+            f'font-size="2.2" {text}>{right - left:.1f}</text>'
+        )
+    for index, mark in enumerate(template.marks):
+        x = m + mark.at_mm
+        row = _TOTAL_ROWS_MM[index % 2]
+        shapes.append(
+            f'<line x1="{x:.2f}" y1="{y - 1.2:.2f}" x2="{x:.2f}" y2="{row - 2.1:.2f}" '
+            f'stroke="{_MARK_INK[mark.kind]}" stroke-width=".35"{_MARK_DASH[mark.kind]}/>'
+            f'<text x="{x:.2f}" y="{row:.2f}" font-size="2" {text}>{mark.at_mm:.1f}</text>'
+        )
+    return (
+        f'<svg width="{width * scale:.2f}mm" height="{height * scale:.2f}mm" '
+        f'viewBox="0 0 {width:.2f} {height:.2f}">' + "".join(shapes) + "</svg>"
+    )
+
+
+def _template_pair(template: WireTemplate, step: ConductorStep, scale: float = 1) -> str:
+    """The shape and the straightened wire, side by side where the page has room."""
+    return (
+        f'<div class="tpl-pair">{_template_svg(template, step, scale)}'
+        f"{_straight_svg(template, step, scale)}</div>"
+    )
+
+
+#: The calibration bar's length, in mm. Long enough that a printer scaling to 97 % --
+#: "fit to page", the usual default -- is 1.5 mm short and visible against a ruler.
+RULER_MM = 50
+
+
+def _ruler_svg() -> str:
+    ticks = "".join(
+        f'<line x1="{x}" y1="{2 if x % 10 else 0}" x2="{x}" y2="5" stroke="#000" '
+        'stroke-width=".25"/>'
+        for x in range(0, RULER_MM + 1, 5)
+    )
+    return (
+        f'<svg class="ruler" width="{RULER_MM + 1}mm" '
+        f'height="9mm" viewBox="-.5 0 {RULER_MM + 1} 9">'
+        f'<line x1="0" y1="5" x2="{RULER_MM}" y2="5" stroke="#000" stroke-width=".35"/>'
+        f'{ticks}<text x="0" y="8.6" font-size="3" font-family="sans-serif">'
+        f"{RULER_MM} mm</text></svg>"
+    )
+
+
+def _html_templates(guide: Guide, say: Phrasebook) -> str:
+    """The last pages: every wire at 1:1, to bend on.
+
+    A screen has no millimetres -- CSS's ``mm`` is a fixed number of pixels that is right
+    on no particular phone -- so the 1:1 promise is made only on PAPER, printed at 100 %,
+    and the ruler is how the reader checks the printer kept it.
+    """
+    items: list[str] = []
+    for step in all_steps(guide):
+        if not isinstance(step, ConductorStep):
+            continue
+        template = wire_template(step, guide.board)
+        if template is None or step.cut is None:
+            continue
+        side = say("component side") if template.seen_from == "top" else say("solder side")
+        items.append(
+            '<div class="tpl"><div class="title">'
+            f"{escape(step.net_name)}: {_hole(step.path[0])} → {_hole(step.path[-1])}</div>"
+            '<div class="meta">'
+            + say(
+                "Cut {length:.0f} mm of {colour} AWG {awg} · seen from the {side}",
+                length=step.cut.cut_mm,
+                colour=escape(say(step.cut.colour)),
+                awg=step.cut.awg,
+                side=side,
+            )
+            + (" · " + say("turned a quarter to fit the page") if template.turned else "")
+            + f"</div>{_template_pair(template, step)}</div>"
+        )
+    if not items:
+        return ""
+    return (
+        f'<section class="phase templates"><h2>{say("Wire templates (1:1)")}</h2>'
+        "<p>"
+        + say(
+            "Print these pages at 100 % (actual size, not fit to page) and check the bar "
+            "below against a ruler. Lay each wire on its drawing: cut it at the tips, strip "
+            "the copper-coloured ends, bend it 90° down through the board at the two end "
+            "rings and along the board at every other ring. Beside each one is the same "
+            "wire straight, to mark before bending: above it the length of each piece, "
+            "below it each mark's distance from the left tip. A solid blue mark bends down "
+            "through the board, a dashed one along it, and a dark one is where to cut the "
+            "insulation."
+        )
+        + f"</p>{_ruler_svg()}{''.join(items)}</section>"
     )
 
 
@@ -746,6 +996,7 @@ def _html_tables(guide: Guide, say: Phrasebook) -> str:
 __all__ = [
     "BOM_COLUMNS",
     "CUT_LIST_COLUMNS",
+    "RULER_MM",
     "WIRE_TABLE_COLUMNS",
     "bom_to_csv",
     "cut_list_to_csv",

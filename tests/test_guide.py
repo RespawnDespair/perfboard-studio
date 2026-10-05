@@ -57,6 +57,7 @@ from perfboard_studio.guide import (
     describe,
     document_at_step,
     step_focus,
+    wire_template,
 )
 from perfboard_studio.guide_export import bom_to_csv, cut_list_to_csv, guide_to_html, guide_to_json
 from perfboard_studio.model import (
@@ -583,6 +584,83 @@ def test_cut_length_is_the_path_plus_both_ends() -> None:
     cut = guide.cut_list[0]
     assert cut.path_mm == pytest.approx(4 * BOARD.pitch)
     assert cut.cut_mm == pytest.approx(4 * BOARD.pitch + 2 * (1.6 + 3.0) + 2 * 5.0)
+
+
+def _wire_step(guide: Guide) -> ConductorStep:
+    return next(s for s in all_steps(guide) if isinstance(s, ConductorStep))
+
+
+def test_a_wire_template_is_the_cut_list_length_bent_where_the_holes_are() -> None:
+    """The drawing IS the wire: tip to tip it is the cut list's length, the end holes and
+    the corner are a pitch apart as on the board, and a wire on the solder side is drawn
+    as seen from there -- mirrored, because a bent wire turned over goes in legs up."""
+    import itertools
+    import math
+
+    path = (hole(2, 2), hole(6, 2), hole(6, 5))
+    for side, sign in (("top", 1), ("bottom", -1)):
+        doc = make_doc(
+            conductors=(
+                WireConductor(id="cond-1", path=path, kind="insulated-wire", side=side),
+            ),
+        )
+        guide = build_guide(doc, REGISTRY)
+        step = _wire_step(guide)
+        template = wire_template(step, guide.board)
+        assert template is not None and step.cut is not None
+        points = template.points
+        assert len(points) == len(path) + 2
+        drawn = sum(math.dist(a, b) for a, b in itertools.pairwise(points))
+        assert drawn == pytest.approx(step.cut.cut_mm)
+        assert template.strip_mm == step.cut.strip_mm
+        # The first run goes right on the component side and left seen from below.
+        assert (points[2][0] - points[1][0]) == pytest.approx(sign * 4 * BOARD.pitch)
+        assert template.seen_from == side and not template.turned
+        # Straightened: cut the insulation, down through the board, the corner, down
+        # again, cut the insulation -- at the distances the shape bends at.
+        leg = (step.cut.cut_mm - step.cut.path_mm) / 2
+        assert [(mark.kind, mark.at_mm) for mark in template.marks] == [
+            ("strip", pytest.approx(step.cut.strip_mm)),
+            ("drop", pytest.approx(leg)),
+            ("turn", pytest.approx(leg + 4 * BOARD.pitch)),
+            ("drop", pytest.approx(leg + 7 * BOARD.pitch)),
+            ("strip", pytest.approx(step.cut.cut_mm - step.cut.strip_mm)),
+        ]
+        assert template.length_mm == pytest.approx(step.cut.cut_mm)
+        assert all(
+            0 <= x <= template.width_mm and 0 <= y <= template.height_mm for x, y in points
+        )
+
+
+def test_a_wire_template_too_wide_for_the_page_is_turned_and_a_trace_has_none() -> None:
+    wide = Board(**{**dataclasses.asdict(BOARD), "cols": 90, "rows": 10})
+    doc = make_doc(
+        board=wide,
+        conductors=(
+            WireConductor(id="cond-1", path=(hole(1, 2), hole(85, 2)), kind="insulated-wire"),
+            SolderTraceConductor(id="cond-2", path=(hole(1, 5), hole(2, 5))),
+        ),
+    )
+    guide = build_guide(doc, REGISTRY)
+    steps = [s for s in all_steps(guide) if isinstance(s, ConductorStep)]
+    wire = next(s for s in steps if s.conductor_id == "cond-1")
+    template = wire_template(wire, guide.board)
+    assert template is not None and template.turned
+    assert template.width_mm < template.height_mm
+    trace = next(s for s in steps if s.conductor_id == "cond-2")
+    assert wire_template(trace, guide.board) is None
+
+
+def test_the_guide_ends_with_every_wire_at_one_to_one() -> None:
+    """Sized in real millimetres, after the lists, with the ruler that proves the printer
+    kept them -- and no external reference, so the page still opens from a USB stick."""
+    guide = build_guide(routed_ne555(), REGISTRY)
+    html = guide_to_html(guide)
+    sheet = html[html.index('class="phase templates"'):]
+    assert html.index(">Lists<") < html.index('class="phase templates"')
+    assert sheet.count('class="tpl"') == len(guide.cut_list)
+    assert 'width="51mm"' in sheet  # the 50 mm ruler, half a millimetre each side
+    assert "http" not in sheet
 
 
 def test_bare_wire_is_not_charged_a_stripping_allowance() -> None:

@@ -220,6 +220,8 @@ _NOT_PROSE = frozenset(
     {"kind", "archetype", "conductor_kind", "net_class", "code", "colour", "material",
      "component_id", "conductor_id", "net_name", "ref", "value", "document_name",
      "footprint_name",
+     # The face a conductor lies on, which picks which way round its wire template is.
+     "side",
      # The board the guide is for, carried whole: its pad shape and strip axis are data.
      "board"}
 )

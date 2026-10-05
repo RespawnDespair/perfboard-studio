@@ -773,7 +773,8 @@
           "risks": [],
           "notes": [
             "Bare wire: it must not touch any other conductor along its length. Keep it flat against the board and check it against the neighbouring runs."
-          ]
+          ],
+          "side": "bottom"
         },
         {
           "kind": "conductor",
@@ -908,7 +909,8 @@
             "Lay the 0.6 mm tinned copper along the pads first and solder it at each one. Work in one direction and do not go back over a section that has cooled.",
             "Tin each pad lightly first, then join them.",
             "Flux is not optional on a run this long."
-          ]
+          ],
+          "side": "bottom"
         },
         {
           "kind": "conductor",
@@ -958,7 +960,8 @@
           "risks": [],
           "notes": [
             "Bare wire: it must not touch any other conductor along its length. Keep it flat against the board and check it against the neighbouring runs."
-          ]
+          ],
+          "side": "bottom"
         },
         {
           "kind": "conductor",
@@ -1008,7 +1011,8 @@
           "risks": [],
           "notes": [
             "Bare wire: it must not touch any other conductor along its length. Keep it flat against the board and check it against the neighbouring runs."
-          ]
+          ],
+          "side": "bottom"
         },
         {
           "kind": "conductor",
@@ -1058,7 +1062,8 @@
           "risks": [],
           "notes": [
             "Bare wire: it must not touch any other conductor along its length. Keep it flat against the board and check it against the neighbouring runs."
-          ]
+          ],
+          "side": "bottom"
         },
         {
           "kind": "conductor",
@@ -1101,7 +1106,8 @@
             "Consider laying a lead offcut along these pads as a spine rather than building the run out of solder alone: it drops the resistance by roughly an order of magnitude and is far easier to make repeatable.",
             "Tin each pad lightly first, then join them.",
             "Flux is not optional on a run this long."
-          ]
+          ],
+          "side": "bottom"
         },
         {
           "kind": "conductor",
@@ -1144,7 +1150,8 @@
             "Consider laying a lead offcut along these pads as a spine rather than building the run out of solder alone: it drops the resistance by roughly an order of magnitude and is far easier to make repeatable.",
             "Tin each pad lightly first, then join them.",
             "Flux is not optional on a run this long."
-          ]
+          ],
+          "side": "bottom"
         },
         {
           "kind": "conductor",
@@ -1187,7 +1194,8 @@
             "Consider laying a lead offcut along these pads as a spine rather than building the run out of solder alone: it drops the resistance by roughly an order of magnitude and is far easier to make repeatable.",
             "Tin each pad lightly first, then join them.",
             "Flux is not optional on a run this long."
-          ]
+          ],
+          "side": "bottom"
         },
         {
           "kind": "conductor",
@@ -1237,7 +1245,8 @@
           "risks": [],
           "notes": [
             "Bare wire: it must not touch any other conductor along its length. Keep it flat against the board and check it against the neighbouring runs."
-          ]
+          ],
+          "side": "bottom"
         }
       ],
       "checkpoints": [
@@ -1386,7 +1395,8 @@
             "insulated": true
           },
           "risks": [],
-          "notes": []
+          "notes": [],
+          "side": "bottom"
         },
         {
           "kind": "conductor",
@@ -1434,7 +1444,8 @@
             "insulated": true
           },
           "risks": [],
-          "notes": []
+          "notes": [],
+          "side": "bottom"
         },
         {
           "kind": "conductor",
@@ -1482,7 +1493,8 @@
             "insulated": true
           },
           "risks": [],
-          "notes": []
+          "notes": [],
+          "side": "bottom"
         },
         {
           "kind": "conductor",
@@ -1530,7 +1542,8 @@
             "insulated": true
           },
           "risks": [],
-          "notes": []
+          "notes": [],
+          "side": "bottom"
         },
         {
           "kind": "conductor",
@@ -1578,7 +1591,8 @@
             "insulated": true
           },
           "risks": [],
-          "notes": []
+          "notes": [],
+          "side": "bottom"
         }
       ],
       "checkpoints": [

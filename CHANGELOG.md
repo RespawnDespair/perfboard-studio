@@ -20,6 +20,19 @@ closed without a bump.
 
 ## [Unreleased]
 
+### Added
+
+- **Every wire in the build guide has a cut-and-bend template, and the guide ends with all
+  of them at 1:1.** Each wire step shows its wire's shape over the board's holes: the
+  copper-coloured ends to strip, a ring where it bends 90° down through the board and a
+  ring at every corner, drawn as seen from the face it lies on. The last pages repeat them
+  at real size with a 50 mm ruler: print at 100 %, lay the wire on its drawing, cut at the
+  tips and bend at the rings. Beside each shape is the same wire straight, to mark before
+  bending: the length of every piece above it and each mark's distance from the left tip
+  below, solid blue where it bends down through the board, dashed where it turns along it
+  and dark where the insulation is cut. Tip to tip each drawing is exactly the cut list's
+  length, and one too wide for an A4 page is turned a quarter.
+
 ### Changed
 
 - **The build guide's pictures come in close on what each step is about.** They were framed
