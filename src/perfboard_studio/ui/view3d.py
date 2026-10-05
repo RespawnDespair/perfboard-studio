@@ -3917,6 +3917,7 @@ def populate_renderer(
     highlight: str | None = None,
     pin_names: bool = True,
     board_notes: bool = True,
+    subject: list[vtk.vtkActor] | None = None,
 ) -> dict[str, int]:
     """Rebuild the board's actors in an EXISTING renderer, leaving the camera alone.
 
@@ -3928,6 +3929,9 @@ def populate_renderer(
     The BOARD is never dimmed, only the other parts and the copper. A step card says which
     holes a part goes in, and a reader who cannot see the holes has been given a picture
     of the answer with the question rubbed out.
+
+    ``subject``, if given, is filled with the highlighted thing's own actors, so a caller
+    can frame on it (``render_step_images``) without working out where it is a second time.
 
     This separation is the whole point. The interactive view is refreshed after every
     command, and refreshing used to mean constructing a fresh renderer -- which meant
@@ -3984,11 +3988,13 @@ def populate_renderer(
 
         printed = lay_out_pin_names(doc, lookup, pin_name_width_mm)
     for comp in doc.components:
-        subject = highlight is not None and comp.id == highlight
+        is_subject = highlight is not None and comp.id == highlight
         for actor in build_component(lookup, comp, board):
             _lift(actor, exploded_mm)
             if highlight is not None:
-                (_pick_out if subject else _dim)(actor)
+                (_pick_out if is_subject else _dim)(actor)
+                if is_subject and subject is not None:
+                    subject.append(actor)
             ren.AddActor(actor)
         if printed is not None:
             # A module's names are on its own board and rise with it; a part's names on
@@ -3999,7 +4005,7 @@ def populate_renderer(
             for actor in build_pin_names(lookup, comp, board, names):
                 _lift(actor, exploded_mm if on_module else 0.0)
                 if highlight is not None:
-                    (_pick_out if subject else _dim)(actor)
+                    (_pick_out if is_subject else _dim)(actor)
                 ren.AddActor(actor)
     net_class_by_id = {net.id: net.net_class for net in doc.nets}
     signal_index = {
@@ -4011,7 +4017,7 @@ def populate_renderer(
     # see occupancy.stacking_layers.
     layers = stacking_layers(doc)
     for cond in doc.conductors:
-        subject = highlight is not None and cond.id == highlight
+        is_subject = highlight is not None and cond.id == highlight
         for actor in build_conductor(
             cond,
             board,
@@ -4020,7 +4026,9 @@ def populate_renderer(
             signal_index=signal_index.get(cond.net_id or "", 0),
         ):
             if highlight is not None:
-                (_pick_out if subject else _dim)(actor)
+                (_pick_out if is_subject else _dim)(actor)
+                if is_subject and subject is not None:
+                    subject.append(actor)
             ren.AddActor(actor)
 
     ren.ResetCameraClippingRange()
@@ -4551,6 +4559,42 @@ def step_is_solder_side(doc: PerfDocument, focus: str) -> bool:
 STEP_IMAGE_JPEG_QUALITY = 82
 
 
+#: The smallest patch of board, in millimetres across, a step image is framed on. A part
+#: alone fills the frame and says nothing about WHERE it goes; 30 mm is about a dozen holes,
+#: enough to count from a neighbour or an edge to the hole the card names.
+STEP_CONTEXT_MM = 30.0
+
+
+def _frame_on_subject(
+    ren: vtk.vtkRenderer, subject: list[vtk.vtkActor], whole_board: vtk.vtkCamera
+) -> None:
+    """Move the camera in on ``subject`` along the direction it already looks.
+
+    Nothing to frame on, or a subject the whole-board view already shows best, leaves
+    ``whole_board`` in place -- the camera never backs out past the finished board.
+    """
+    if not subject:
+        return
+    box = vtk.vtkBoundingBox()
+    for actor in subject:
+        box.AddBounds(actor.GetBounds())
+    if not box.IsValid():
+        return
+    lo, hi = [0.0] * 3, [0.0] * 3
+    box.GetMinPoint(lo)
+    box.GetMaxPoint(hi)
+    for axis in (0, 1):
+        centre = (lo[axis] + hi[axis]) / 2
+        half = max(hi[axis] - lo[axis], STEP_CONTEXT_MM) / 2
+        lo[axis], hi[axis] = centre - half, centre + half
+    # Fitted as PROJECTED, like the whole-board camera: a bounding-sphere fit leaves a
+    # small part sitting in twice the board it needs.
+    ren.ResetCameraScreenSpace(lo[0], hi[0], lo[1], hi[1], lo[2], hi[2], _FRAME_FILL)
+    if ren.GetActiveCamera().GetDistance() >= whole_board.GetDistance():
+        ren.GetActiveCamera().DeepCopy(whole_board)
+    ren.ResetCameraClippingRange()
+
+
 def render_step_images(
     doc: PerfDocument,
     guide: Guide,
@@ -4572,10 +4616,14 @@ def render_step_images(
     So there are two cameras, and a step is shot from whichever face its subject is on,
     which is also the face the builder is looking at when they do it.
 
-    Within a face the camera is framed on the FINISHED board and then left alone. Framing
-    each step on its own contents would zoom in hard on the first part and back out as
-    the board filled, so flipping through the guide would read as a series of unrelated
-    photographs rather than one board being built.
+    CLOSE ON THE SUBJECT, FROM ONE DIRECTION. Framed on the whole board, a resistor on a
+    9 x 15 cm board was a few pixels of highlight and the picture said nothing a builder
+    could act on. So each step is framed on its own part or conductor, padded to at least
+    ``STEP_CONTEXT_MM`` so the holes round it are there to count from
+    (:func:`_frame_on_subject`). The camera's DIRECTION is still the face's, worked out once
+    on the finished board: every step is looked at from the same place, so flipping through
+    the guide still reads as one board being built rather than unrelated photographs. A
+    subject that would need more than the whole board gets the whole board.
 
     ONE render window, re-actored per step -- which is what ``populate_renderer`` exists
     for, and is the difference between half a second and a minute -- with the two cameras
@@ -4614,10 +4662,13 @@ def render_step_images(
     images: dict[str, bytes] = {}
     for index, step in enumerate(steps):
         focus = step_focus(step)
-        ren.GetActiveCamera().DeepCopy(cameras[step_is_solder_side(doc, focus)])
+        whole_board = cameras[step_is_solder_side(doc, focus)]
+        ren.GetActiveCamera().DeepCopy(whole_board)
+        subject: list[vtk.vtkActor] = []
         populate_renderer(
-            ren, document_at_step(doc, guide, index), lookup, highlight=focus
+            ren, document_at_step(doc, guide, index), lookup, highlight=focus, subject=subject
         )
+        _frame_on_subject(ren, subject, whole_board)
         win.Render()
         grab = vtk.vtkWindowToImageFilter()
         grab.SetInput(win)

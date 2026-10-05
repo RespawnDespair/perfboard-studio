@@ -3326,6 +3326,49 @@ def test_the_step_pictures_report_as_they_go_and_stop_when_told() -> None:
 
 
 @requires_offscreen_gl
+def test_a_step_image_moves_in_on_its_subject_and_never_out_past_the_board() -> None:
+    """Framed on the whole board, one resistor was a few pixels of highlight. The camera
+    keeps the face's direction and comes in on the part, padded to STEP_CONTEXT_MM."""
+    import vtkmodules.all as vtk
+
+    from perfboard_studio.guide import all_steps, build_guide, step_focus
+    from perfboard_studio.ui import view3d
+
+    doc = _load_dense()
+    lookup = footprint_lookup()
+    focus = step_focus(all_steps(build_guide(doc, lookup))[0])
+    ren, _stats = view3d.build_renderer(doc, lookup)
+    win = vtk.vtkRenderWindow()
+    win.SetOffScreenRendering(1)
+    win.AddRenderer(ren)
+    win.SetSize(160, 106)
+    view3d.apply_default_camera(ren, False)
+    whole_board = vtk.vtkCamera()
+    whole_board.DeepCopy(ren.GetActiveCamera())
+
+    subject: list = []
+    view3d.populate_renderer(ren, doc, lookup, highlight=focus, subject=subject)
+    assert subject
+    view3d._frame_on_subject(ren, subject, whole_board)
+    camera = ren.GetActiveCamera()
+    assert camera.GetDistance() < whole_board.GetDistance()
+    assert camera.GetDirectionOfProjection() == pytest.approx(
+        whole_board.GetDirectionOfProjection()
+    )
+
+    # Nothing to frame on: the whole board stays.
+    view3d._frame_on_subject(ren, [], whole_board)
+    ren.GetActiveCamera().DeepCopy(whole_board)
+    huge = vtk.vtkActor()
+    huge.SetMapper(vtk.vtkPolyDataMapper())
+    cube = vtk.vtkCubeSource()
+    cube.SetBounds(-1e4, 1e4, -1e4, 1e4, 0, 1)
+    huge.GetMapper().SetInputConnection(cube.GetOutputPort())
+    view3d._frame_on_subject(ren, [huge], whole_board)
+    assert ren.GetActiveCamera().GetDistance() == pytest.approx(whole_board.GetDistance())
+
+
+@requires_offscreen_gl
 def test_a_step_looks_the_same_whichever_face_was_drawn_before_it(monkeypatch) -> None:
     """The step images used to come from two windows, one a face, sharing one room. Drawing
     the solder side made the component window work its lighting out again, and every
@@ -3363,7 +3406,13 @@ def test_a_step_looks_the_same_whichever_face_was_drawn_before_it(monkeypatch) -
     win.SetSize(*size)
     # Framed in the window's shape, as render_step_images frames it (a component-side step).
     view3d.apply_default_camera(ren, False)
-    view3d.populate_renderer(ren, document_at_step(doc, guide, index), lookup, highlight=focus)
+    whole_board = vtk.vtkCamera()
+    whole_board.DeepCopy(ren.GetActiveCamera())
+    subject: list = []
+    view3d.populate_renderer(
+        ren, document_at_step(doc, guide, index), lookup, highlight=focus, subject=subject
+    )
+    view3d._frame_on_subject(ren, subject, whole_board)
     win.Render()
     grab = vtk.vtkWindowToImageFilter()
     grab.SetInput(win)

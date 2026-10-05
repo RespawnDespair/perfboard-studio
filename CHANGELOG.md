@@ -22,6 +22,13 @@ closed without a bump.
 
 ### Changed
 
+- **The build guide's pictures come in close on what each step is about.** They were framed
+  on the whole board, so on a 9 × 15 cm board a resistor was a few pixels of highlight and
+  the picture said nothing a builder could act on. Each step is now framed on its own part
+  or conductor, with at least 30 mm of board round it to count holes from, and seen from
+  the same direction as every other step on that face, so the pages still read as one
+  board being built. A subject that needs the whole board gets the whole board.
+
 - **The board question builds your circuit on the boards before it suggests one.** It used to
   lay the circuit out quickly on every stock size and suggest the first it filled to a third
   or less -- a rule set by looking at where the examples sat on the boards that same rule
@@ -75,6 +82,11 @@ closed without a bump.
 
 ### Fixed
 
+- **Opening the 3D view hung the window on macOS.** With PySide6 6.10 or newer every frame
+  the panel drew asked for another, so the window stopped answering the moment the panel
+  opened. The panel no longer paints on screen itself there, and draws once per change.
+- **The welcome window's "Draw a New Circuit" button lost its style**, with a stray brace
+  in its stylesheet printing "Could not parse stylesheet" three times at every start.
 - **Place on the Board left parts off a board that had room for them.** It laid the design
   out in lanes with a hole between parts and a row between lanes, and whatever the lanes had
   no room for stayed in the design with a count in the status bar -- a 24-part circuit on a
