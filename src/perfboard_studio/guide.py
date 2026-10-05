@@ -217,6 +217,9 @@ IRON_BY_MATERIAL: dict[BoardMaterial, IronSettings] = {
 #: Insulation colour by net class, the convention every schematic reader already knows.
 COLOR_BY_NET_CLASS: dict[NetClass, str] = {"power": "red", "ground": "black"}
 
+#: What a bare wire is "coloured": the metal itself, said like the spine's material.
+BARE_WIRE_COLOUR = "tinned copper"
+
 #: Signal colours, cycled by net order so the same board always assigns the same colours.
 SIGNAL_COLORS: tuple[str, ...] = (
     "yellow", "green", "blue", "white", "orange", "violet", "grey", "brown",
@@ -1203,7 +1206,9 @@ def _wire_cut(
         cut_mm=path_mm + ends,
         strip_mm=strip_mm,
         awg=awg,
-        colour=colour,
+        # Bare wire has no insulation to be coloured: it is the metal. A GND bare run used
+        # to be cut as "19 mm of black AWG 24", which nobody can buy or find on the bench.
+        colour=colour if insulated else BARE_WIRE_COLOUR,
         insulated=insulated,
     )
 
@@ -1776,20 +1781,27 @@ def _tools(
         say("Side cutters and small pliers"),
         say("A multimeter with a continuity buzzer (every checkpoint below uses it)"),
     ]
-    if cuts:
-        gauges = sorted({cut.awg for cut in cuts})
+    # Two lines, because they are two reels: hookup wire comes in colours, bare wire is the
+    # metal, and "hookup wire in black, tinned copper" sends nobody to the right drawer.
+    insulated = [cut for cut in cuts if cut.insulated]
+    bare = [cut for cut in cuts if not cut.insulated]
+    if insulated:
         # Alphabetical in the language they are READ in, which is how somebody scans a
         # list of colours for the one they are holding.
-        colors = sorted({say(cut.colour) for cut in cuts})
-        total = sum(cut.cut_mm for cut in cuts)
         tools.append(say(
             "Hookup wire, AWG {gauges} in {colours} — about {metres:.2f} m in total",
-            gauges=", ".join(str(g) for g in gauges),
-            colours=", ".join(colors),
-            metres=total / 1000,
+            gauges=", ".join(str(g) for g in sorted({cut.awg for cut in insulated})),
+            colours=", ".join(sorted({say(cut.colour) for cut in insulated})),
+            metres=sum(cut.cut_mm for cut in insulated) / 1000,
         ))
-        if any(cut.insulated for cut in cuts):
-            tools.append(say("Wire strippers"))
+    if bare:
+        tools.append(say(
+            "Bare tinned copper wire, AWG {gauges} — about {metres:.2f} m in total",
+            gauges=", ".join(str(g) for g in sorted({cut.awg for cut in bare})),
+            metres=sum(cut.cut_mm for cut in bare) / 1000,
+        ))
+    if insulated:
+        tools.append(say("Wire strippers"))
     if doc.mounting_holes:
         diameters = sorted({m.diameter for m in doc.mounting_holes})
         sizes = ", ".join(f"{d:g} mm" for d in diameters)

@@ -679,14 +679,22 @@ def test_wire_colours_follow_the_convention_and_are_stable() -> None:
     doc = make_doc(
         components=(component("R1", "r-axial-4", hole(2, 2)),),
         conductors=(
-            WireConductor(id="cond-1", path=(hole(2, 2), hole(6, 2)), net_id="n-gnd"),
-            WireConductor(id="cond-2", path=(hole(2, 4), hole(6, 4)), net_id="n-vcc"),
-            WireConductor(id="cond-3", path=(hole(2, 6), hole(6, 6)), net_id="n-sig"),
+            WireConductor(
+                id="cond-1", path=(hole(2, 2), hole(6, 2)), net_id="n-gnd", kind="insulated-wire"
+            ),
+            WireConductor(
+                id="cond-2", path=(hole(2, 4), hole(6, 4)), net_id="n-vcc", kind="insulated-wire"
+            ),
+            WireConductor(
+                id="cond-3", path=(hole(2, 6), hole(6, 6)), net_id="n-sig", kind="insulated-wire"
+            ),
+            WireConductor(id="cond-4", path=(hole(2, 8), hole(6, 8)), net_id="n-bare"),
         ),
         nets=(
             net("n-gnd", "GND", "ground", (("R1", "1"), ("R1", "2"))),
             net("n-vcc", "VCC", "power", (("R1", "1"), ("R1", "2"))),
             net("n-sig", "OUT", "signal", (("R1", "1"), ("R1", "2"))),
+            net("n-bare", "0V", "ground", (("R1", "1"), ("R1", "2"))),
         ),
     )
     colors = {cut.net_name: cut.colour for cut in build_guide(doc, REGISTRY).cut_list}
@@ -694,6 +702,13 @@ def test_wire_colours_follow_the_convention_and_are_stable() -> None:
     assert colors["GND"] == "black"
     assert colors["VCC"] == "red"
     assert colors["OUT"] not in ("black", "red")
+    # Bare wire is the metal, whatever net it is on: there is no black bare wire to cut.
+    assert colors["0V"] == "tinned copper"
+    # And it is its own line on the bench list, not a colour of hookup wire.
+    tools = build_guide(doc, REGISTRY).tools
+    hookup = next(tool for tool in tools if tool.startswith("Hookup wire"))
+    assert "tinned copper" not in hookup
+    assert any(tool.startswith("Bare tinned copper wire, AWG 24") for tool in tools)
     assert build_guide(doc, REGISTRY).cut_list == build_guide(doc, REGISTRY).cut_list
 
 

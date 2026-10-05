@@ -20,7 +20,8 @@
     "Flux — kalem ya da küçük bir kutu. Lehim yolları onsuz güvenilir biçimde yapılamaz",
     "Yan keski ve küçük bir pense",
     "Süreklilik buzzer'ı olan bir multimetre (aşağıdaki her kontrol noktası onu kullanır)",
-    "Bağlantı teli, AWG 24, renkler: beyaz, kırmızı, mavi, sarı, siyah, turuncu — toplam yaklaşık 0.35 m",
+    "Bağlantı teli, AWG 24, renkler: beyaz, mavi, sarı, siyah — toplam yaklaşık 0.21 m",
+    "Çıplak kalaylı bakır tel, AWG 24 — toplam yaklaşık 0.14 m",
     "Tel sıyırıcı",
     "Lehim yolu omurgaları için kalaylı bakır tel, 0.6 mm — yaklaşık 51 mm (parça bacağı artıkları da aynı işi görür)"
   ],
@@ -129,7 +130,7 @@
       "cut_mm": 29.678134680678316,
       "strip_mm": 0.0,
       "awg": 24,
-      "colour": "black",
+      "colour": "tinned copper",
       "insulated": false
     },
     {
@@ -169,7 +170,7 @@
       "cut_mm": 19.36,
       "strip_mm": 0.0,
       "awg": 24,
-      "colour": "red",
+      "colour": "tinned copper",
       "insulated": false
     },
     {
@@ -189,7 +190,7 @@
       "cut_mm": 50.156269361356635,
       "strip_mm": 0.0,
       "awg": 24,
-      "colour": "red",
+      "colour": "tinned copper",
       "insulated": false
     },
     {
@@ -209,7 +210,7 @@
       "cut_mm": 17.232185256827684,
       "strip_mm": 0.0,
       "awg": 24,
-      "colour": "blue",
+      "colour": "tinned copper",
       "insulated": false
     },
     {
@@ -269,7 +270,7 @@
       "cut_mm": 24.010617812907064,
       "strip_mm": 0.0,
       "awg": 24,
-      "colour": "orange",
+      "colour": "tinned copper",
       "insulated": false
     },
     {
@@ -768,7 +769,7 @@
             "cut_mm": 29.678134680678316,
             "strip_mm": 0.0,
             "awg": 24,
-            "colour": "black",
+            "colour": "tinned copper",
             "insulated": false
           },
           "risks": [],
@@ -955,7 +956,7 @@
             "cut_mm": 19.36,
             "strip_mm": 0.0,
             "awg": 24,
-            "colour": "red",
+            "colour": "tinned copper",
             "insulated": false
           },
           "risks": [],
@@ -1006,7 +1007,7 @@
             "cut_mm": 50.156269361356635,
             "strip_mm": 0.0,
             "awg": 24,
-            "colour": "red",
+            "colour": "tinned copper",
             "insulated": false
           },
           "risks": [],
@@ -1057,7 +1058,7 @@
             "cut_mm": 24.010617812907064,
             "strip_mm": 0.0,
             "awg": 24,
-            "colour": "orange",
+            "colour": "tinned copper",
             "insulated": false
           },
           "risks": [],
@@ -1240,7 +1241,7 @@
             "cut_mm": 17.232185256827684,
             "strip_mm": 0.0,
             "awg": 24,
-            "colour": "blue",
+            "colour": "tinned copper",
             "insulated": false
           },
           "risks": [],

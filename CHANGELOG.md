@@ -95,6 +95,11 @@ closed without a bump.
 
 ### Fixed
 
+- **Bare wire was cut "in black".** A bare wire took the insulation colour of its net, so
+  the guide said "Cut 19 mm of black AWG 24" for a GND run of tinned copper, the cut list
+  put red and orange in its colour column, and the bench list asked for hookup wire in
+  colours only bare wire used. Bare wire is now tinned copper wherever it is named, and it
+  is its own line on the bench list.
 - **Opening the 3D view hung the window on macOS.** With PySide6 6.10 or newer every frame
   the panel drew asked for another, so the window stopped answering the moment the panel
   opened. The panel no longer paints on screen itself there, and draws once per change.
