@@ -31,7 +31,9 @@ closed without a bump.
   bending: the length of every piece above it and each mark's distance from the left tip
   below, solid blue where it bends down through the board, dashed where it turns along it
   and dark where the insulation is cut. Tip to tip each drawing is exactly the cut list's
-  length, and one too wide for an A4 page is turned a quarter.
+  length, and one too wide for an A4 page is turned a quarter. The sheets pack the
+  templates in rows, as many across as fit, under a one-line caption each: the 53 wires of
+  `atmega328-relay` print on five pages.
 
 ### Changed
 

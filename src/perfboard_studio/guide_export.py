@@ -300,7 +300,18 @@ button { font: inherit; color: var(--text); background: var(--panel-2);
 }
 .tpl-preview svg { display: block; max-width: 100%; height: auto; margin: .5rem 0 .1rem;
                    background: #fff; border-radius: 6px; }
-.tpl { break-inside: avoid; margin: 1rem 0 1.5rem; }
+/* The 1:1 sheet packs its templates in rows: each is as wide as its own drawings
+   (min-content, so the caption wraps under them instead of widening the cell), and a
+   row takes as many as fit across the page. One per line, atmega328-relay's 53 wires
+   printed on ten pages; in rows, five. */
+.tpl-grid { display: flex; flex-wrap: wrap; gap: 4mm 5mm; align-items: flex-start;
+            margin-top: 4mm; }
+.tpl { break-inside: avoid; width: min-content; }
+/* The title is what sets a small wire's cell width, so it is the size that decides how
+   many fit across a page. */
+.tpl .title { white-space: nowrap; font-size: .8rem; }
+.tpl .title .hole { padding: 0 .15rem; }
+.tpl .meta { font-size: .7rem; line-height: 1.3; }
 .tpl-pair { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; align-items: flex-start; }
 .tpl svg, .ruler { display: block; background: #fff; }
 @media screen { .tpl svg { max-width: 100%; height: auto; } }
@@ -914,14 +925,16 @@ def _html_templates(guide: Guide, say: Phrasebook) -> str:
             '<div class="tpl"><div class="title">'
             f"{escape(step.net_name)}: {_hole(step.path[0])} → {_hole(step.path[-1])}</div>"
             '<div class="meta">'
+            # One short line: the sheet is a grid of these, and a caption that wraps to
+            # three lines under a 20 mm drawing is most of the page.
             + say(
-                "Cut {length:.0f} mm of {colour} AWG {awg} · seen from the {side}",
+                "{length:.0f} mm · {colour} · AWG {awg} · {side}",
                 length=step.cut.cut_mm,
                 colour=escape(say(step.cut.colour)),
                 awg=step.cut.awg,
                 side=side,
             )
-            + (" · " + say("turned a quarter to fit the page") if template.turned else "")
+            + (" · " + say("turned a quarter") if template.turned else "")
             + f"</div>{_template_pair(template, step)}</div>"
         )
     if not items:
@@ -939,7 +952,7 @@ def _html_templates(guide: Guide, say: Phrasebook) -> str:
             "through the board, a dashed one along it, and a dark one is where to cut the "
             "insulation."
         )
-        + f"</p>{_ruler_svg()}{''.join(items)}</section>"
+        + f'</p>{_ruler_svg()}<div class="tpl-grid">{"".join(items)}</div></section>'
     )
 
 

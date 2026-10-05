@@ -661,12 +661,10 @@ TURKISH: dict[str, str] = {
     "AWG": "AWG",
     "Colour": "Renk",
     "trace spine": "yol omurgası",
-    "component side": "komponent yüzünden",
-    "solder side": "lehim yüzünden",
-    "Cut {length:.0f} mm of {colour} AWG {awg} · seen from the {side}": (
-        "{length:.0f} mm {colour} AWG {awg} tel kes · {side} bakılmış"
-    ),
-    "turned a quarter to fit the page": "sayfaya sığsın diye çeyrek döndürülmüş",
+    "component side": "komponent yüzü",
+    "solder side": "lehim yüzü",
+    "{length:.0f} mm · {colour} · AWG {awg} · {side}": "{length:.0f} mm · {colour} · AWG {awg} · {side}",
+    "turned a quarter": "çeyrek döndürülmüş",
     "Wire templates (1:1)": "Tel şablonları (1:1)",
     "Print these pages at 100 % (actual size, not fit to page) and check the bar below "
     "against a ruler. Lay each wire on its drawing: cut it at the tips, strip the "
