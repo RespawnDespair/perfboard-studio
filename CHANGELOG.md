@@ -97,6 +97,12 @@ closed without a bump.
 
 ### Fixed
 
+- **Copy and paste on the schematic hung the window.** The sheet re-fits itself while the
+  panel finds its size, and with scroll bars shown as needed a fit could bring one in,
+  which shrank the panel, which fitted again and took it away -- tens of thousands of
+  times a second, and the window never drew again. A paste that widened the sheet was
+  enough to start it. A fitted sheet now shows no scroll bars, since all of it is on
+  screen; zooming or panning brings them back.
 - **Bare wire was cut "in black".** A bare wire took the insulation colour of its net, so
   the guide said "Cut 19 mm of black AWG 24" for a GND run of tinned copper, the cut list
   put red and orange in its colour column, and the bench list asked for hookup wire in

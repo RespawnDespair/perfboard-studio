@@ -8552,6 +8552,36 @@ def test_a_fitted_sheet_stays_fitted_while_the_panel_finds_its_size() -> None:
         view.deleteLater()
 
 
+def test_a_fitted_sheet_has_no_scroll_bars_to_fight_its_own_fit() -> None:
+    """Copy and paste on the sheet hung the window. A fit with as-needed scroll bars could
+    bring one in, which shrank the viewport, which was a resize, which fitted again and
+    took it away -- tens of thousands of fits a second and never another frame. A fitted
+    sheet is all on screen, so it shows none; zooming or panning brings them back."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+
+    from perfboard_studio.schematic import build_schematic
+    from perfboard_studio.ui.viewsch import SchematicView
+
+    off, needed = Qt.ScrollBarPolicy.ScrollBarAlwaysOff, Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    view = SchematicView()
+    try:
+        view.resize(1000, 700)
+        view.show()
+        QApplication.processEvents()
+        view.set_drawing(build_schematic(_load_dense(), footprint_lookup()))
+        view.fit()
+        assert view.horizontalScrollBarPolicy() == off
+        assert view.verticalScrollBarPolicy() == off
+
+        view.zoom_by(1.5)
+        assert view.horizontalScrollBarPolicy() == needed
+        assert view.verticalScrollBarPolicy() == needed
+    finally:
+        view.close()
+        view.deleteLater()
+
+
 def _wire_view():
     """A shown sheet of two resistors and nothing joining them, the wire tool armed, at a
     zoom a fitted sheet really has -- where the old 1.2 mm pick was five pixels."""

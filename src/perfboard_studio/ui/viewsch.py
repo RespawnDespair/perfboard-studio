@@ -694,8 +694,7 @@ class SchematicView(QGraphicsView):
         self.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         self.setDragMode(QGraphicsView.DragMode.NoDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._show_scroll_bars(True)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         # The sheet is a drop target for its own symbols and for a row dragged out of the
@@ -893,10 +892,31 @@ class SchematicView(QGraphicsView):
         sheet = QRectF(0.0, 0.0, self.item.drawing.width, self.item.drawing.height)
         if sheet.isEmpty():
             return
+        # NO SCROLL BARS WHILE FITTED. A fitted sheet is all on screen, so they would show
+        # nothing -- and as-needed bars are what hung the window: a fit that brought one in
+        # took its width off the viewport, which is a resize, which fits again, which takes
+        # the bar away, and so on for ever. A paste that widened the sheet was enough to
+        # start it, and the window never drew another frame.
+        self._show_scroll_bars(False)
         self.fitInView(sheet, Qt.AspectRatioMode.KeepAspectRatio)
         self._fitted = True
         # Fit hands the view back to the sheet: the next resize fits it again.
         self._user_framed = False
+
+    def _show_scroll_bars(self, shown: bool) -> None:
+        policy = (
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded if shown else Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.setHorizontalScrollBarPolicy(policy)
+        self.setVerticalScrollBarPolicy(policy)
+
+    def _take_framing(self) -> None:
+        """Somebody zoomed or panned: the view is theirs, and the bars say where they are.
+
+        Marked theirs FIRST: bringing a bar in is itself a resize, and a resize of a view
+        that is not yet theirs fits it -- undoing the zoom that asked for the bar."""
+        self._user_framed = True
+        self._show_scroll_bars(True)
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         """Keep a fitted sheet fitted while the panel finds its size.
@@ -965,7 +985,7 @@ class SchematicView(QGraphicsView):
         if factor != 1.0:
             self.scale(factor, factor)
         self._fitted = True
-        self._user_framed = True
+        self._take_framing()
         event.accept()
 
     def zoom_by(self, factor: float) -> None:
@@ -978,7 +998,7 @@ class SchematicView(QGraphicsView):
         self.scale(factor, factor)
         self.setTransformationAnchor(anchor)
         self._fitted = True
-        self._user_framed = True
+        self._take_framing()
 
     #: Every tool that draws a note by dragging a box out.
     SHAPE_TOOLS: tuple[str, ...] = ("line", "rectangle", "circle")
@@ -1395,7 +1415,7 @@ class SchematicView(QGraphicsView):
 
     def _start_pan(self, event: QMouseEvent) -> None:
         self._panning = True
-        self._user_framed = True
+        self._take_framing()
         self._pan_origin = event.position()
         self.setCursor(Qt.CursorShape.ClosedHandCursor)
 
