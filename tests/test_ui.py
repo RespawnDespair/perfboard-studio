@@ -5547,7 +5547,7 @@ def test_the_examples_open_as_untitled_copies() -> None:
 
     assert window.current_path is None
     assert window.bus.document.components
-    assert window._raised_dock is window.dock_board
+    assert window.board_is_showing()
     assert not window.isWindowModified()
     _close(window)
 
@@ -5630,7 +5630,7 @@ def test_a_board_opened_after_a_blank_launch_comes_up_on_the_board(tmp_path) -> 
     window._load_path(board)
 
     assert window.schematic_is_showing() is False
-    assert window._raised_dock is window.dock_board
+    assert window.board_is_showing()
     _close(window)
 
 
@@ -6051,6 +6051,32 @@ def test_the_boards_tools_are_on_the_bar_only_while_the_board_is_in_front() -> N
 
         window.show_board()
         assert not window.board_toolbar.isHidden()
+    finally:
+        _close(window)
+
+
+def test_opening_a_panel_in_the_other_group_leaves_this_one_in_front() -> None:
+    """There are two tab groups -- the board with the sheet, the 3D view with the guide --
+    and which panel was in front was ONE variable for both. Pressing 3D or Build Guide made
+    that panel "the one in front", so the board, still showing in its own group, read as
+    behind: its tools left the bar until somebody clicked the tab that was already open.
+    With the sheet in front the same press stopped the sheet redrawing itself."""
+    window = _window_on(_load_dense())
+    try:
+        window.show_board()
+        window.act_show_guide.trigger()
+        assert window.dock_guide not in window.tabifiedDockWidgets(window.dock_board)
+        assert window.board_is_showing()
+        assert not window.board_toolbar.isHidden()
+
+        window.show_schematic()
+        window.act_show_guide.trigger()
+        assert window.schematic_is_showing()
+        assert window.board_toolbar.isHidden()
+
+        # Within a group, the one brought forward still puts the other behind.
+        window.show_board()
+        assert window.board_is_showing() and not window.schematic_is_showing()
     finally:
         _close(window)
 
@@ -6888,7 +6914,7 @@ def test_the_view_buttons_bring_a_view_forward_and_never_put_it_away() -> None:
     window.act_show_board.trigger()
 
     assert not window.dock_board.isHidden()
-    assert window._raised_dock is window.dock_board
+    assert window.board_is_showing()
     assert not window.dock_schematic.isHidden(), "bringing one forward closed the other"
 
     # Pressed again, in front already: still there.
@@ -7297,7 +7323,7 @@ def test_each_step_goes_where_it_is_done() -> None:
         window.on_workflow_step("circuit")
         assert window.schematic_is_showing()
         window.on_workflow_step("place")
-        assert window._raised_dock is window.dock_board
+        assert window.board_is_showing()
         window.on_workflow_step("check")
         assert not window.dock_drc.isHidden()
     finally:

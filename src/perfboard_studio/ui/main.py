@@ -3436,8 +3436,8 @@ class MainWindow(QMainWindow):
         #: showEvent, and stand down entirely when a saved layout arrived first.
         self._restored_layout = False
         self._sized_layout = False
-        #: Which of a tab group of view panels is in front. See ``schematic_is_showing``.
-        self._raised_dock: QDockWidget | None = None
+        #: The view panels in front of their OWN tab group. See ``_note_in_front``.
+        self._in_front: set[QDockWidget] = set()
         self.setWindowTitle(window_title(path))
         self.resize(1500, 950)
         self.setStyleSheet(STYLESHEET)
@@ -3655,8 +3655,7 @@ class MainWindow(QMainWindow):
             self.dock_drc.show()
             self.dock_drc.raise_()
         else:
-            self.dock_guide.show()
-            self.dock_guide.raise_()
+            self._raise_view(self.dock_guide)
 
     def on_workflow_next(self, key: str) -> None:
         """The Next button: the step's own action, reached from where it already was."""
@@ -3816,8 +3815,11 @@ class MainWindow(QMainWindow):
         # another reports itself invisible and the one brought forward reports itself
         # visible, which is the only notice this window gets that somebody clicked a tab.
         dock = self.sender()
-        if visible and isinstance(dock, QDockWidget):
-            self._raised_dock = dock
+        if isinstance(dock, QDockWidget):
+            if visible:
+                self._note_in_front(dock)
+            else:
+                self._in_front.discard(dock)
         self._sync_central_hint()
         self._sync_toolbars_to_view()
         if self._schematic_stale and self.schematic_is_showing():
@@ -3963,12 +3965,28 @@ class MainWindow(QMainWindow):
     def board_is_showing(self) -> bool:
         """Whether the board is in front of the user -- ``schematic_is_showing``'s
         question, and answered the same way, about the other panel."""
-        dock = getattr(self, "dock_board", None)
+        return self._is_in_front(getattr(self, "dock_board", None))
+
+    def _is_in_front(self, dock: QDockWidget | None) -> bool:
+        """Open, and not stacked behind another panel of its own tab group."""
         if dock is None or dock.isHidden():
             return False
         if dock.isFloating() or not self.tabifiedDockWidgets(dock):
             return True
-        return self._raised_dock is dock
+        return dock in self._in_front
+
+    def _note_in_front(self, dock: QDockWidget) -> None:
+        """``dock`` came to the front of its tab group, and so its group-mates went behind.
+
+        PER GROUP, and that is the whole of it. This was one variable -- "the panel raised
+        last" -- in a window with TWO tab groups, the board with the sheet and the 3D view
+        with the guide. Pressing 3D or Build Guide made that panel the one raised last, so
+        the board, still in front of its own group, read as behind: its tools left the bar,
+        and a sheet in front stopped redrawing itself, until somebody clicked the tab that
+        was already showing. Raising a panel says nothing about any group but its own.
+        """
+        self._in_front.difference_update(self.tabifiedDockWidgets(dock))
+        self._in_front.add(dock)
 
     def _sync_toolbars_to_view(self) -> None:
         """The board's tools while the board is in front, and not otherwise."""
@@ -6066,8 +6084,9 @@ class MainWindow(QMainWindow):
         dock.setFloating(not dock.isFloating())
         if dock.isFloating():
             dock.resize(900, 700)
-        dock.show()
-        dock.raise_()
+        # Through _raise_view, which says so: docked back into its tab group the panel is
+        # in front of it, and Qt's notice of that never comes for a window not on screen.
+        self._raise_view(dock)
         self._refresh_schematic_float_button()
         self._refresh_schematic_panel()
 
@@ -6091,7 +6110,7 @@ class MainWindow(QMainWindow):
     def _raise_view(self, dock: QDockWidget) -> None:
         dock.show()
         dock.raise_()
-        self._raised_dock = dock
+        self._note_in_front(dock)
         if dock.isFloating():
             dock.activateWindow()
         # Said here as well as from the signal: Qt emits visibilityChanged only for a
@@ -6110,17 +6129,13 @@ class MainWindow(QMainWindow):
         The second half is the one a tab widget answered for free: a dock stacked BEHIND
         another is not hidden, so ``isHidden`` alone would have the sheet rebuilding itself
         behind the board, which is the cost the whole stale/refresh dance exists to avoid.
-        ``_raised_dock`` is that answer, and it is kept by ``_on_view_dock_visibility``
+        ``_in_front`` is that answer, and it is kept by ``_on_view_dock_visibility``
         from Qt's own notice rather than measured -- a measurement (``visibleRegion``)
         reads "behind" for every panel in a window nobody has shown yet, which is every
-        window in the test suite and every headless run.
+        window in the test suite and every headless run. It is kept per tab group
+        (``_note_in_front``).
         """
-        dock = getattr(self, "dock_schematic", None)
-        if dock is None or dock.isHidden():
-            return False
-        if dock.isFloating() or not self.tabifiedDockWidgets(dock):
-            return True
-        return self._raised_dock is dock
+        return self._is_in_front(getattr(self, "dock_schematic", None))
 
     def _refresh_schematic_panel(self) -> None:
         """Redraw the sheet, or mark it stale and do nothing.

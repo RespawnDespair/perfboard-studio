@@ -97,6 +97,13 @@ closed without a bump.
 
 ### Fixed
 
+- **The board's tools left the toolbar when the 3D view or the build guide was opened.**
+  The window kept ONE note of which panel was in front, for two groups of tabs -- the board
+  with the schematic, the 3D view with the guide -- so pressing 3D, Build Guide or the step
+  bar's "Open the Build Guide" made the board count as behind while it was showing: Delete,
+  Rotate, Autoroute and the drawing tools disappeared until its tab was clicked, and a
+  schematic in front stopped redrawing after edits the same way. Each group now keeps its
+  own, and opening a panel in one says nothing about the other.
 - **The schematic could hang the window by fitting itself for ever.** The sheet is drawn
   with a small margin round it, so fitting the sheet left that margin overflowing; a scroll
   bar came in, which made the panel smaller, which fitted the sheet again, which took the

@@ -1199,13 +1199,22 @@ Six things follow, and each has a test:
   put them, which landed the board and the sheet off the side of the window for anybody with
   a saved layout. Refusing the old state costs one person one rearranged window, once.
 
-**`schematic_is_showing` needs `_raised_dock`, which a tab widget answered for free.** The
+**`schematic_is_showing` needs `_in_front`, which a tab widget answered for free.** The
 panel fills itself only while it is in front of somebody, the same rule the 3D panel and the
 build guide follow — and a dock stacked BEHIND another is not `isHidden`, so that test alone
 would have the sheet rebuilding itself behind the board. Measuring it (`visibleRegion`) is
 not an option either: it reads "behind" for every panel in a window nobody has shown, which
 is every window in the test suite. So `_on_view_dock_visibility` records what Qt says came
-forward, and that is the answer.
+forward, and that is the answer. `board_is_showing` asks the same thing, and it decides
+whether the board's toolbar is up.
+
+**It is kept PER TAB GROUP** (`_note_in_front`): a panel brought forward puts only its own
+group-mates behind. It was one variable, "the panel raised last", in a window with two
+groups — board with sheet, 3D with guide — so pressing 3D or Build Guide made the board read
+as behind while it sat in front: its tools left the bar and a sheet stopped redrawing, until
+somebody clicked the tab already showing. Anything that brings a view panel forward goes
+through `_raise_view`, because `raise_()` on a window not on screen sends Qt no notice at
+all — floating the sheet and docking it back lost it exactly that way.
 
 The update strip is a dock too, in the top area, with no title bar and no features
 (`_build_update_strip`). It was a band inside the central widget, which is where the board
