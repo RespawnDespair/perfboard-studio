@@ -3325,6 +3325,66 @@ def test_the_step_pictures_report_as_they_go_and_stop_when_told() -> None:
     assert images == {}
 
 
+def test_a_step_frame_is_its_subject_with_board_enough_to_count_from() -> None:
+    """Framed on the whole board, a resistor on a 9 x 15 cm board was a few pixels of
+    highlight. Framed on itself, it would say nothing about where it goes. So: the subject,
+    widened about its own centre to STEP_CONTEXT_MM across the board, its height its own."""
+    from perfboard_studio.ui.view3d import STEP_CONTEXT_MM, step_frame_bounds
+
+    resistor = step_frame_bounds((70.0, 80.0, -50.0, -46.0, -1.0, 4.0))
+    half = STEP_CONTEXT_MM / 2
+    assert resistor == pytest.approx((75 - half, 75 + half, -48 - half, -48 + half, -1.0, 4.0))
+
+    long_wire = step_frame_bounds((10.0, 120.0, -45.0, -44.0, -2.0, -1.0))
+    assert long_wire[:2] == pytest.approx((10.0, 120.0))
+    assert long_wire[3] - long_wire[2] == pytest.approx(STEP_CONTEXT_MM)
+
+
+@requires_offscreen_gl
+def test_a_step_picture_comes_in_on_its_subject_and_never_backs_out_past_the_board() -> None:
+    """The direction is the face's and only the distance and the aim follow the step, so
+    the pages still read as one board; nothing to frame on, or something bigger than the
+    board, gets the whole board."""
+    import vtkmodules.all as vtk
+
+    from perfboard_studio.guide import all_steps, build_guide, step_focus
+    from perfboard_studio.ui import view3d
+
+    doc = _load_dense()
+    lookup = footprint_lookup()
+    focus = step_focus(all_steps(build_guide(doc, lookup))[0])
+    ren, _stats = view3d.build_renderer(doc, lookup)
+    win = vtk.vtkRenderWindow()
+    win.SetOffScreenRendering(1)
+    win.AddRenderer(ren)
+    win.SetSize(160, 106)
+    view3d.apply_default_camera(ren, False)
+    whole_board = vtk.vtkCamera()
+    whole_board.DeepCopy(ren.GetActiveCamera())
+
+    subject: list = []
+    view3d.populate_renderer(ren, doc, lookup, highlight=focus, subject_actors=subject)
+    assert subject
+    view3d.frame_step(ren, whole_board, subject)
+    camera = ren.GetActiveCamera()
+    assert camera.GetDistance() < whole_board.GetDistance()
+    assert camera.GetDirectionOfProjection() == pytest.approx(
+        whole_board.GetDirectionOfProjection()
+    )
+
+    view3d.frame_step(ren, whole_board, [])
+    assert camera.GetPosition() == pytest.approx(whole_board.GetPosition())
+
+    huge = vtk.vtkActor()
+    huge.SetMapper(vtk.vtkPolyDataMapper())
+    cube = vtk.vtkCubeSource()
+    cube.SetBounds(-1e4, 1e4, -1e4, 1e4, 0.0, 1.0)
+    huge.GetMapper().SetInputConnection(cube.GetOutputPort())
+    ren.AddActor(huge)
+    view3d.frame_step(ren, whole_board, [huge])
+    assert camera.GetPosition() == pytest.approx(whole_board.GetPosition())
+
+
 @requires_offscreen_gl
 def test_a_step_looks_the_same_whichever_face_was_drawn_before_it(monkeypatch) -> None:
     """The step images used to come from two windows, one a face, sharing one room. Drawing
@@ -3361,9 +3421,16 @@ def test_a_step_looks_the_same_whichever_face_was_drawn_before_it(monkeypatch) -
     win.SetOffScreenRendering(1)
     win.AddRenderer(ren)
     win.SetSize(*size)
-    # Framed in the window's shape, as render_step_images frames it (a component-side step).
+    # Framed in the window's shape and then on the step, as render_step_images frames it (a
+    # component-side step).
     view3d.apply_default_camera(ren, False)
-    view3d.populate_renderer(ren, document_at_step(doc, guide, index), lookup, highlight=focus)
+    whole_board = vtk.vtkCamera()
+    whole_board.DeepCopy(ren.GetActiveCamera())
+    subject: list = []
+    view3d.populate_renderer(
+        ren, document_at_step(doc, guide, index), lookup, highlight=focus, subject_actors=subject
+    )
+    view3d.frame_step(ren, whole_board, subject)
     win.Render()
     grab = vtk.vtkWindowToImageFilter()
     grab.SetInput(win)

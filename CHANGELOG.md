@@ -22,6 +22,14 @@ closed without a bump.
 
 ### Changed
 
+- **The build guide's pictures come in close on what each step is about.** They were framed
+  on the whole board, so on a 9 × 15 cm board a resistor was a few pixels of highlight and
+  the picture said nothing a builder could act on. Each step is now framed on its own part
+  or conductor with at least 30 mm round it to count holes from -- centred even at the
+  edge, where the edge itself is the landmark -- and seen from the same direction as every
+  other step on that face, so the pages still read as one board being built. A subject
+  that needs the whole board gets the whole board.
+
 - **The board question builds your circuit on the boards before it suggests one.** It used to
   lay the circuit out quickly on every stock size and suggest the first it filled to a third
   or less -- a rule set by looking at where the examples sat on the boards that same rule

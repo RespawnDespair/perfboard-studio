@@ -3917,13 +3917,17 @@ def populate_renderer(
     highlight: str | None = None,
     pin_names: bool = True,
     board_notes: bool = True,
+    subject_actors: list[vtk.vtkActor] | None = None,
 ) -> dict[str, int]:
     """Rebuild the board's actors in an EXISTING renderer, leaving the camera alone.
 
     ``exploded_mm`` lifts every part off the board, so the holes each one drops into are
     visible at once (PLAN.md D7). ``highlight`` is a component or conductor id — the value
     ``guide.step_focus`` returns — and dims everything else, which is what turns a frame
-    of the assembly sequence into an illustration of one step.
+    of the assembly sequence into an illustration of one step. ``subject_actors``, if
+    given, is filled with the highlighted thing's own solids, which is what
+    :func:`frame_step` frames on: where a part IS is what was just drawn, not a second
+    answer worked out from the footprint.
 
     The BOARD is never dimmed, only the other parts and the copper. A step card says which
     holes a part goes in, and a reader who cannot see the holes has been given a picture
@@ -3989,6 +3993,8 @@ def populate_renderer(
             _lift(actor, exploded_mm)
             if highlight is not None:
                 (_pick_out if subject else _dim)(actor)
+            if subject and subject_actors is not None:
+                subject_actors.append(actor)
             ren.AddActor(actor)
         if printed is not None:
             # A module's names are on its own board and rise with it; a part's names on
@@ -4021,6 +4027,8 @@ def populate_renderer(
         ):
             if highlight is not None:
                 (_pick_out if subject else _dim)(actor)
+            if subject and subject_actors is not None:
+                subject_actors.append(actor)
             ren.AddActor(actor)
 
     ren.ResetCameraClippingRange()
@@ -4551,6 +4559,65 @@ def step_is_solder_side(doc: PerfDocument, focus: str) -> bool:
 STEP_IMAGE_JPEG_QUALITY = 82
 
 
+#: The least board a step picture shows round its subject, in millimetres along each side:
+#: about a dozen holes at 2.54 mm, enough to count from a neighbour -- or from the legend
+#: printed along the edge -- to the hole the card names. A part on its own fills the frame
+#: and says nothing about WHERE it goes.
+STEP_CONTEXT_MM = 30.0
+
+#: VTK's bounds: ``(xmin, xmax, ymin, ymax, zmin, zmax)``.
+type Bounds = tuple[float, float, float, float, float, float]
+
+
+def step_frame_bounds(subject: Bounds, context_mm: float = STEP_CONTEXT_MM) -> Bounds:
+    """The box a step picture is framed on: its subject, widened about its own centre to at
+    least ``context_mm`` along each side of the board. Height is the subject's own, so a
+    tall part is not cut off at the top.
+
+    CENTRED EVEN AT AN EDGE, where part of the picture is then past the board. That strip
+    is where the edge IS, and the edge is the other landmark counting starts from. Sliding
+    the picture back over the board was tried -- each corner's ray cast to the board's
+    plane and the camera moved until all four landed on board -- and it pushed a screw
+    terminal standing on the top edge out of its own picture: a tall part's body projects
+    past the patch of board under it, which is exactly the part such a slide cannot see.
+    """
+    framed = list(subject)
+    for axis in (0, 1):
+        lo, hi = subject[2 * axis], subject[2 * axis + 1]
+        centre, half = (lo + hi) / 2, max(hi - lo, context_mm) / 2
+        framed[2 * axis], framed[2 * axis + 1] = centre - half, centre + half
+    return (framed[0], framed[1], framed[2], framed[3], framed[4], framed[5])
+
+
+def frame_step(
+    ren: vtk.vtkRenderer, whole_board: vtk.vtkCamera, subject: list[vtk.vtkActor]
+) -> None:
+    """Point the camera at one step: from ``whole_board``'s direction, close on ``subject``.
+
+    The DIRECTION is the face's, worked out once on the finished board, so every step on a
+    face is seen from the same place; only the distance and the aim change. Nothing to
+    frame on, or a subject that would need the camera further off than the whole board,
+    gets the whole board -- the camera never backs out past it.
+    """
+    camera = ren.GetActiveCamera()
+    camera.DeepCopy(whole_board)
+    boxes = [actor.GetBounds() for actor in subject]
+    boxes = [box for box in boxes if box[0] <= box[1]]
+    if boxes:
+        union: Bounds = (
+            min(box[0] for box in boxes),
+            max(box[1] for box in boxes),
+            min(box[2] for box in boxes),
+            max(box[3] for box in boxes),
+            min(box[4] for box in boxes),
+            max(box[5] for box in boxes),
+        )
+        ren.ResetCameraScreenSpace(*step_frame_bounds(union), _FRAME_FILL)
+        if camera.GetDistance() >= whole_board.GetDistance():
+            camera.DeepCopy(whole_board)
+    ren.ResetCameraClippingRange()
+
+
 def render_step_images(
     doc: PerfDocument,
     guide: Guide,
@@ -4572,14 +4639,19 @@ def render_step_images(
     So there are two cameras, and a step is shot from whichever face its subject is on,
     which is also the face the builder is looking at when they do it.
 
-    Within a face the camera is framed on the FINISHED board and then left alone. Framing
-    each step on its own contents would zoom in hard on the first part and back out as
-    the board filled, so flipping through the guide would read as a series of unrelated
-    photographs rather than one board being built.
+    CLOSE ON THE SUBJECT, FROM ONE DIRECTION PER FACE (:func:`frame_step`). The camera
+    used to be framed on the finished board and left alone, so that flipping through the
+    guide would read as one board being built rather than unrelated photographs -- and on
+    a 9 x 15 cm board a resistor was then a few pixels of highlight, a picture that said
+    nothing a builder could act on. The direction is still the face's, worked out once on
+    the finished board, which is what kept the pages reading as one board; only the
+    distance and the aim follow the step, with at least ``STEP_CONTEXT_MM`` round it
+    (:func:`step_frame_bounds`).
 
     ONE render window, re-actored per step -- which is what ``populate_renderer`` exists
-    for, and is the difference between half a second and a minute -- with the two cameras
-    framed on the finished board up front and swapped in per step. It used to be a window
+    for, and is the difference between half a second and a minute -- with the two face
+    cameras worked out on the finished board up front and each step aimed from one of
+    them. It used to be a window
     per face, and each window is a renderer that works out the room's lighting again
     before its first frame (see ``_IRRADIANCE_PX``), and again after the other one has
     drawn. That is cheap on a GPU and was most of the cost without one: ``dense.perf``'s 33
@@ -4614,10 +4686,15 @@ def render_step_images(
     images: dict[str, bytes] = {}
     for index, step in enumerate(steps):
         focus = step_focus(step)
-        ren.GetActiveCamera().DeepCopy(cameras[step_is_solder_side(doc, focus)])
+        subject: list[vtk.vtkActor] = []
         populate_renderer(
-            ren, document_at_step(doc, guide, index), lookup, highlight=focus
+            ren,
+            document_at_step(doc, guide, index),
+            lookup,
+            highlight=focus,
+            subject_actors=subject,
         )
+        frame_step(ren, cameras[step_is_solder_side(doc, focus)], subject)
         win.Render()
         grab = vtk.vtkWindowToImageFilter()
         grab.SetInput(win)
