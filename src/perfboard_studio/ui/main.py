@@ -2819,7 +2819,7 @@ class WelcomeDialog(QDialog):
                 button.setDefault(True)
                 button.setStyleSheet(
                     f"QPushButton {{ background: {ACCENT}; color: white; font-weight: 600; "
-                    "border: none; border-radius: 6px; padding: 6px 12px; }}"
+                    "border: none; border-radius: 6px; padding: 6px 12px; }"
                 )
             button.clicked.connect(lambda _checked=False, c=choice: self._pick(c))
             begin.addWidget(button)

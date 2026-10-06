@@ -10607,6 +10607,29 @@ def test_the_welcome_dialog_starts_a_circuit_or_opens_an_example(monkeypatch) ->
         _close(window)
 
 
+def test_the_welcome_window_gives_qt_a_stylesheet_it_can_read() -> None:
+    """The first button's stylesheet ended in "}}" -- a plain literal glued onto an
+    f-string keeps both braces -- and Qt refused the whole of it: the one button meant to
+    stand out did not, and every start printed "Could not parse stylesheet". Qt reads a
+    stylesheet when the widget is polished, so the dialog is shown to be asked."""
+    from PySide6.QtCore import qInstallMessageHandler
+    from PySide6.QtWidgets import QApplication
+
+    import perfboard_studio.ui.main as main_module
+
+    said: list[str] = []
+    previous = qInstallMessageHandler(lambda _kind, _context, message: said.append(message))
+    try:
+        dialog = main_module.WelcomeDialog([], None, examples=main_module.example_boards())
+        dialog.show()
+        QApplication.processEvents()
+        dialog.close()
+        dialog.deleteLater()
+    finally:
+        qInstallMessageHandler(previous)
+    assert not [message for message in said if "stylesheet" in message.lower()], said
+
+
 def monkeypatch_exec(window, shown: list[int]) -> None:
     """Count the times a welcome dialog would have been shown, without showing one."""
     import perfboard_studio.ui.main as main_module

@@ -83,6 +83,11 @@ closed without a bump.
   zooming or panning brings them back. A sheet that grows while it is fitted -- a paste, a
   new part parked past the edge -- is fitted again, rather than left with the new part
   off the edge of a view nothing can scroll.
+- **The welcome window's "Draw a New Circuit" button lost its style.** Its stylesheet ended
+  in one brace too many, Qt refused the whole of it, and every start printed "Could not
+  parse stylesheet" three times. A test now reads the source for that mistake's shape --
+  a plain string glued onto an f-string, still holding a doubled brace -- and this was the
+  only one.
 - **Place on the Board left parts off a board that had room for them.** It laid the design
   out in lanes with a hole between parts and a row between lanes, and whatever the lanes had
   no room for stayed in the design with a count in the status bar -- a 24-part circuit on a
