@@ -195,6 +195,12 @@ değildir ve bu montajın yirmi beş adımının on yedisi yukarıdan göremedi�
 gerçekleşir. Animasyon, 3D panelindeki montaj kaydırıcısının çağırdığı fonksiyonun aynısı
 oynatılarak üretiliyor — yani rehberin gerçekten vermediği bir sırayı gösteremez.
 
+Her tel adımı telin kendisini iki kez çizer: kartın delikleri üzerinde büküleceği şekliyle,
+bir de düz hâliyle, her işareti bir uçtan ölçülmüş olarak. Rehber hepsini gerçek boyutta,
+50 mm'lik bir cetvelin yanında vererek biter — %100 ölçekte yazdırın, her teli çizimine göre
+kesin, işaretleyin, bükün. Bir çizimin uçtan uca boyu kesim listesinin verdiği uzunluğun ta
+kendisidir, çünkü ikisi de aynı sayılardan gelir.
+
 ## Çalıştırmak
 
 Bu bir masaüstü uygulaması, yani onu edinmenin olağan yolu bir kurulum paketi kurmak.

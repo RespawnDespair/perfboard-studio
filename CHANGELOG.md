@@ -20,6 +20,20 @@ closed without a bump.
 
 ## [Unreleased]
 
+### Added
+
+- **Every wire in the build guide is drawn at 1:1, to cut and bend it on.** Each wire step
+  shows the wire twice: bent to its shape over the board's holes -- a solid ring where it
+  goes down through the board, a dashed one at each corner, the copper-coloured ends to
+  strip -- and straight, with every mark's distance from the left-hand tip. Both are drawn
+  as seen from the face the wire lies on, because a bent wire turned over is its own mirror
+  image, and each tip is named by the hole it goes into. The guide ends with all of them at
+  real size beside a 50 mm ruler: print at 100 %, check the ruler, cut, mark and bend. Tip
+  to tip each drawing is exactly the cut list's length, because both come from the same
+  numbers. A point a hand-laid wire runs straight through is not marked as a bend, and a
+  shape too wide for an A4 page is turned a quarter -- a turn, never a flip. The guide's
+  JSON gains each conductor step's `side`.
+
 ### Changed
 
 - **The build guide's pictures come in close on what each step is about.** They were framed

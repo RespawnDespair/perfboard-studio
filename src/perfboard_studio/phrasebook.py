@@ -664,6 +664,25 @@ TURKISH: dict[str, str] = {
     "bare wire": "çıplak tel",
     "insulated wire": "izoleli tel",
     "{gauge:g} mm, laid along {pads} pads": "{gauge:g} mm, {pads} ped boyunca",
+    # The 1:1 wire templates at the end of the guide.
+    "Wire templates (1:1)": "Tel şablonları (1:1)",
+    "Print these pages at 100 % — actual size, not fit to page — and hold the bar "
+    "below against a ruler: if it is not {ruler} mm, the printer has scaled them. "
+    "Cut each wire to the length of its straight drawing and mark it there: a dark "
+    "mark is where the insulation is cut, a solid blue one where the wire goes down "
+    "through the board, a dashed one where it turns along it. Then bend it to the "
+    "shape beside, drawn as seen from the face the wire lies on.": (
+        "Bu sayfaları %100 ölçekte yazdır — gerçek boyutta, sayfaya sığdırmadan — ve "
+        "aşağıdaki çubuğu bir cetvelle karşılaştır: {ruler} mm değilse yazıcı ölçeği "
+        "değiştirmiştir. Her teli düz çizimindeki boya kes ve işaretlerini oradan al: koyu "
+        "işaret izolasyonun kesileceği yer, düz mavi işaret telin kartın içinden aşağı "
+        "geçtiği yer, kesikli mavi işaret kartın üzerinde döndüğü yer. Sonra yanındaki "
+        "şekle göre bük; şekil, telin durduğu yüzden bakılmış hâliyle çizilmiştir."
+    ),
+    "{length:.0f} mm · {colour} · AWG {awg}": "{length:.0f} mm · {colour} · AWG {awg}",
+    "from the component side": "komponent yüzünden bakış",
+    "from the solder side": "lehim yüzünden bakış",
+    "turned to fit the page": "sayfaya sığsın diye döndürüldü",
     # CSV headings: lower case and without spaces, as a spreadsheet column wants them.
     "type": "tür",
     "net": "net",

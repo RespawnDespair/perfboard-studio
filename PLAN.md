@@ -471,6 +471,11 @@ Her tel için: kesit (akımdan hesaplanır), izolasyon tipi, **renk konvansiyonu
 **Ayrı bölüm: omurga telleri** (`solder-trace-wired`) — kalaylı bakır tel uzunlukları
 ve hangi bacak kırpıntısının nereye yeteceği.
 
+**1:1 tel şablonları** (`guide.wire_template`, HTML rehberin sonunda): her telin kart
+üzerindeki şekli ve düz hâli gerçek boyutta, telin durduğu yüzden bakılmış olarak. Uçtan
+uca boyu yukarıdaki formülün sonucunun ta kendisidir; ölçeği 50 mm'lik bir cetvel çubuğu
+doğrular.
+
 ### 7.4 Lehim yolu talimatları (D8)
 
 Her lehim yolu için üretilen adım kartı:

@@ -48,6 +48,8 @@ what the output looks like.
 from __future__ import annotations
 
 import dataclasses
+import itertools
+import math
 from dataclasses import dataclass
 from typing import Literal
 
@@ -60,6 +62,7 @@ from .geometry import (
     edge_connector_holes,
     entry_side,
     format_hole,
+    hole_to_mm,
     is_inside_board,
     path_length_mm,
     row_label,
@@ -69,6 +72,7 @@ from .lvs import continuity_checks, isolation_checks, run_lvs
 from .model import (
     Board,
     BoardMaterial,
+    BoardSide,
     BodyArchetype,
     ComponentInstance,
     Conductor,
@@ -371,6 +375,9 @@ class ConductorStep:
     kind: Literal["conductor"]
     conductor_id: ConductorId
     conductor_kind: ConductorKind
+    #: The face it lies on. A wire's cut-and-bend template is drawn as seen from there
+    #: (:func:`wire_template`), because a bent wire turned over is its own mirror image.
+    side: BoardSide
     net_name: str
     net_class: NetClass
     #: "B12 -> K12, 10 pads" for a trace; "B3 -> P9" for a wire.
@@ -1139,6 +1146,7 @@ def _conductor_step(
         kind="conductor",
         conductor_id=conductor.id,
         conductor_kind=conductor.kind,
+        side=conductor.side,
         net_name=net_name,
         net_class=net_class,
         span=_conductor_span(conductor.kind, path, pads, say),
@@ -1205,6 +1213,158 @@ def _wire_cut(
         colour=colour if insulated else BARE_WIRE_COLOUR,
         insulated=insulated,
     )
+
+
+# ---------------------------------------------------------------------------
+# Wire templates: a wire's shape at 1:1, to cut, mark and bend it on
+# ---------------------------------------------------------------------------
+
+#: The widest a template is drawn, in mm: an A4 page less its print margins. A shape wider
+#: than this is turned a quarter. No stock board (``geometry.STANDARD_PRESETS``, 9 x 15 cm
+#: at most) has a wire too long for the page both ways, nor one that straightened is wider
+#: than this -- so neither case is handled beyond the turn.
+TEMPLATE_PAGE_WIDTH_MM: Mm = 180.0
+
+#: Paper round a template's drawing, in mm, so its end holes have neighbours to count from.
+TEMPLATE_MARGIN_MM: Mm = 3.0
+
+#: What to do at a mark on a wire laid out straight: cut the insulation (``strip``), bend
+#: it 90° down THROUGH the board at an end hole, or TURN it along the board at a corner.
+type WireMarkKind = Literal["strip", "through", "turn"]
+
+
+@dataclass(frozen=True, slots=True)
+class WireMark:
+    """One mark on a wire laid out straight, measured from its first tip."""
+
+    at_mm: Mm
+    kind: WireMarkKind
+
+
+@dataclass(frozen=True, slots=True)
+class WireTemplate:
+    """A wire step's wire, laid out flat at 1:1, in millimetres on paper.
+
+    ``shape`` runs tip, end hole, every corner, end hole, tip, with (0, 0) at the top left
+    of ``width_mm`` x ``height_mm``. The two legs carry straight on from the path's end
+    segments: bend them 90° down at the end holes and the rest stays flat on the board.
+    Tip to tip it is the cut list's ``cut_mm`` exactly, because each leg IS the part of the
+    cut that is not path -- through the board, turned over, stripped -- so the drawing and
+    the number in the table cannot disagree.
+
+    Drawn as seen from the face the wire lies on: a bent wire turned over is its own mirror
+    image, and from the solder side the board is the mirror image of the component side.
+
+    ``marks`` are the same wire straightened, which is what is cut and marked with a ruler
+    before anything is bent -- read off the same points the shape is drawn from, so the
+    two drawings of one wire cannot disagree about where it bends.
+    """
+
+    shape: tuple[tuple[Mm, Mm], ...]
+    #: Indexes into ``shape`` where the wire bends: both end holes and every real corner.
+    #: A point the path passes straight through is not a bend and gets no ring.
+    bends: tuple[int, ...]
+    #: The board's holes under the drawing, so a corner can be counted against them.
+    holes: tuple[tuple[Mm, Mm], ...]
+    width_mm: Mm
+    height_mm: Mm
+    marks: tuple[WireMark, ...]
+    length_mm: Mm
+    strip_mm: Mm
+    seen_from: BoardSide
+    #: Turned a quarter to fit the page (``TEMPLATE_PAGE_WIDTH_MM``) -- a turn, never a
+    #: flip, so the bends still go the way they go on the board.
+    turned: bool
+
+
+def wire_template(step: ConductorStep, board: Board) -> WireTemplate | None:
+    """The 1:1 pattern a wire step's wire is cut and bent to, or None for a step with no
+    wire to cut (a solder trace, a lead bend)."""
+    cut = step.cut
+    if cut is None:
+        return None
+    # A hole repeated in a hand-edited path is a segment of no length and no direction.
+    holes = [hole for hole, _ in itertools.groupby(step.path)]
+    if len(holes) < 2:
+        return None
+    mirror = -1.0 if step.side == "bottom" else 1.0
+
+    def on_paper(at: HoleCoord) -> tuple[Mm, Mm]:
+        centre = hole_to_mm(at, board)
+        return mirror * centre.x, centre.y
+
+    path = [on_paper(at) for at in holes]
+    leg = (cut.cut_mm - cut.path_mm) / 2
+
+    def tip(end: tuple[Mm, Mm], inner: tuple[Mm, Mm]) -> tuple[Mm, Mm]:
+        dx, dy = end[0] - inner[0], end[1] - inner[1]
+        run = math.hypot(dx, dy)
+        return end[0] + dx / run * leg, end[1] + dy / run * leg
+
+    shape = [tip(path[0], path[1]), *path, tip(path[-1], path[-2])]
+    along = [0.0]
+    for a, b in itertools.pairwise(shape):
+        along.append(along[-1] + math.dist(a, b))
+    corners = [
+        index
+        for index in range(2, len(shape) - 2)
+        if not _runs_straight_on(shape[index - 1], shape[index], shape[index + 1])
+    ]
+    bends = (1, *corners, len(shape) - 2)
+    marks = [
+        WireMark(along[index], "through" if index in (1, len(shape) - 2) else "turn")
+        for index in bends
+    ]
+    if cut.strip_mm > 0:
+        marks = [
+            WireMark(cut.strip_mm, "strip"),
+            *marks,
+            WireMark(along[-1] - cut.strip_mm, "strip"),
+        ]
+
+    # The holes under the drawing: those within reach of the path, legs and margin
+    # included, rather than every hole on the board for every wire.
+    reach = math.ceil((leg + TEMPLATE_MARGIN_MM) / board.pitch)
+    cols = [at.col for at in holes]
+    rows = [at.row for at in holes]
+    col_range = range(max(min(cols) - reach, 0), min(max(cols) + reach, board.cols - 1) + 1)
+    row_range = range(max(min(rows) - reach, 0), min(max(rows) + reach, board.rows - 1) + 1)
+    grid = [on_paper(HoleCoord(col, row)) for col in col_range for row in row_range]
+
+    xs, ys = [x for x, _ in shape], [y for _, y in shape]
+    wide, high = max(xs) - min(xs), max(ys) - min(ys)
+    turned = wide > TEMPLATE_PAGE_WIDTH_MM and high < wide
+    if turned:
+        # A quarter turn on paper, (x, y) -> (-y, x): a rotation, never a reflection.
+        shape = [(-y, x) for x, y in shape]
+        grid = [(-y, x) for x, y in grid]
+    m = TEMPLATE_MARGIN_MM
+    left = min(x for x, _ in shape) - m
+    top = min(y for _, y in shape) - m
+    right = max(x for x, _ in shape) + m
+    bottom = max(y for _, y in shape) + m
+    return WireTemplate(
+        shape=tuple((x - left, y - top) for x, y in shape),
+        bends=bends,
+        holes=tuple(
+            (x - left, y - top) for x, y in grid if left < x < right and top < y < bottom
+        ),
+        width_mm=right - left,
+        height_mm=bottom - top,
+        marks=tuple(marks),
+        length_mm=along[-1],
+        strip_mm=cut.strip_mm,
+        seen_from=step.side,
+        turned=turned,
+    )
+
+
+def _runs_straight_on(a: tuple[Mm, Mm], b: tuple[Mm, Mm], c: tuple[Mm, Mm]) -> bool:
+    """Whether a path passes straight through ``b`` -- a point somebody clicked on a
+    straight run, which is not a bend and must not be marked as one."""
+    cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0])
+    forward = (b[0] - a[0]) * (c[0] - b[0]) + (b[1] - a[1]) * (c[1] - b[1])
+    return abs(cross) < 1e-9 and forward > 0
 
 
 def _assign_colors(doc: PerfDocument) -> dict[str, str]:

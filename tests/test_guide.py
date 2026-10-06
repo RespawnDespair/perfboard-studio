@@ -44,11 +44,13 @@ from perfboard_studio.footprints import footprint_lookup
 from perfboard_studio.geometry import format_hole
 from perfboard_studio.guide import (
     BARE_WIRE_COLOUR,
+    COLOR_BY_NET_CLASS,
     DEFAULT_GUIDE_OPTIONS,
     PHASE_BY_ARCHETYPE,
     PHASE_BY_CONDUCTOR,
     PHASE_TITLES,
     SIGNAL_COLORS,
+    TEMPLATE_PAGE_WIDTH_MM,
     ConductorStep,
     Guide,
     GuideOptions,
@@ -59,6 +61,7 @@ from perfboard_studio.guide import (
     describe,
     document_at_step,
     step_focus,
+    wire_template,
 )
 from perfboard_studio.guide_export import bom_to_csv, cut_list_to_csv, guide_to_html, guide_to_json
 from perfboard_studio.model import (
@@ -597,6 +600,119 @@ def test_bare_wire_is_not_charged_a_stripping_allowance() -> None:
     assert cut.strip_mm == 0.0
     assert cut.insulated is False
     assert cut.cut_mm == pytest.approx(4 * BOARD.pitch + 2 * (1.6 + 3.0))
+
+
+def _wire_steps(guide: Guide) -> list[ConductorStep]:
+    return [step for step in all_steps(guide) if isinstance(step, ConductorStep)]
+
+
+def test_a_wire_template_is_the_cut_list_length_bent_where_the_holes_are() -> None:
+    """The drawing IS the wire: tip to tip it is the cut list's length, its bends are a
+    pitch apart where the holes are, and the straightened marks are read off the same
+    points. From the solder side it is the mirror image, because that is what a bent wire
+    is when it is turned over."""
+    import itertools
+    import math
+
+    path = (hole(2, 2), hole(6, 2), hole(6, 5))
+    for side, sign in (("top", 1), ("bottom", -1)):
+        doc = make_doc(
+            conductors=(WireConductor(id="cond-1", path=path, kind="insulated-wire", side=side),)
+        )
+        guide = build_guide(doc, REGISTRY)
+        step = _wire_steps(guide)[0]
+        template = wire_template(step, guide.board)
+        assert template is not None and step.cut is not None
+        shape = template.shape
+        assert len(shape) == len(path) + 2
+        assert sum(math.dist(a, b) for a, b in itertools.pairwise(shape)) == pytest.approx(
+            step.cut.cut_mm
+        )
+        assert template.length_mm == pytest.approx(step.cut.cut_mm)
+        assert shape[2][0] - shape[1][0] == pytest.approx(sign * 4 * BOARD.pitch)
+        assert template.seen_from == side and not template.turned
+        assert template.bends == (1, 2, 3)
+        leg = (step.cut.cut_mm - step.cut.path_mm) / 2
+        assert [(mark.kind, mark.at_mm) for mark in template.marks] == [
+            ("strip", pytest.approx(step.cut.strip_mm)),
+            ("through", pytest.approx(leg)),
+            ("turn", pytest.approx(leg + 4 * BOARD.pitch)),
+            ("through", pytest.approx(leg + 7 * BOARD.pitch)),
+            ("strip", pytest.approx(step.cut.cut_mm - step.cut.strip_mm)),
+        ]
+        inside = [
+            0 <= x <= template.width_mm and 0 <= y <= template.height_mm
+            for x, y in (*shape, *template.holes)
+        ]
+        assert all(inside) and template.holes
+
+
+def test_a_point_a_wire_passes_straight_through_is_not_a_bend() -> None:
+    """A hand-laid wire can hold a hole it runs straight through. Marking it would send
+    somebody to bend a straight wire; a U-turn, though, is a bend."""
+    straight = (hole(2, 2), hole(4, 2), hole(4, 2), hole(7, 2))
+    back = (hole(2, 2), hole(6, 2), hole(4, 2))
+    doc = make_doc(
+        conductors=(
+            WireConductor(id="cond-1", path=straight),
+            WireConductor(id="cond-2", path=back),
+        )
+    )
+    guide = build_guide(doc, REGISTRY)
+    templates = {step.conductor_id: wire_template(step, guide.board) for step in _wire_steps(guide)}
+    run, u_turn = templates["cond-1"], templates["cond-2"]
+    assert run is not None and u_turn is not None
+    assert [mark.kind for mark in run.marks] == ["through", "through"]
+    assert len(run.bends) == 2
+    assert [mark.kind for mark in u_turn.marks] == ["through", "turn", "through"]
+
+
+def test_a_wire_template_too_wide_for_the_page_is_turned_and_a_trace_has_none() -> None:
+    import dataclasses
+
+    wide = dataclasses.replace(BOARD, cols=90)
+    doc = make_doc(
+        board=wide,
+        conductors=(
+            WireConductor(id="cond-1", path=(hole(1, 2), hole(85, 2)), kind="insulated-wire"),
+            SolderTraceConductor(id="cond-2", path=(hole(1, 5), hole(2, 5))),
+        ),
+    )
+    guide = build_guide(doc, REGISTRY)
+    steps = {step.conductor_id: step for step in _wire_steps(guide)}
+    template = wire_template(steps["cond-1"], guide.board)
+    assert template is not None and template.turned
+    assert template.width_mm < TEMPLATE_PAGE_WIDTH_MM < template.height_mm
+    assert wire_template(steps["cond-2"], guide.board) is None
+
+
+def test_the_guide_ends_with_every_wire_at_one_to_one() -> None:
+    """After the lists, one template per wire to cut, each drawn in millimetres of paper
+    -- its width in mm IS its viewBox width -- with the ruler that proves the printer kept
+    them. And only on screen may a template shrink to fit: printed, it would lie."""
+    import re
+
+    from perfboard_studio.guide_export import _STYLE, RULER_MM
+
+    guide = build_guide(routed_ne555(), REGISTRY)
+    page = guide_to_html(guide)
+    sheet = page[page.index('class="phase templates"'):]
+    assert page.index(">Lists<") < page.index('class="phase templates"')
+    assert sheet.count('class="tpl"') == len(guide.cut_list)
+    assert f'width="{RULER_MM + 2}mm"' in sheet
+    drawings = re.findall(r'<svg width="([\d.]+)mm" [^>]*viewBox="[-\d.]+ [-\d.]+ ([\d.]+)', sheet)
+    assert len(drawings) == 2 * len(guide.cut_list)
+    assert all(width == box for width, box in drawings)
+    off_screen = re.sub(r"@media screen \{[^{}]*\{[^{}]*\}\s*\}", "", _STYLE)
+    assert off_screen != _STYLE
+    assert not re.search(r"\.tpl[^{]*\{[^}]*max-width", off_screen)
+
+
+def test_every_wire_colour_the_guide_names_has_ink() -> None:
+    from perfboard_studio.guide_export import WIRE_INK
+
+    named = {*COLOR_BY_NET_CLASS.values(), *SIGNAL_COLORS, BARE_WIRE_COLOUR}
+    assert named <= WIRE_INK.keys()
 
 
 def test_wire_colours_follow_the_convention_and_are_stable() -> None:
