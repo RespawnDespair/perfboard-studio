@@ -43,10 +43,12 @@ from perfboard_studio.drc import run_drc, trace_electrical
 from perfboard_studio.footprints import footprint_lookup
 from perfboard_studio.geometry import format_hole
 from perfboard_studio.guide import (
+    BARE_WIRE_COLOUR,
     DEFAULT_GUIDE_OPTIONS,
     PHASE_BY_ARCHETYPE,
     PHASE_BY_CONDUCTOR,
     PHASE_TITLES,
+    SIGNAL_COLORS,
     ConductorStep,
     Guide,
     GuideOptions,
@@ -598,12 +600,19 @@ def test_bare_wire_is_not_charged_a_stripping_allowance() -> None:
 
 
 def test_wire_colours_follow_the_convention_and_are_stable() -> None:
+    insulated = "insulated-wire"
     doc = make_doc(
         components=(component("R1", "r-axial-4", hole(2, 2)),),
         conductors=(
-            WireConductor(id="cond-1", path=(hole(2, 2), hole(6, 2)), net_id="n-gnd"),
-            WireConductor(id="cond-2", path=(hole(2, 4), hole(6, 4)), net_id="n-vcc"),
-            WireConductor(id="cond-3", path=(hole(2, 6), hole(6, 6)), net_id="n-sig"),
+            WireConductor(
+                id="cond-1", path=(hole(2, 2), hole(6, 2)), net_id="n-gnd", kind=insulated
+            ),
+            WireConductor(
+                id="cond-2", path=(hole(2, 4), hole(6, 4)), net_id="n-vcc", kind=insulated
+            ),
+            WireConductor(
+                id="cond-3", path=(hole(2, 6), hole(6, 6)), net_id="n-sig", kind=insulated
+            ),
         ),
         nets=(
             net("n-gnd", "GND", "ground", (("R1", "1"), ("R1", "2"))),
@@ -617,6 +626,40 @@ def test_wire_colours_follow_the_convention_and_are_stable() -> None:
     assert colors["VCC"] == "red"
     assert colors["OUT"] not in ("black", "red")
     assert build_guide(doc, REGISTRY).cut_list == build_guide(doc, REGISTRY).cut_list
+
+
+def test_bare_wire_is_the_metal_whatever_net_it_is_on_and_its_own_reel() -> None:
+    """A bare ground run was cut as "19 mm of black AWG 24": the net's colour is an
+    insulation colour, and there is no black bare wire to cut. And the bench list asked for
+    "hookup wire in black, red, ..." for colours only the bare runs had been given."""
+    doc = make_doc(
+        components=(component("R1", "r-axial-4", hole(2, 2)),),
+        conductors=(
+            WireConductor(id="cond-1", path=(hole(2, 2), hole(6, 2)), net_id="n-gnd"),
+            WireConductor(
+                id="cond-2", path=(hole(2, 4), hole(6, 4)), net_id="n-sig", kind="insulated-wire"
+            ),
+        ),
+        nets=(
+            net("n-gnd", "GND", "ground", (("R1", "1"), ("R1", "2"))),
+            net("n-sig", "OUT", "signal", (("R1", "1"), ("R1", "2"))),
+        ),
+    )
+    guide = build_guide(doc, REGISTRY)
+    colors = {cut.net_name: cut.colour for cut in guide.cut_list}
+    assert colors["GND"] == BARE_WIRE_COLOUR
+    assert colors["OUT"] == SIGNAL_COLORS[0]
+
+    hookup = [tool for tool in guide.tools if tool.startswith("Hookup wire")]
+    bare = [tool for tool in guide.tools if tool.startswith("Bare tinned copper wire")]
+    assert len(hookup) == len(bare) == 1
+    assert SIGNAL_COLORS[0] in hookup[0] and "black" not in hookup[0]
+    assert "Wire strippers" in guide.tools
+
+    only_bare = make_doc(conductors=(WireConductor(id="cond-1", path=(hole(2, 2), hole(6, 2))),))
+    tools = build_guide(only_bare, REGISTRY).tools
+    assert not any(tool.startswith("Hookup wire") for tool in tools)
+    assert "Wire strippers" not in tools
 
 
 def test_a_spine_is_listed_as_wire_to_cut_too() -> None:

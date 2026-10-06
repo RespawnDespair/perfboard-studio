@@ -219,6 +219,11 @@ SIGNAL_COLORS: tuple[str, ...] = (
     "yellow", "green", "blue", "white", "orange", "violet", "grey", "brown",
 )
 
+#: What a BARE wire's "colour" is: the metal, named as a spine's material is named. The
+#: net's insulation colour belongs to insulation, and a bare wire has none -- "black AWG 24"
+#: for a ground run of bare wire is a reel nobody owns.
+BARE_WIRE_COLOUR = "tinned copper"
+
 
 @dataclass(frozen=True, slots=True)
 class GuideOptions:
@@ -1196,7 +1201,8 @@ def _wire_cut(
         cut_mm=path_mm + ends,
         strip_mm=strip_mm,
         awg=awg,
-        colour=colour,
+        # The net's colour is an INSULATION colour, so it goes only where there is some.
+        colour=colour if insulated else BARE_WIRE_COLOUR,
         insulated=insulated,
     )
 
@@ -1637,6 +1643,10 @@ def _bom(doc: PerfDocument, lookup: FootprintLookup, say: Phrasebook) -> tuple[B
     return tuple(lines)
 
 
+def _gauges(cuts: list[WireCut]) -> str:
+    return ", ".join(str(awg) for awg in sorted({cut.awg for cut in cuts}))
+
+
 def _tools(
     doc: PerfDocument, cuts: list[WireCut], spines: list[SpineCut], say: Phrasebook
 ) -> tuple[str, ...]:
@@ -1652,20 +1662,27 @@ def _tools(
         say("Side cutters and small pliers"),
         say("A multimeter with a continuity buzzer (every checkpoint below uses it)"),
     ]
-    if cuts:
-        gauges = sorted({cut.awg for cut in cuts})
+    # Two reels, two lines: hookup wire comes in colours and bare wire is the metal, so one
+    # line listing "black, tinned copper" sends nobody to the right drawer.
+    hookup = [cut for cut in cuts if cut.insulated]
+    bare = [cut for cut in cuts if not cut.insulated]
+    if hookup:
         # Alphabetical in the language they are READ in, which is how somebody scans a
         # list of colours for the one they are holding.
-        colors = sorted({say(cut.colour) for cut in cuts})
-        total = sum(cut.cut_mm for cut in cuts)
         tools.append(say(
             "Hookup wire, AWG {gauges} in {colours} — about {metres:.2f} m in total",
-            gauges=", ".join(str(g) for g in gauges),
-            colours=", ".join(colors),
-            metres=total / 1000,
+            gauges=_gauges(hookup),
+            colours=", ".join(sorted({say(cut.colour) for cut in hookup})),
+            metres=sum(cut.cut_mm for cut in hookup) / 1000,
         ))
-        if any(cut.insulated for cut in cuts):
-            tools.append(say("Wire strippers"))
+    if bare:
+        tools.append(say(
+            "Bare tinned copper wire, AWG {gauges} — about {metres:.2f} m in total",
+            gauges=_gauges(bare),
+            metres=sum(cut.cut_mm for cut in bare) / 1000,
+        ))
+    if hookup:
+        tools.append(say("Wire strippers"))
     if doc.mounting_holes:
         diameters = sorted({m.diameter for m in doc.mounting_holes})
         sizes = ", ".join(f"{d:g} mm" for d in diameters)

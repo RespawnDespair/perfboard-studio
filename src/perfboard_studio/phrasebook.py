@@ -514,6 +514,9 @@ TURKISH: dict[str, str] = {
     "Hookup wire, AWG {gauges} in {colours} — about {metres:.2f} m in total": (
         "Bağlantı teli, AWG {gauges}, renkler: {colours} — toplam yaklaşık {metres:.2f} m"
     ),
+    "Bare tinned copper wire, AWG {gauges} — about {metres:.2f} m in total": (
+        "Çıplak kalaylı bakır tel, AWG {gauges} — toplam yaklaşık {metres:.2f} m"
+    ),
     "Wire strippers": "Tel sıyırıcı",
     "A drill and {sizes} bits for the mounting holes, plus a deburring tool or a larger "
     "bit turned by hand": (

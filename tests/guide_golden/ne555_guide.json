@@ -19,7 +19,8 @@
     "Flux — a pen or a small pot. Solder traces are not reliably makeable without it",
     "Side cutters and small pliers",
     "A multimeter with a continuity buzzer (every checkpoint below uses it)",
-    "Hookup wire, AWG 24 in black, blue, orange, red, white, yellow — about 0.35 m in total",
+    "Hookup wire, AWG 24 in black, blue, white, yellow — about 0.21 m in total",
+    "Bare tinned copper wire, AWG 24 — about 0.14 m in total",
     "Wire strippers",
     "Tinned copper wire for the trace spines, 0.6 mm — about 51 mm (component lead offcuts do the job just as well)"
   ],
@@ -128,7 +129,7 @@
       "cut_mm": 29.678134680678316,
       "strip_mm": 0.0,
       "awg": 24,
-      "colour": "black",
+      "colour": "tinned copper",
       "insulated": false
     },
     {
@@ -168,7 +169,7 @@
       "cut_mm": 19.36,
       "strip_mm": 0.0,
       "awg": 24,
-      "colour": "red",
+      "colour": "tinned copper",
       "insulated": false
     },
     {
@@ -188,7 +189,7 @@
       "cut_mm": 50.156269361356635,
       "strip_mm": 0.0,
       "awg": 24,
-      "colour": "red",
+      "colour": "tinned copper",
       "insulated": false
     },
     {
@@ -208,7 +209,7 @@
       "cut_mm": 17.232185256827684,
       "strip_mm": 0.0,
       "awg": 24,
-      "colour": "blue",
+      "colour": "tinned copper",
       "insulated": false
     },
     {
@@ -268,7 +269,7 @@
       "cut_mm": 24.010617812907064,
       "strip_mm": 0.0,
       "awg": 24,
-      "colour": "orange",
+      "colour": "tinned copper",
       "insulated": false
     },
     {
@@ -767,7 +768,7 @@
             "cut_mm": 29.678134680678316,
             "strip_mm": 0.0,
             "awg": 24,
-            "colour": "black",
+            "colour": "tinned copper",
             "insulated": false
           },
           "risks": [],
@@ -952,7 +953,7 @@
             "cut_mm": 19.36,
             "strip_mm": 0.0,
             "awg": 24,
-            "colour": "red",
+            "colour": "tinned copper",
             "insulated": false
           },
           "risks": [],
@@ -1002,7 +1003,7 @@
             "cut_mm": 50.156269361356635,
             "strip_mm": 0.0,
             "awg": 24,
-            "colour": "red",
+            "colour": "tinned copper",
             "insulated": false
           },
           "risks": [],
@@ -1052,7 +1053,7 @@
             "cut_mm": 24.010617812907064,
             "strip_mm": 0.0,
             "awg": 24,
-            "colour": "orange",
+            "colour": "tinned copper",
             "insulated": false
           },
           "risks": [],
@@ -1231,7 +1232,7 @@
             "cut_mm": 17.232185256827684,
             "strip_mm": 0.0,
             "awg": 24,
-            "colour": "blue",
+            "colour": "tinned copper",
             "insulated": false
           },
           "risks": [],

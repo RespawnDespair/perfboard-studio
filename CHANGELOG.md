@@ -92,6 +92,11 @@ closed without a bump.
   panel drew asked Qt for another, so the window stopped answering the moment the panel
   opened. On that combination the panel no longer paints on screen itself; everywhere else
   it is drawn exactly as before.
+- **The build guide gave bare wire its net's insulation colour.** A ground run of bare wire
+  was "Cut 30 mm of black AWG 24", the cut list's colour column had red and orange in it
+  for wires with no insulation at all, and the bench list asked for hookup wire in colours
+  only the bare runs had been given. Bare wire is now "tinned copper", and the bench list
+  asks for hookup wire and bare wire on two lines, each with its own gauges and length.
 - **Place on the Board left parts off a board that had room for them.** It laid the design
   out in lanes with a hole between parts and a row between lanes, and whatever the lanes had
   no room for stayed in the design with a count in the status bar -- a 24-part circuit on a
