@@ -88,6 +88,10 @@ closed without a bump.
   parse stylesheet" three times. A test now reads the source for that mistake's shape --
   a plain string glued onto an f-string, still holding a doubled brace -- and this was the
   only one.
+- **Opening the 3D view hung the window on macOS with Qt 6.10 or newer.** Every frame the
+  panel drew asked Qt for another, so the window stopped answering the moment the panel
+  opened. On that combination the panel no longer paints on screen itself; everywhere else
+  it is drawn exactly as before.
 - **Place on the Board left parts off a board that had room for them.** It laid the design
   out in lanes with a hole between parts and a row between lanes, and whatever the lanes had
   no room for stayed in the design with a count in the status bar -- a 24-part circuit on a

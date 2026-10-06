@@ -5366,6 +5366,20 @@ def test_the_3d_panel_starts_closed_however_it_was_left() -> None:
     _close(second)
 
 
+def test_the_3d_panel_stops_painting_on_screen_only_where_that_hangs() -> None:
+    """On macOS from Qt 6.10 a paint-on-screen VTK widget renders, is exposed by its own
+    render, and renders again, and the window never answers. Showing it takes a real Cocoa
+    window, which a suite on the offscreen platform never has, so the change is held to
+    exactly where it was measured: every other setup keeps the panel it always drew."""
+    from perfboard_studio.ui.main import vtk_paints_on_screen
+
+    assert vtk_paints_on_screen("darwin", "6.9.3")
+    for hangs in ("6.10.0", "6.11.1", "7.0.0"):
+        assert not vtk_paints_on_screen("darwin", hangs)
+    for platform in ("win32", "linux"):
+        assert vtk_paints_on_screen(platform, "6.11.1")
+
+
 def test_choosing_a_language_records_it_for_the_next_start(monkeypatch) -> None:
     """Applied at the next start rather than live: every label in the window was
     translated once as it was built, and the widgets a rebuild missed would be exactly

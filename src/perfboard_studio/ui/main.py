@@ -49,6 +49,7 @@ from PySide6.QtCore import (
     QTimer,
     QTranslator,
     QUrl,
+    qVersion,
 )
 from PySide6.QtGui import (
     QAction,
@@ -3253,6 +3254,22 @@ class _OpensPanel(QObject):
         return False
 
 
+def vtk_paints_on_screen(platform: str, qt_version: str) -> bool:
+    """Whether the 3D panel may keep ``WA_PaintOnScreen``, which VTK's widget sets for itself.
+
+    NOT ON macOS FROM Qt 6.10. There every ``Render()`` of a paint-on-screen widget posts a
+    fresh expose, the widget's ``paintEvent`` renders again, and the event loop never gets
+    a turn: the window stops answering the moment the 3D panel opens. Measured on a bare
+    ``QVTKRenderWindowInteractor`` with VTK 9.6 and 9.7 -- Qt 6.9 paints once. Turned off
+    only where it was measured to hang, because nothing here can see a Mac: every setup
+    that has always drawn the panel keeps drawing it exactly as before.
+    """
+    if platform != "darwin":
+        return True
+    major, minor = (int(piece) for piece in qt_version.split(".")[:2])
+    return (major, minor) < (6, 10)
+
+
 class _FrameOnFirstSize(QObject):
     """Frames the 3D panel once, when its render window first has a size to frame it in.
 
@@ -4127,6 +4144,8 @@ class MainWindow(QMainWindow):
             from vtkmodules.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
 
             widget: Any = QVTKRenderWindowInteractor()  # type: ignore[no-untyped-call]
+            if not vtk_paints_on_screen(sys.platform, qVersion()):
+                widget.setAttribute(Qt.WidgetAttribute.WA_PaintOnScreen, False)
             ren, _stats = view3d.build_renderer(
                 self.bus.document,
                 self.lookup,
