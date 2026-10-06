@@ -2353,6 +2353,32 @@ def test_insulated_wire_takes_its_nets_colour_from_the_build_guides_convention()
         assert name in _INSULATION_SCREEN, name
 
 
+def test_a_wire_s_own_colour_is_drawn_the_same_in_both_views() -> None:
+    """The 3D view read a wire's own colour only as #rrggbb, so one the document called
+    "red" was red on the board and its net's colour in 3D. Both views now read it through
+    view2d.explicit_colour, and what no reader understands falls back to the net's colour in
+    both, rather than the 2D view painting an invalid QColor -- black."""
+    from perfboard_studio.ui import view3d
+    from perfboard_studio.ui.view2d import explicit_colour
+
+    board = _load_dense().board
+    path = (HoleCoord(1, 1), HoleCoord(5, 1))
+
+    def sleeve(color: str | None) -> tuple[float, float, float]:
+        wire = WireConductor(id="w", path=path, kind="insulated-wire", color=color)
+        # The tinned core first, then the sleeve over it; the solids at the ends follow.
+        return view3d.build_conductor(wire, board, net_class="signal")[1].GetProperty().GetColor()
+
+    for value, hex_name in (("red", "#ff0000"), ("Blue", "#0000ff"), ("#1e90ff", "#1e90ff")):
+        colour = explicit_colour(value)
+        assert colour is not None and colour.name() == hex_name
+        expected = [view3d._to_linear(c) for c in (colour.redF(), colour.greenF(), colour.blueF())]
+        assert sleeve(value) == pytest.approx(expected)
+
+    assert explicit_colour("#12") is None and explicit_colour(" ") is None
+    assert sleeve("#12") == sleeve(None)
+
+
 def test_no_conductor_is_drawn_in_the_error_colour() -> None:
     """Red means "this is wrong" -- the DRC outline and the R5' risk ring. Every
     insulated wire used to be red as well, so a completely correct board looked alarming

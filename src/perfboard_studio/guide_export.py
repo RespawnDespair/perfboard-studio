@@ -44,8 +44,8 @@ from typing import Any
 from .drc import MATERIAL_LABELS
 from .geometry import board_size_mm, format_hole
 from .guide import (
-    BARE_WIRE_COLOUR,
     TEMPLATE_MARGIN_MM,
+    WIRE_INK,
     Checkpoint,
     ConductorStep,
     Guide,
@@ -737,14 +737,6 @@ def _html_check(check: Checkpoint, dom_id: str, say: Phrasebook | None = None) -
 # Wire templates (guide.wire_template), as SVG in millimetres
 # ---------------------------------------------------------------------------
 
-#: Ink for each wire colour the guide can name: ``COLOR_BY_NET_CLASS``, ``SIGNAL_COLORS``
-#: and bare wire's metal. A test holds this to those lists, so a colour added there cannot
-#: be drawn as nothing in particular here.
-WIRE_INK: dict[str, str] = {
-    "red": "#d32f2f", "black": "#212121", "yellow": "#f2c418", "green": "#2e9d4f",
-    "blue": "#1e6fd9", "white": "#f7f7f7", "orange": "#f07a18", "violet": "#8b4fd1",
-    "grey": "#8d8d8d", "brown": "#7b4a23", BARE_WIRE_COLOUR: "#a9abae",
-}
 #: Stripped copper, at both ends of an insulated wire.
 _COPPER_INK = "#c8783a"
 #: The bends -- the same blue on the shape and on the straightened wire, solid where the
@@ -766,6 +758,8 @@ RULER_MM = 50
 
 
 def _wire_ink(cut: WireCut) -> tuple[str, float]:
+    """A wire's ink and drawn width. A colour the guide cannot ink -- a word a document
+    gave its wire that is no stocked colour -- is drawn grey, under its own name."""
     ink = WIRE_INK.get(cut.colour, WIRE_INK["grey"])
     return ink, _INSULATED_MM if cut.insulated else _BARE_MM
 

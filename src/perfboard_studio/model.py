@@ -734,7 +734,10 @@ class WireConductor:
     kind: Literal["bare-wire", "insulated-wire", "top-jumper"] = "bare-wire"
     side: BoardSide = "bottom"
     gauge_awg: int | None = None
-    #: Insulation colour, used by the cut list and the guide's colour convention.
+    #: The wire's own insulation colour -- a name ("red") or a hex ("#1e6fd9") -- or None
+    #: for its net's (``guide.COLOR_BY_NET_CLASS`` / ``SIGNAL_COLORS``). Both views read it
+    #: with ``ui/view2d.explicit_colour``; the cut list names the reel it is cut from with
+    #: ``guide.stocked_colour``.
     color: str | None = None
     net_id: NetId | None = None
     layer_z: int = 0

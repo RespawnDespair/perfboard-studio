@@ -708,11 +708,57 @@ def test_the_guide_ends_with_every_wire_at_one_to_one() -> None:
     assert not re.search(r"\.tpl[^{]*\{[^}]*max-width", off_screen)
 
 
-def test_every_wire_colour_the_guide_names_has_ink() -> None:
-    from perfboard_studio.guide_export import WIRE_INK
+def test_every_wire_colour_the_guide_names_has_ink_that_is_called_by_that_name() -> None:
+    """One table, two questions: what a stocked colour looks like on paper, and which
+    stocked colour a document's own hex is called. Each ink must be called its own name, or
+    a wire given exactly our blue would be cut from some other reel."""
+    from perfboard_studio.guide import WIRE_INK, stocked_colour
 
     named = {*COLOR_BY_NET_CLASS.values(), *SIGNAL_COLORS, BARE_WIRE_COLOUR}
     assert named <= WIRE_INK.keys()
+    for name, ink in WIRE_INK.items():
+        if name != BARE_WIRE_COLOUR:
+            assert stocked_colour(ink) == name, (name, ink)
+
+
+def test_a_wire_s_own_colour_is_the_reel_it_is_cut_from() -> None:
+    """The document may give a wire its own colour, which both views draw; the cut list
+    named the net's colour instead, so the screen said blue and the bench was told black.
+    A hex is the stocked colour it would be called -- CSS orange is orange, though the
+    nearest ink to it by RGB is yellow -- a stocked name is itself, any other word is
+    printed as written, and a '#' that is no colour is no choice."""
+    from perfboard_studio.guide import stocked_colour
+
+    assert stocked_colour(None) is None and stocked_colour("  ") is None
+    assert stocked_colour("#ffa500") == "orange"
+    assert stocked_colour("#1e90ff") == "blue"
+    assert stocked_colour("#8b4513") == "brown"
+    assert stocked_colour("#fff") == "white"
+    assert stocked_colour(" Red ") == "red"
+    assert stocked_colour("gray") == "grey"
+    assert stocked_colour("pink") == "pink"
+    assert stocked_colour("#12") is None
+
+    insulated = "insulated-wire"
+    doc = make_doc(
+        components=(component("R1", "r-axial-4", hole(2, 2)),),
+        conductors=(
+            WireConductor(
+                id="cond-1", path=(hole(2, 2), hole(6, 2)), net_id="n-gnd", kind=insulated,
+                color="#1e90ff",
+            ),
+            WireConductor(
+                id="cond-2", path=(hole(2, 4), hole(6, 4)), net_id="n-gnd", kind=insulated
+            ),
+            WireConductor(id="cond-3", path=(hole(2, 6), hole(6, 6)), color="red"),
+        ),
+        nets=(net("n-gnd", "GND", "ground", (("R1", "1"), ("R1", "2"))),),
+    )
+    guide = build_guide(doc, REGISTRY)
+    colours = {cut.conductor_id: cut.colour for cut in guide.cut_list}
+    assert colours == {"cond-1": "blue", "cond-2": "black", "cond-3": BARE_WIRE_COLOUR}
+    hookup = next(tool for tool in guide.tools if tool.startswith("Hookup wire"))
+    assert "black, blue" in hookup
 
 
 def test_wire_colours_follow_the_convention_and_are_stable() -> None:

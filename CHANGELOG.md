@@ -119,6 +119,14 @@ closed without a bump.
   for wires with no insulation at all, and the bench list asked for hookup wire in colours
   only the bare runs had been given. Bare wire is now "tinned copper", and the bench list
   asks for hookup wire and bare wire on two lines, each with its own gauges and length.
+- **A wire given its own colour was cut from the net's.** A document can colour a wire
+  itself, and the board view drew that colour while the build guide's cut list, step and
+  bench list named the net's -- the screen said blue and the bench was told black. The
+  guide now names the colour the wire was given: a stocked name as it is, a hex as the
+  stocked colour it would be called ("#ffa500" is orange), any other word as written. The
+  3D view read only "#rrggbb" and drew a wire called "red" in its net's colour; it now
+  reads the colour exactly as the board view does, and a colour neither can read falls
+  back to the net's in both instead of the board view painting it black.
 - **Place on the Board left parts off a board that had room for them.** It laid the design
   out in lanes with a hole between parts and a row between lanes, and whatever the lanes had
   no room for stayed in the design with a count in the status bar -- a 24-part circuit on a

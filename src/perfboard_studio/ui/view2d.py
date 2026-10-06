@@ -273,6 +273,21 @@ def insulation_color(net_class: NetClass | None, signal_index: int) -> QColor:
     name = fixed if fixed is not None else SIGNAL_COLORS[signal_index % len(SIGNAL_COLORS)]
     return _INSULATION_SCREEN.get(name, CONDUCTOR_STYLE["insulated-wire"][0])
 
+
+def explicit_colour(value: str | None) -> QColor | None:
+    """A conductor's OWN colour (``WireConductor.color``), or None for its net's or kind's.
+
+    A name or a hex, read as ``QColor`` reads them. Anything ``QColor`` cannot read is no
+    colour at all: an invalid ``QColor`` paints black, a wire nobody chose. The 3D view
+    asks this too, so the two views cannot disagree about which wire is blue -- it used to
+    read only ``#rrggbb`` and drew a wire named "red" in its net's colour -- and the build
+    guide names the same choice in words (``guide.stocked_colour``).
+    """
+    if not value or not value.strip():
+        return None
+    colour = QColor(value.strip())
+    return colour if colour.isValid() else None
+
 #: Millimetres of scene reserved outside the substrate for the hole-address rulers.
 RULER_MARGIN_MM = 6.0
 
@@ -1554,9 +1569,9 @@ class ConductorItem(QGraphicsItem):
 
     def _colour(self) -> QColor:
         """This conductor's colour: its own if it has one, else its net's, else its kind's."""
-        explicit = getattr(self.conductor, "color", None)
-        if explicit:
-            return QColor(explicit)
+        explicit = explicit_colour(getattr(self.conductor, "color", None))
+        if explicit is not None:
+            return explicit
         if self.conductor.kind in ("insulated-wire", "top-jumper"):
             return insulation_color(self.net_class, self.signal_index)
         return CONDUCTOR_STYLE.get(self.conductor.kind, (QColor("#888"), 0.6, False))[0]

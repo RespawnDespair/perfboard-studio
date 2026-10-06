@@ -47,6 +47,7 @@ what the output looks like.
 
 from __future__ import annotations
 
+import colorsys
 import dataclasses
 import itertools
 import math
@@ -227,6 +228,80 @@ SIGNAL_COLORS: tuple[str, ...] = (
 #: net's insulation colour belongs to insulation, and a bare wire has none -- "black AWG 24"
 #: for a ground run of bare wire is a reel nobody owns.
 BARE_WIRE_COLOUR = "tinned copper"
+
+#: Every colour the guide can name, as ink: what a wire of that colour looks like on paper.
+#: The stocked hookup-wire colours (``COLOR_BY_NET_CLASS`` and ``SIGNAL_COLORS``) and bare
+#: wire's metal. Two consumers: ``stocked_colour`` measures a document's own colour against
+#: the stocked ones, and the wire templates are drawn in it (``guide_export``).
+WIRE_INK: dict[str, str] = {
+    "red": "#d32f2f", "black": "#212121", "yellow": "#f2c418", "green": "#2e9d4f",
+    "blue": "#1e6fd9", "white": "#f7f7f7", "orange": "#f07a18", "violet": "#8b4fd1",
+    "grey": "#8d8d8d", "brown": "#7b4a23", BARE_WIRE_COLOUR: "#a9abae",
+}
+
+#: Other spellings of a stocked colour that a document may hold.
+_COLOUR_ALIASES: dict[str, str] = {"gray": "grey", "purple": "violet"}
+
+
+def stocked_colour(stored: str | None) -> str | None:
+    """The hookup-wire colour a wire's OWN colour (``WireConductor.color``) asks for, or
+    None when it has none and the net's convention decides.
+
+    The document may hold a name ("red") or a hex ("#1e6fd9") -- the 2D view reads either,
+    through ``QColor``. A stocked name is itself. A hex is the stocked colour it would be
+    CALLED (:func:`_named_hue`), because the cut list is read at the bench, where "#1e6fd9"
+    is no reel anybody owns and "blue" is. Any other word is printed as it was written:
+    somebody chose it, and a guess at what "pink" should be instead would be the guide
+    overruling the board. A ``#`` that is no colour at all is no choice either, and the
+    convention decides, as it does in both views.
+    """
+    if not stored or not stored.strip():
+        return None
+    word = stored.strip()
+    name = _COLOUR_ALIASES.get(word.lower(), word.lower())
+    if name in WIRE_INK and name != BARE_WIRE_COLOUR:
+        return name
+    if not word.startswith("#"):
+        return word
+    rgb = _hex_rgb(word)
+    return None if rgb is None else _named_hue(rgb)
+
+
+def _hex_rgb(value: str) -> tuple[int, int, int] | None:
+    """``#rrggbb`` or ``#rgb`` as three bytes, or None for anything else."""
+    digits = value[1:] if value.startswith("#") else ""
+    if len(digits) == 3:
+        digits = "".join(digit * 2 for digit in digits)
+    if len(digits) != 6:
+        return None
+    try:
+        return int(digits[0:2], 16), int(digits[2:4], 16), int(digits[4:6], 16)
+    except ValueError:
+        return None
+
+
+#: Where each hue ends, in degrees, going round from red. Wire is sold in a handful of
+#: colours, so this is a question of what a colour is CALLED, and that is its hue: the
+#: nearest stocked ink by RGB distance named CSS orange (#ffa500) "yellow".
+_HUE_NAMES: tuple[tuple[float, str], ...] = (
+    (15, "red"), (42, "orange"), (70, "yellow"), (170, "green"), (255, "blue"),
+    (340, "violet"), (360, "red"),
+)
+
+
+def _named_hue(rgb: tuple[int, int, int]) -> str:
+    """The stocked wire colour a colour would be called: black, grey or white when it has
+    too little colour to have a hue, brown when it is a dark orange, else by its hue.
+    Every ink in ``WIRE_INK`` comes back as its own name; a test holds that."""
+    hue, saturation, value = colorsys.rgb_to_hsv(*(channel / 255 for channel in rgb))
+    if value < 0.2:
+        return "black"
+    if saturation < 0.2:
+        return "white" if value > 0.85 else "black" if value < 0.3 else "grey"
+    degrees = hue * 360
+    if 15 <= degrees < 42 and value < 0.7:
+        return "brown"
+    return next(name for end, name in _HUE_NAMES if degrees < end)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1112,8 +1187,20 @@ def _conductor_step(
     elif conductor.kind in ("bare-wire", "insulated-wire", "top-jumper"):
         insulated = conductor.kind != "bare-wire"
         stored_awg = conductor.gauge_awg if isinstance(conductor, WireConductor) else None
+        # The wire's own colour, if the document gives it one, before the net's convention:
+        # the 2D and 3D views already draw it, and a cut list that named another colour
+        # had the builder cutting black for a wire the screen showed blue.
+        stored_colour = conductor.color if isinstance(conductor, WireConductor) else None
         cut = _wire_cut(
-            conductor.id, net_name, path, board, current_a, stored_awg, color, insulated, options
+            conductor.id,
+            net_name,
+            path,
+            board,
+            current_a,
+            stored_awg,
+            stocked_colour(stored_colour) or color,
+            insulated,
+            options,
         )
         if not fits_hole(cut.awg, board.drill_diameter):
             # DRC's wire-too-thick-for-hole says the same thing, from the same function; it

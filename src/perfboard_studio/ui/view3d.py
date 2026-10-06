@@ -3557,7 +3557,7 @@ def build_conductor(
         _finish(core.GetProperty(), BRIGHT_TIN)
         actors = [core]
         if body is not None:
-            rgb = _hex_rgb(getattr(cond, "color", None), _insulation_rgb(net_class, signal_index))
+            rgb = _own_rgb(cond) or _insulation_rgb(net_class, signal_index)
             body.GetProperty().SetColor(*rgb)
             _finish(body.GetProperty(), INSULATION)
             actors.append(body)
@@ -3566,7 +3566,7 @@ def build_conductor(
         if swell is not None:
             # Squashed about the copper, for TRACE_FLATTEN's reason.
             _flatten_about(actor, joint_z)
-        rgb = _hex_rgb(getattr(cond, "color", None), SOLDER_RGB if is_trace else BARE_RGB)
+        rgb = _own_rgb(cond) or (SOLDER_RGB if is_trace else BARE_RGB)
         actor.GetProperty().SetColor(*rgb)
         # Solder is metal and it is ROUGH metal -- a broad soft sheen rather than the tight
         # glint tinned wire gives. Making it smooth is what once made a run look like wire,
@@ -3768,6 +3768,16 @@ def build_joints(doc: PerfDocument, lookup: FootprintLookup) -> list[vtk.vtkActo
     actor.GetProperty().SetColor(*SOLDER_RGB)
     _finish(actor.GetProperty(), SOLDER_MAT)
     return [actor]
+
+
+def _own_rgb(cond: Conductor) -> tuple[float, float, float] | None:
+    """A conductor's own colour, read by the 2D view's reader (``view2d.explicit_colour``),
+    or None. Reading it here as ``#rrggbb`` alone drew a wire the document called "red" in
+    its net's colour while the 2D view drew it red."""
+    from .view2d import explicit_colour
+
+    colour = explicit_colour(getattr(cond, "color", None))
+    return None if colour is None else (colour.redF(), colour.greenF(), colour.blueF())
 
 
 def _insulation_rgb(net_class: NetClass | None, signal_index: int) -> tuple[float, float, float]:
