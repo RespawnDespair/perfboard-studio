@@ -7034,14 +7034,21 @@ def test_selecting_a_part_on_the_board_lights_up_its_symbol() -> None:
 
 def test_a_redraw_does_not_move_the_view() -> None:
     """The rule view3d.populate_renderer follows about the camera, for the same reason:
-    editing one net must not throw away the part of the sheet somebody was looking at."""
+    editing one net must not throw away the part of the sheet somebody was looking at.
+    Zoomed through the gesture a person makes: a fitted sheet is fitted again on a redraw
+    (it may have grown), and a sheet that did not grow comes back exactly where it was."""
     window = _open_schematic(_golden_document("ne555"))
-    window.schematic_view.scale(2.0, 2.0)
-    before = window.schematic_view.transform()
+    view = window.schematic_view
+    fitted = view.transform()
+    window._refresh_schematic_panel()
+    assert view.transform() == fitted
+
+    view.zoom_by(2.0)
+    before = view.transform()
 
     window._refresh_schematic_panel()
 
-    assert window.schematic_view.transform() == before
+    assert view.transform() == before
     _close(window)
 
 
@@ -8498,6 +8505,61 @@ def test_a_fitted_sheet_stays_fitted_while_the_panel_finds_its_size() -> None:
         view.resize(1200, 800)
         QApplication.processEvents()
         assert view.current_scale() != chosen
+    finally:
+        view.close()
+        view.deleteLater()
+
+
+def test_a_fitted_sheet_does_not_fit_itself_for_ever() -> None:
+    """Paste on the sheet hung the window. The scene is the sheet plus a pad, so a fit of
+    the sheet brought an as-needed scroll bar in; the bar was a resize, the resize fitted
+    again, the scene fitted, the bar went, and round -- over 8000 fits in 50 ms in a 300 px
+    panel with nobody touching it. A fitted sheet has no bars; a zoom brings them back and
+    is not undone by them; and a sheet that grows while fitted is fitted again, or the new
+    part would be off the edge of a view with nothing to scroll it by."""
+    import dataclasses
+
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+
+    from perfboard_studio.schematic import build_schematic
+    from perfboard_studio.ui.viewsch import SchematicView
+
+    class Counting(SchematicView):
+        fits = 0
+
+        def fit(self) -> None:
+            self.fits += 1
+            # A fuse: the loop runs inside one processEvents, so a regression would hang
+            # the suite rather than fail it. Past a hundred, stop fitting and let it count.
+            if self.fits < 100:
+                super().fit()
+
+    off, needed = Qt.ScrollBarPolicy.ScrollBarAlwaysOff, Qt.ScrollBarPolicy.ScrollBarAsNeeded
+    drawing = build_schematic(_load_dense(), footprint_lookup())
+    view = Counting()
+    try:
+        view.resize(300, 300)
+        view.show()
+        QApplication.processEvents()
+        view.set_drawing(drawing)
+        view.fits = 0
+        for _ in range(20):
+            QApplication.processEvents()
+        assert view.fits <= 1
+        assert view.horizontalScrollBarPolicy() == view.verticalScrollBarPolicy() == off
+
+        wider = dataclasses.replace(drawing, width=drawing.width * 2)
+        view.set_drawing(wider)
+        QApplication.processEvents()
+        shown = view.mapToScene(view.viewport().rect()).boundingRect()
+        assert shown.right() >= wider.width and shown.bottom() >= wider.height
+
+        view.zoom_by(1.5)
+        chosen = view.current_scale()
+        QApplication.processEvents()
+        assert view.horizontalScrollBarPolicy() == view.verticalScrollBarPolicy() == needed
+        assert view.current_scale() == chosen
     finally:
         view.close()
         view.deleteLater()

@@ -694,8 +694,7 @@ class SchematicView(QGraphicsView):
         self.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         self.setDragMode(QGraphicsView.DragMode.NoDrag)
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._show_scroll_bars(True)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         # The sheet is a drop target for its own symbols and for a row dragged out of the
@@ -772,7 +771,10 @@ class SchematicView(QGraphicsView):
         self.item.pending_pin = self.pending_pin
         self._scene.addItem(self.item)
         self._scene.setSceneRect(self.item.boundingRect())
-        if not self._fitted and drawing.symbols:
+        # A fitted sheet STAYS fitted when it changes size, as it does when the panel does:
+        # a paste or a part parked past the edge widens it, and with no scroll bars on a
+        # fitted sheet (see fit) the new part would be somewhere nothing can scroll to.
+        if drawing.symbols and not self._user_framed:
             self.fit()
 
     def set_highlight(self, refs: Iterable[str], net_ids: Iterable[str]) -> None:
@@ -893,10 +895,35 @@ class SchematicView(QGraphicsView):
         sheet = QRectF(0.0, 0.0, self.item.drawing.width, self.item.drawing.height)
         if sheet.isEmpty():
             return
+        # NO SCROLL BARS ON A FITTED SHEET. The scene is the sheet plus BOUNDS_PAD_MM, so a
+        # fit of the sheet leaves the scene overflowing by the pad; an as-needed bar comes
+        # in, takes its width off the viewport, and that is a resize -- which fits again,
+        # finds the scene now fits, takes the bar away, and is resized back. Measured: over
+        # 8000 fits in 50 ms in a 300 px panel nobody was touching, and no frame drawn. A
+        # fitted sheet is all on screen, so the bars would show nothing anyway.
+        self._show_scroll_bars(False)
         self.fitInView(sheet, Qt.AspectRatioMode.KeepAspectRatio)
         self._fitted = True
         # Fit hands the view back to the sheet: the next resize fits it again.
         self._user_framed = False
+
+    def _show_scroll_bars(self, shown: bool) -> None:
+        policy = (
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded
+            if shown
+            else Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self.setHorizontalScrollBarPolicy(policy)
+        self.setVerticalScrollBarPolicy(policy)
+
+    def _hand_over_framing(self) -> None:
+        """Somebody zoomed or panned: the view is theirs, and the scroll bars come back.
+
+        Marked theirs BEFORE the bars return, because a bar coming in is itself a resize,
+        and a resize of a view still marked fitted would fit it -- undoing the very zoom
+        that brought the bar in."""
+        self._user_framed = True
+        self._show_scroll_bars(True)
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         """Keep a fitted sheet fitted while the panel finds its size.
@@ -965,7 +992,7 @@ class SchematicView(QGraphicsView):
         if factor != 1.0:
             self.scale(factor, factor)
         self._fitted = True
-        self._user_framed = True
+        self._hand_over_framing()
         event.accept()
 
     def zoom_by(self, factor: float) -> None:
@@ -978,7 +1005,7 @@ class SchematicView(QGraphicsView):
         self.scale(factor, factor)
         self.setTransformationAnchor(anchor)
         self._fitted = True
-        self._user_framed = True
+        self._hand_over_framing()
 
     #: Every tool that draws a note by dragging a box out.
     SHAPE_TOOLS: tuple[str, ...] = ("line", "rectangle", "circle")
@@ -1395,7 +1422,7 @@ class SchematicView(QGraphicsView):
 
     def _start_pan(self, event: QMouseEvent) -> None:
         self._panning = True
-        self._user_framed = True
+        self._hand_over_framing()
         self._pan_origin = event.position()
         self.setCursor(Qt.CursorShape.ClosedHandCursor)
 

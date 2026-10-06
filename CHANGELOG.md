@@ -75,6 +75,14 @@ closed without a bump.
 
 ### Fixed
 
+- **The schematic could hang the window by fitting itself for ever.** The sheet is drawn
+  with a small margin round it, so fitting the sheet left that margin overflowing; a scroll
+  bar came in, which made the panel smaller, which fitted the sheet again, which took the
+  bar away -- over 8000 fits in 50 ms in a small panel, and no frame drawn. A paste that
+  widened the sheet was enough to start it. A fitted sheet now shows no scroll bars at all;
+  zooming or panning brings them back. A sheet that grows while it is fitted -- a paste, a
+  new part parked past the edge -- is fitted again, rather than left with the new part
+  off the edge of a view nothing can scroll.
 - **Place on the Board left parts off a board that had room for them.** It laid the design
   out in lanes with a hole between parts and a row between lanes, and whatever the lanes had
   no room for stayed in the design with a count in the status bar -- a 24-part circuit on a
