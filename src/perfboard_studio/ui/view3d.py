@@ -87,7 +87,14 @@ from .bodies import (
     style_for,
     surface_for,
 )
-from .moduleart import PlacedArt, fit_module_art
+from .moduleart import (
+    TQFP32_BODY_MM,
+    TQFP32_LEG_MM,
+    TQFP32_LEGS_PER_SIDE,
+    TQFP32_PITCH_MM,
+    PlacedArt,
+    fit_module_art,
+)
 from .partmodels import (
     ModelPiece,
     PartModel,
@@ -3281,10 +3288,10 @@ def _module_pieces(body: _WorldBody, footprint: Any, comp: Any, board: Board) ->
 
     WHAT IS ON THE MODULE is not in the id -- it carries its tallest part's height and no
     more. For a module the part's VALUE names and whose board the layout fits (an LM2596
-    buck, an SN65HVD230 breakout: ``moduleart``), the parts themselves are drawn, none
-    taller than that height; for every other one it is one dark block that tall in the
-    middle of the board: an honest envelope rather than a guessed chip, and the height DRC
-    measures either way.
+    buck, an SN65HVD230 breakout, and the catalog's devkits, Nano, Pico and D1 mini:
+    ``moduleart``), the parts themselves are drawn, none taller than that height; for every
+    other one it is one dark block that tall in the middle of the board: an honest envelope
+    rather than a guessed chip, and the height DRC measures either way.
     """
     dims = footprint.body.dims
     seat = float(dims.get("seat", MODULE_SEAT_SOCKETED_MM))
@@ -3382,7 +3389,8 @@ _MODULE_PAD_RADIUS_MM = 0.9
 # ---------------------------------------------------------------------------
 #
 # Small parts, each drawn from the few solids that make it read as itself at this view's
-# zoom: a can's rolled rim and vent, a regulator's tab and legs, a trimmer's brass screw.
+# zoom: a can's rolled rim and vent, a regulator's tab and legs, a trimmer's brass screw, a
+# radio module's shield and antenna, a chip turned on its corner.
 # They are not packages anybody solders here -- they are on somebody else's board -- so they
 # need neither leads through a hole nor a footprint, only to be the right size in the right
 # place. Their colours are what the parts are made of, named here once, because no
@@ -3421,6 +3429,12 @@ class _ArtSolid:
     axis: str
     facing: float
     text: str
+    #: For a part turned on its corner (``PlacedArt.diagonal``): the world angle, in degrees,
+    #: of the corner its feature is at. ``axis`` and ``facing`` say nothing about it.
+    corner: float | None = None
+    antenna: float = 0.0
+    inset: float = 0.0
+    colour: str = ""
 
     def at(self, along: float, across: float, z: float) -> tuple[float, float, float]:
         """A point ``along`` the part's own axis and ``across`` it from its centre, ``z``
@@ -3453,6 +3467,9 @@ def _art_solid(placed: PlacedArt, comp: Any, board: Board, base: float) -> _ArtS
     along_x = abs(fx) > abs(fy)
     turned = int(comp.rotation) in (90, 270)
     size_x, size_y = (placed.size_y, placed.size_x) if turned else (placed.size_x, placed.size_y)
+    # Turned on its corner (``moduleart.outline``), a part has a corner where its own axis
+    # meets its edge, and that corner is its feature's.
+    corner = math.degrees(math.atan2(fy, fx)) if placed.diagonal else None
     return _ArtSolid(
         kind=placed.kind,
         x=comp.anchor.col * board.pitch + tx,
@@ -3464,6 +3481,10 @@ def _art_solid(placed: PlacedArt, comp: Any, board: Board, base: float) -> _ArtS
         axis="x" if along_x else "y",
         facing=(1.0 if fx > 0 else -1.0) if along_x else (1.0 if fy > 0 else -1.0),
         text=placed.text,
+        corner=corner,
+        antenna=placed.antenna,
+        inset=placed.inset,
+        colour=placed.colour,
     )
 
 
@@ -3775,15 +3796,534 @@ def _art_silk(s: _ArtSolid) -> list[_Piece]:
     ]
 
 
+#: A radio module's own board, its shield can, the antenna trace printed past the can,
+#: and what is etched on the can.
+_ART_RF_BOARD_RGB = _hex_rgb("#15171d", BODY_RGB)
+_ART_RF_BOARD_MM = 0.8
+_ART_SHIELD_RGB = _hex_rgb("#c9cbce", LEAD_RGB)
+_ART_ANTENNA_RGB = _hex_rgb("#8c7440", PAD_RGB)
+_ART_ETCH_RGB = _hex_rgb("#5f6268", BODY_RGB)
+#: A USB socket's shell, and the dark of its mouth.
+_ART_USB_RGB = _hex_rgb("#c4c6c9", LEAD_RGB)
+_ART_MOUTH_RGB = _hex_rgb("#101113", BODY_RGB)
+#: A tactile switch with nothing said about its colour: a black body under a steel frame.
+_ART_SWITCH_RGB = _hex_rgb("#2a2b2f", BODY_RGB)
+_ART_FRAME_RGB = _hex_rgb("#b9bcc0", LEAD_RGB)
+#: A chip LED with nothing said about its lens: water-clear over a white package.
+_ART_LENS_RGB = _hex_rgb("#e7e1cc", BODY_RGB)
+_ART_PACKAGE_RGB = _hex_rgb("#efede6", BODY_RGB)
+#: A crystal's ceramic base under its lid.
+_ART_CERAMIC_RGB = _hex_rgb("#d8cfb8", BODY_RGB)
+
+
+def _art_rf_module(s: _ArtSolid) -> list[_Piece]:
+    """A radio module: its own dark board, the shield can over all of it but the antenna,
+    the antenna's meander printed on what the can leaves bare, and the module's name
+    etched across the can -- the can and the antenna are what tell a WROOM from a chip."""
+    board = min(_ART_RF_BOARD_MM, s.height / 3)
+    f = s.facing
+    pieces = [
+        _Piece(
+            source=s.box(s.length, s.width, board),
+            rgb=_ART_RF_BOARD_RGB,
+            position=s.at(0.0, 0.0, board / 2),
+            material=MASK,
+        )
+    ]
+    # The can, from the far end's inset to where the antenna starts.
+    can_length = s.length - s.antenna - s.inset
+    can_width = s.width - 2 * s.inset
+    can_height = s.height - board
+    can_mid = f * (s.inset - s.antenna) / 2
+    pieces.append(
+        _Piece(
+            source=s.box(can_length, can_width, can_height, moulded=True),
+            rgb=_ART_SHIELD_RGB,
+            position=s.at(can_mid, 0.0, board + can_height / 2),
+            material=STEEL,
+        )
+    )
+    # The antenna: a row of teeth standing on a feed line across the bare end, printed
+    # copper under the mask.
+    teeth = 5
+    trace = 0.35
+    reach = s.width * 0.8
+    depth = s.antenna * 0.55
+    near = f * (s.length / 2 - s.antenna / 2 - depth / 2)  # the feed line
+    far = near + f * depth
+    step = reach / (2 * teeth - 1)
+    proud = board + 0.02
+    pieces.append(
+        _Piece(
+            source=s.box(trace, reach, 0.03),
+            rgb=_ART_ANTENNA_RGB,
+            position=s.at(near, 0.0, proud),
+            material=MASK,
+        )
+    )
+    for index in range(2 * teeth):
+        across = -reach / 2 + index * step
+        pieces.append(
+            _Piece(
+                source=s.box(depth, trace, 0.03),
+                rgb=_ART_ANTENNA_RGB,
+                position=s.at((near + far) / 2, across, proud),
+                material=MASK,
+            )
+        )
+        if index % 2 == 0:
+            pieces.append(
+                _Piece(
+                    source=s.box(trace, step, 0.03),
+                    rgb=_ART_ANTENNA_RGB,
+                    position=s.at(far, across + step / 2, proud),
+                    material=MASK,
+                )
+            )
+    if s.text:
+        glyphs, orientation = s.printed(
+            s.text, min(1.3, can_width * 0.09), can_width * 0.85, across=True
+        )
+        if glyphs is not None:
+            pieces.append(
+                _Piece(
+                    source=glyphs,
+                    rgb=_ART_ETCH_RGB,
+                    position=s.at(can_mid, 0.0, s.height + 0.02),
+                    orientation=orientation,
+                    material=INK,
+                )
+            )
+    return pieces
+
+
+def _art_usb(s: _ArtSolid) -> list[_Piece]:
+    """A USB socket: its metal shell, and the dark of its mouth at the end a cable goes in.
+    The mouth is inside the part's length, so a socket flush with the module's edge does
+    not stand past it."""
+    mouth = 0.08
+    return [
+        _Piece(
+            source=s.box(s.length - mouth, s.width, s.height, moulded=True),
+            rgb=_ART_USB_RGB,
+            position=s.at(-s.facing * mouth / 2, 0.0, s.height / 2),
+            material=STEEL,
+        ),
+        _Piece(
+            source=s.box(mouth, s.width * 0.82, s.height * 0.62),
+            rgb=_ART_MOUTH_RGB,
+            position=s.at(s.facing * (s.length / 2 - mouth / 2), 0.0, s.height / 2),
+            material=MOULDED,
+        ),
+    ]
+
+
+def _art_button(s: _ArtSolid) -> list[_Piece]:
+    """A tactile switch pressed from above: its body, and its round cap. A switch whose
+    colour is not said is black under a steel frame; one that is (a Pico's white BOOTSEL)
+    is that colour all over."""
+    body_h = s.height * 0.6
+    cap_h = s.height - body_h
+    coloured = bool(s.colour)
+    cap_rgb = _hex_rgb(s.colour, _ART_SWITCH_RGB)
+    body_rgb = (cap_rgb[0] * 0.88, cap_rgb[1] * 0.88, cap_rgb[2] * 0.88) if coloured else cap_rgb
+    pieces = [
+        _Piece(
+            source=s.box(s.length, s.width, body_h, moulded=True),
+            rgb=body_rgb,
+            position=s.at(0.0, 0.0, body_h / 2),
+            material=MOULDED,
+        ),
+        _Piece(
+            source=_cylinder(min(s.length, s.width) * 0.3, cap_h, resolution=28),
+            rgb=cap_rgb,
+            position=s.at(0.0, 0.0, body_h + cap_h / 2),
+            orientation=_ALONG_Z,
+            material=MOULDED,
+        ),
+    ]
+    if not coloured:
+        pieces.append(
+            _Piece(
+                source=s.box(s.length - 0.5, s.width - 0.5, 0.06),
+                rgb=_ART_FRAME_RGB,
+                position=s.at(0.0, 0.0, body_h + 0.03),
+                material=STEEL,
+            )
+        )
+    return pieces
+
+
+def _art_side_button(s: _ArtSolid) -> list[_Piece]:
+    """A tactile switch pressed from the side: a steel-framed body and its cap standing
+    out of the ``facing`` end, which is the module's edge."""
+    cap = min(0.6, s.length / 3)
+    body = s.length - cap
+    return [
+        _Piece(
+            source=s.box(body, s.width, s.height, moulded=True),
+            rgb=_ART_FRAME_RGB,
+            position=s.at(-s.facing * cap / 2, 0.0, s.height / 2),
+            material=STEEL,
+        ),
+        _Piece(
+            source=s.box(cap, s.width * 0.4, s.height * 0.55),
+            rgb=_ART_SWITCH_RGB,
+            position=s.at(s.facing * (s.length / 2 - cap / 2), 0.0, s.height / 2),
+            material=MOULDED,
+        ),
+    ]
+
+
+def _art_led(s: _ArtSolid) -> list[_Piece]:
+    """A chip LED: its lens between two tinned ends, in the colour it is said to be. A
+    square one is an RGB LED: a white package with its round, clear cup on top."""
+    if abs(s.length - s.width) < 0.3:
+        return [
+            _Piece(
+                source=s.box(s.length, s.width, s.height * 0.8, moulded=True),
+                rgb=_ART_PACKAGE_RGB,
+                position=s.at(0.0, 0.0, s.height * 0.4),
+                material=MOULDED,
+            ),
+            _Piece(
+                source=_cylinder(min(s.length, s.width) * 0.36, s.height * 0.2, resolution=28),
+                rgb=_hex_rgb(s.colour, _ART_LENS_RGB),
+                position=s.at(0.0, 0.0, s.height * 0.9),
+                orientation=_ALONG_Z,
+                material=LENS,
+            ),
+        ]
+    cap = min(0.3, s.length * 0.2)
+    die = min(s.width, s.length) * 0.3
+    pieces = [
+        _Piece(
+            source=s.box(s.length - 2 * cap, s.width, s.height),
+            rgb=_hex_rgb(s.colour, _ART_LENS_RGB),
+            position=s.at(0.0, 0.0, s.height / 2),
+            material=LENS,
+        ),
+        # The die under the lens, which is what tells an LED from a capacitor its size.
+        _Piece(
+            source=s.box(die, die, 0.03),
+            rgb=_ART_DOT_RGB,
+            position=s.at(0.0, 0.0, s.height + 0.015),
+            material=MOULDED,
+        ),
+    ]
+    for end in (-1.0, 1.0):
+        pieces.append(
+            _Piece(
+                source=s.box(cap, s.width, s.height * 0.7),
+                rgb=LEAD_RGB,
+                position=s.at(end * (s.length / 2 - cap / 2), 0.0, s.height * 0.35),
+                material=TINNED,
+            )
+        )
+    return pieces
+
+
+def _art_qfn(s: _ArtSolid) -> list[_Piece]:
+    """A leadless chip: the flat body, the ends of its pads showing round the bottom edge,
+    the pin-1 dot and its marking."""
+    pad = 0.28
+    pitch = 0.5
+    pieces = [
+        _Piece(
+            source=s.box(s.length, s.width, s.height, moulded=True),
+            rgb=_ART_EPOXY_RGB,
+            position=s.at(0.0, 0.0, s.height / 2),
+            material=MOULDED,
+        )
+    ]
+    # Showing a twentieth of a millimetre past the body, which is all of a pad anybody sees.
+    show = 0.05 - pad / 2
+    ends: list[tuple[float, float, float]] = []
+    for along_side, span in ((False, s.width), (True, s.length)):
+        count = max(int((span - 1.0) / pitch), 1)
+        for sign in (-1.0, 1.0):
+            for index in range(count):
+                offset = (index - (count - 1) / 2) * pitch
+                if along_side:
+                    ends.append(s.at(offset, sign * (s.width / 2 + show), 0.08))
+                else:
+                    ends.append(s.at(sign * (s.length / 2 + show), offset, 0.08))
+    pieces.append(
+        _Piece(
+            source=_box(pad, pad, 0.16),
+            rgb=LEAD_RGB,
+            position=(0.0, 0.0, 0.0),
+            material=TINNED,
+            instances=tuple(ends),
+        )
+    )
+    dot = min(0.35, min(s.length, s.width) * 0.1)
+    pieces.append(
+        _Piece(
+            source=_cylinder(dot, 0.05, resolution=16),
+            rgb=_ART_DOT_RGB,
+            position=s.at(
+                s.facing * (s.length / 2 - dot * 2.2), -(s.width / 2 - dot * 2.2), s.height + 0.02
+            ),
+            orientation=_ALONG_Z,
+            material=MOULDED,
+        )
+    )
+    if s.text:
+        glyphs, orientation = s.printed(s.text, s.width * 0.16, s.length * 0.75)
+        if glyphs is not None:
+            pieces.append(
+                _Piece(
+                    source=glyphs,
+                    rgb=_ART_INK_RGB,
+                    position=s.at(0.0, 0.0, s.height + 0.02),
+                    orientation=orientation,
+                    material=INK,
+                )
+            )
+    return pieces
+
+
+def _mesh_box(mesh: _Mesh, centre: tuple[float, float, float], size: tuple[float, float, float]) -> None:
+    """A box's six faces, outward, into ``mesh``: for the many small solids of one part that
+    turn together, where an actor each would cost more than the part."""
+    (cx, cy, cz), (sx, sy, sz) = centre, size
+    x0, x1, y0, y1, z0, z1 = cx - sx / 2, cx + sx / 2, cy - sy / 2, cy + sy / 2, cz - sz / 2, cz + sz / 2
+    for ring in (
+        [(x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)],
+        [(x0, y0, z0), (x0, y1, z0), (x1, y1, z0), (x1, y0, z0)],
+        [(x0, y0, z0), (x1, y0, z0), (x1, y0, z1), (x0, y0, z1)],
+        [(x1, y1, z0), (x0, y1, z0), (x0, y1, z1), (x1, y1, z1)],
+        [(x1, y0, z0), (x1, y1, z0), (x1, y1, z1), (x1, y0, z1)],
+        [(x0, y1, z0), (x0, y0, z0), (x0, y0, z1), (x0, y1, z1)],
+    ):
+        mesh.polygon(ring)
+
+
+def _art_tqfp32(s: _ArtSolid) -> list[_Piece]:
+    """A TQFP-32: the thin body on its stand-off and eight gull-wing legs down each side,
+    turned on its corner when the module has it so (a Nano's ATmega). Built in the chip's
+    own frame and turned as one: thirty-two legs are one actor, not ninety-six."""
+    body = TQFP32_BODY_MM
+    reach = (s.length - body) / 2
+    standoff = 0.1
+    body_h = s.height - standoff
+    if s.corner is not None:
+        # The chip's sides at an eighth of a turn from its corner, which is its feature.
+        turn = s.corner - 45.0
+        towards = (math.cos(math.radians(s.corner)), math.sin(math.radians(s.corner)))
+    else:
+        turn = 0.0 if s.axis == "x" else 90.0
+        towards = (s.facing, 0.0) if s.axis == "x" else (0.0, s.facing)
+    legs = _Mesh()
+    shoulder = standoff + body_h * 0.45
+    for side in range(4):
+        for index in range(TQFP32_LEGS_PER_SIDE):
+            offset = (index - (TQFP32_LEGS_PER_SIDE - 1) / 2) * TQFP32_PITCH_MM
+            for out, length, z, height in (
+                (body / 2 + reach * 0.25, reach * 0.5, shoulder, 0.15),  # out of the body
+                (body / 2 + reach * 0.55, 0.15, (shoulder + 0.05) / 2, shoulder),  # down
+                (body / 2 + reach * 0.8, reach * 0.4, 0.06, 0.12),  # the foot on its pad
+            ):
+                if side == 0:
+                    legs_at, size = (out, offset), (length, TQFP32_LEG_MM)
+                elif side == 1:
+                    legs_at, size = (-out, offset), (length, TQFP32_LEG_MM)
+                elif side == 2:
+                    legs_at, size = (offset, out), (TQFP32_LEG_MM, length)
+                else:
+                    legs_at, size = (offset, -out), (TQFP32_LEG_MM, length)
+                _mesh_box(legs, (legs_at[0], legs_at[1], z), (size[0], size[1], height))
+    pieces = [
+        _Piece(
+            source=_moulded_box(body, body, body_h, chamfer=0.2),
+            rgb=_ART_EPOXY_RGB,
+            position=(s.x, s.y, s.z + standoff + body_h / 2),
+            orientation=(0.0, 0.0, turn),
+            material=MOULDED,
+        ),
+        _Piece(
+            source=legs.data(),
+            rgb=LEAD_RGB,
+            position=(s.x, s.y, s.z),
+            orientation=(0.0, 0.0, turn),
+            material=TINNED,
+        ),
+    ]
+    # The pin-1 dot, in from the corner its feature is at.
+    dot = (body / 2 - 1.0) * math.sqrt(2.0) if s.corner is not None else body / 2 - 1.0
+    pieces.append(
+        _Piece(
+            source=_cylinder(0.4, 0.05, resolution=16),
+            rgb=_ART_DOT_RGB,
+            position=(s.x + towards[0] * dot, s.y + towards[1] * dot, s.z + s.height + 0.02),
+            orientation=_ALONG_Z,
+            material=MOULDED,
+        )
+    )
+    if s.text:
+        glyphs = _printed(s.text, body * 0.11, body * 0.8)
+        if glyphs is not None:
+            # Along a side, and the way up that reads from the front.
+            upright = turn + 180.0 if math.cos(math.radians(turn)) < -1e-9 else turn
+            pieces.append(
+                _Piece(
+                    source=glyphs,
+                    rgb=_ART_INK_RGB,
+                    position=(s.x, s.y, s.z + s.height + 0.02),
+                    orientation=(0.0, 0.0, upright),
+                    material=INK,
+                )
+            )
+    return pieces
+
+
+#: A SOT-223's body across its own axis, how far its tab and legs reach out of it, and its
+#: three legs' width and pitch.
+_SOT223_BODY_MM = 3.5
+_SOT223_LEG_MM = 0.7
+_SOT223_LEG_PITCH_MM = 2.3
+
+
+def _art_sot223(s: _ArtSolid) -> list[_Piece]:
+    """A SOT-223 regulator lying flat: its body, the wide tab out of one side and three
+    legs out of the other, each bent down to its pad."""
+    f = s.facing
+    reach = (s.length - _SOT223_BODY_MM) / 2
+    pieces = [
+        _Piece(
+            source=s.box(_SOT223_BODY_MM, s.width, s.height, moulded=True),
+            rgb=_ART_EPOXY_RGB,
+            position=s.at(0.0, 0.0, s.height / 2),
+            material=MOULDED,
+        )
+    ]
+    edge = _SOT223_BODY_MM / 2
+    # Three legs on the ``facing`` side, and the tab on the other.
+    leads = [(f, index * _SOT223_LEG_PITCH_MM, _SOT223_LEG_MM) for index in (-1, 0, 1)]
+    leads.append((-f, 0.0, s.width * 0.47))
+    for side, where, wide in leads:
+        for along, length, z, height in (
+            (edge + reach * 0.2, reach * 0.4, s.height * 0.45, 0.25),  # out of the body
+            (edge + reach * 0.45, 0.25, s.height * 0.24, s.height * 0.45),  # down
+            (edge + reach * 0.75, reach * 0.5, 0.12, 0.24),  # the foot
+        ):
+            pieces.append(
+                _Piece(
+                    source=s.box(length, wide, height),
+                    rgb=LEAD_RGB,
+                    position=s.at(side * along, where, z),
+                    material=TINNED,
+                )
+            )
+    return pieces
+
+
+def _art_sot23(s: _ArtSolid) -> list[_Piece]:
+    """A SOT-23: the small body, two legs out of one long side and one out of the other."""
+    f = s.facing
+    body = s.length * 0.55
+    standoff = 0.08
+    body_h = s.height - standoff
+    reach = (s.length - body) / 2
+    pieces = [
+        _Piece(
+            source=s.box(body, s.width, body_h, moulded=True),
+            rgb=_ART_EPOXY_RGB,
+            position=s.at(0.0, 0.0, standoff + body_h / 2),
+            material=MOULDED,
+        )
+    ]
+    shoulder = standoff + body_h * 0.4
+    for side, across in ((-f, -s.width * 0.33), (-f, s.width * 0.33), (f, 0.0)):
+        for along, length, z, height in (
+            (body / 2 + reach * 0.25, reach * 0.5, shoulder, 0.12),
+            (body / 2 + reach * 0.55, 0.12, shoulder / 2, shoulder),
+            (body / 2 + reach * 0.8, reach * 0.4, 0.05, 0.1),
+        ):
+            pieces.append(
+                _Piece(
+                    source=s.box(length, 0.4, height),
+                    rgb=LEAD_RGB,
+                    position=s.at(side * along, across, z),
+                    material=TINNED,
+                )
+            )
+    return pieces
+
+
+def _art_crystal(s: _ArtSolid) -> list[_Piece]:
+    """A crystal in an SMD package: the ceramic base and the metal lid sealed on it."""
+    base = min(0.25, s.height * 0.4)
+    lid = s.height - base
+    return [
+        _Piece(
+            source=s.box(s.length, s.width, base),
+            rgb=_ART_CERAMIC_RGB,
+            position=s.at(0.0, 0.0, base / 2),
+            material=CERAMIC,
+        ),
+        _Piece(
+            source=s.box(s.length - 0.3, s.width - 0.3, lid, moulded=True),
+            rgb=_ART_SHIELD_RGB,
+            position=s.at(0.0, 0.0, base + lid / 2),
+            material=STEEL,
+        ),
+    ]
+
+
+#: An unfitted header's tinned ring and the hole in it.
+_ART_PAD_RING_MM = 0.85
+_ART_PAD_HOLE_MM = 0.5
+
+
+def _art_pads(s: _ArtSolid) -> list[_Piece]:
+    """An unfitted header: a tinned ring round an empty hole at every 2.54 mm of the part."""
+    along_count = max(round(s.length / 2.54), 1)
+    across_count = max(round(s.width / 2.54), 1)
+    where = tuple(
+        s.at((a - (along_count - 1) / 2) * 2.54, (b - (across_count - 1) / 2) * 2.54, 0.0)
+        for a in range(along_count)
+        for b in range(across_count)
+    )
+    return [
+        _Piece(
+            source=_upright_cylinder(_ART_PAD_RING_MM, 0.04, resolution=24),
+            rgb=LEAD_RGB,
+            position=(0.0, 0.0, 0.0),
+            material=TINNED,
+            instances=tuple((x, y, z + 0.02) for x, y, z in where),
+        ),
+        _Piece(
+            source=_upright_cylinder(_ART_PAD_HOLE_MM, 0.05, resolution=20),
+            rgb=DRILL_RGB,
+            position=(0.0, 0.0, 0.0),
+            material=LAMINATE,
+            instances=tuple((x, y, z + 0.025) for x, y, z in where),
+        ),
+    ]
+
+
 _ART_BUILDERS: dict[str, Callable[[_ArtSolid], list[_Piece]]] = {
     "can": _art_can,
     "inductor": _art_inductor,
     "to263": _art_to263,
+    "sot223": _art_sot223,
+    "sot23": _art_sot23,
     "trimpot": _art_trimpot,
     "soic8": _art_soic8,
+    "qfn": _art_qfn,
+    "tqfp32": _art_tqfp32,
+    "rf-module": _art_rf_module,
+    "usb": _art_usb,
+    "button": _art_button,
+    "side-button": _art_side_button,
+    "led": _art_led,
+    "crystal": _art_crystal,
     "sma": _art_sma,
     "chip-r": lambda s: _art_chip(s, _ART_RESISTOR_RGB, MOULDED),
     "chip-c": lambda s: _art_chip(s, _ART_MLCC_RGB, CERAMIC),
+    "pads": _art_pads,
     "silk": _art_silk,
 }
 

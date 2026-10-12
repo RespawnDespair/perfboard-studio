@@ -35,6 +35,27 @@ closed without a bump.
   than the id says -- the height DRC measures. A value nobody wrote a layout for, or a board
   of another size, keeps the block, and the STEP export is still the envelope. Every module
   also shows the tinned pad each of its pins comes up through.
+- **The five modules in the catalog are drawn as what is on them too** -- the ones most
+  boards will carry. The ESP32-DevKitC is its WROOM-32 with the shield can and the antenna
+  past the board, the regulator, the USB bridge, EN and Boot either side of the micro-USB
+  socket; the ESP32-C3-DevKitM-1 its C3-MINI-1, the RGB LED and Boot and RST; the Arduino
+  Nano its ATmega328P turned on its corner, the reset button, the four LEDs, the mini-USB
+  socket and the unfitted ICSP holes; the Raspberry Pi Pico its RP2040, the flash and
+  crystal, BOOTSEL and the green LED; the WEMOS D1 mini its ESP-12F and the reset button in
+  its side. Positions come from the makers' own drawings -- Espressif's dimension drawings,
+  Arduino's datasheet -- and from KiCad's models of the Pico, the D1 mini and the radio
+  modules, measured rather than eyeballed. A module described with its pins the other way
+  round is turned by their names, so the USB socket stays at the USB end, and a Nano Every,
+  a Pico W or an ESP32-S3 DevKitC on the same footprint keeps the block rather than being
+  drawn as a board it is not. The README's close-up of `nano-relay` is redrawn, with the
+  Nano on it.
+- **A module's pin names stop at the first part standing in their way**, in both views. A
+  WROOM can is 18 mm wide between pin rows 25.4 mm apart, so no fixed strip beside the pins
+  could be kept clear on a real devkit; the names now run until they meet a part, which is
+  how the module's own silkscreen is printed, and every layout leaves each name room to be
+  read. Where a real board puts a small part closer to its pins than that, the part is drawn
+  a fraction of a millimetre in, and the layout says which. A module drawn as the block
+  prints its names exactly as before.
 - **A vertical terminal is drawn as KiCad's header with a screw plug standing in it.** It was
   one green block with the wire openings and the screw heads side by side on its top, which
   is no part anybody sells. The header is now KiCad's own Phoenix MSTBVA model -- the open

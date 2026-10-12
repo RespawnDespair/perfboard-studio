@@ -6,7 +6,10 @@ stands one dark block that tall in the middle of the board. That is an honest en
 a picture of nothing: the first real board laid out with this program carried an LM2596S
 step-down module and an SN65HVD230 CAN breakout, and in 3D they were the same blue slab
 with a different-sized brick on it. A buck module is two cans, a big inductor, a regulator
-and a blue trimmer, and that is how anybody looking at the bench finds it.
+and a blue trimmer, and that is how anybody looking at the bench finds it. The same goes for
+the five modules the catalog offers (``catalog.py``): an ESP32 devkit is its WROOM can and
+antenna, a Nano is the chip turned on its corner with the USB socket at one end, and those
+are the modules most boards will carry.
 
 HOW A MODULE IS RECOGNISED: by the part's VALUE, the one thing the document says about what
 the part IS -- the same way a resistor's colour code is read from its value
@@ -14,14 +17,23 @@ the part IS -- the same way a resistor's colour code is read from its value
 when the id agrees with the drawing the layout was taken from: the same number of pins,
 pins along the edges the module has them on, and a board within ``SIZE_TOLERANCE`` of the
 reference. Anything else -- a value nobody wrote a layout for, an LM2596 on somebody's
-own differently-shaped board -- keeps the block. A guessed layout on the wrong board would
-be a picture of a part that is not there.
+own differently-shaped board, a Nano Every on a classic Nano's footprint -- keeps the block.
+A guessed layout on the wrong board would be a picture of a part that is not there.
 
 WHAT IS DRAWN STAYS INSIDE THE ENVELOPE DRC MEASURES. Every part is on the module's board,
 and none stands taller than the id's ``top`` (``fit_module_art`` clamps it), so a recognised
 module never looks taller or wider than ``component-too-tall`` and the overlap rules think
-it is. The pin names the module's silkscreen carries (``bodies.pin_labels``) run in from its
-pins, and the layouts leave that strip clear; ``tests/test_module_art.py`` measures both.
+it is.
+
+THE PIN NAMES STOP AT THE FIRST PART IN THEIR WAY. The names the module's silkscreen
+carries (``bodies.pin_labels``) run in from its pins across the board, and on a real devkit
+the parts come closer to the pins than any fixed strip could allow: the WROOM can on an
+ESP32 devkit is 18 mm wide between rows 25.4 mm apart. So a name runs until it meets a part
+(``name_room``), and the layouts keep every name legible -- at no narrower than the views
+print a name anywhere (``bodies.PIN_NAME_MIN_SQUEEZE``), or with at least
+``NAME_ROOM_ENOUGH_MM``. A real board that puts a small part closer to its pins than that
+is drawn with the part moved in, and its ``source`` says which. ``tests/test_module_art.py``
+measures all of it.
 
 The layout is in the ART's frame -- ``u`` along the module, ``v`` across it, millimetres
 from the board's centre -- and ``fit_module_art`` turns it into the footprint's own frame
@@ -31,30 +43,89 @@ how to turn with the part. It knows nothing about VTK: ``view3d`` draws what com
 
 from __future__ import annotations
 
+import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
 from perfboard_studio.model import ComponentInstance, Footprint, pin_name_of
 
-from .bodies import placement_for
+from .bodies import PIN_NAME_HEIGHT_MM, placement_for
 
 #: What one part on a module's board is, which is what ``view3d`` draws it as.
 #:
-#:  * ``can``      -- an aluminium electrolytic standing up, its stripe on the ``facing`` side.
-#:  * ``inductor`` -- a shielded power inductor: a dark square case with rounded corners.
-#:  * ``to263``    -- a D2PAK regulator lying flat: tab behind, five legs out of the ``facing`` end.
-#:  * ``trimpot``  -- a multi-turn 3296W trimmer, its brass screw at the ``facing`` end.
-#:  * ``soic8``    -- an SO-8 chip, gull-wing legs down both long sides, pin 1 at ``facing``.
-#:  * ``sma``      -- a moulded SMD diode (SMA), the cathode band at ``facing``.
-#:  * ``chip-r``   -- a 0805 resistor; ``chip-c`` the same size of ceramic capacitor.
-#:  * ``silk``     -- printing on the module's own board, ``text`` and nothing else.
-ArtKind = Literal["can", "inductor", "to263", "trimpot", "soic8", "sma", "chip-r", "chip-c", "silk"]
+#:  * ``can``         -- an aluminium electrolytic standing up, its stripe on the ``facing`` side.
+#:  * ``inductor``    -- a shielded power inductor: a dark square case with rounded corners.
+#:  * ``to263``       -- a D2PAK regulator lying flat: tab behind, five legs out of the ``facing`` end.
+#:  * ``sot223``      -- a SOT-223 regulator lying flat: its wide tab behind, three legs out of
+#:                       the ``facing`` side. ``length`` runs tab to leg tips.
+#:  * ``sot23``       -- a SOT-23 transistor: two legs out of one long side and one out of the
+#:                       ``facing`` side. ``length`` runs leg tip to leg tip.
+#:  * ``trimpot``     -- a multi-turn 3296W trimmer, its brass screw at the ``facing`` end.
+#:  * ``soic8``       -- an SO-8 chip, gull-wing legs down both long sides, pin 1 at ``facing``.
+#:  * ``qfn``         -- a leadless chip (QFN, DFN, USON): a flat black square on its pads,
+#:                       the pin-1 dot at the ``facing`` end.
+#:  * ``tqfp32``      -- a 7 mm TQFP-32, eight gull-wing legs a side (``TQFP32_*``). ``length``
+#:                       is leg tip to leg tip; the pin-1 dot is at the ``facing`` end.
+#:  * ``rf-module``   -- a radio module (WROOM, MINI, ESP-12): its own dark board, the metal
+#:                       shield can, and the printed antenna at the ``facing`` end.
+#:  * ``usb``         -- a USB socket's metal shell, its mouth at the ``facing`` end.
+#:  * ``button``      -- a tactile switch pressed from above: a body and a round cap.
+#:  * ``side-button`` -- a tactile switch pressed from the side, its cap out of the ``facing`` end.
+#:  * ``led``         -- a chip LED; ``colour`` is its lens, and a square one is an RGB LED.
+#:  * ``crystal``     -- a crystal in a metal-lidded ceramic SMD package.
+#:  * ``sma``         -- a moulded SMD diode (SMA, SOD-123), the cathode band at ``facing``.
+#:  * ``chip-r``      -- a 0805 resistor; ``chip-c`` the same size of ceramic capacitor.
+#:  * ``pads``        -- an unfitted header: tinned rings round empty holes, 2.54 mm apart,
+#:                       as many as fit the part's length and width.
+#:  * ``silk``        -- printing on the module's own board, ``text`` and nothing else.
+ArtKind = Literal[
+    "can",
+    "inductor",
+    "to263",
+    "sot223",
+    "sot23",
+    "trimpot",
+    "soic8",
+    "qfn",
+    "tqfp32",
+    "rf-module",
+    "usb",
+    "button",
+    "side-button",
+    "led",
+    "crystal",
+    "sma",
+    "chip-r",
+    "chip-c",
+    "pads",
+    "silk",
+]
 
 #: How far a module's board may be from the reference a layout was drawn on, either way, as a
 #: fraction. Wide enough for one maker's board against another's drawing of the same module
 #: (LM2596 boards are sold from 43 x 20 to 44 x 21.5 mm), narrow enough that a layout is never
 #: stretched over a board of another shape.
 SIZE_TOLERANCE = 0.15
+
+#: A TQFP-32: a 7 mm body, legs 0.8 mm apart and 0.37 mm wide, eight to a side (Microchip's
+#: 32A package, which is the ATmega328P-AU's). One table for the shape ``view3d`` draws and
+#: the corners ``outline`` leaves empty.
+TQFP32_BODY_MM = 7.0
+TQFP32_PITCH_MM = 0.8
+TQFP32_LEG_MM = 0.37
+TQFP32_LEGS_PER_SIDE = 8
+
+#: A pin name stops this short of a part standing in its way -- the same gap
+#: ``bodies.pin_labels`` leaves before the block an unrecognised module is drawn as.
+NAME_CLEARANCE_MM = 0.3
+#: How far either side of its pin's centre line a name is measured for a part in its way:
+#: its letters and a fifth of a millimetre either side.
+NAME_LANE_MM = PIN_NAME_HEIGHT_MM / 2 + 0.2
+#: The room a layout must leave a long pin name, which no real devkit leaves enough of to
+#: print one at full width: a little under the 1.9 mm a 16 mm ESP-12 leaves between itself
+#: and the pins of a 25.6 mm D1 mini, the tightest board here.
+NAME_ROOM_ENOUGH_MM = 1.5
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +148,16 @@ class ArtPart:
     facing: int = 1
     #: What is printed on it (ASCII: ``vtkVectorText`` prints nothing else).
     text: str = ""
+    #: Turned on its corner: its own axis runs at 45 degrees to ``u``, the way the ATmega on
+    #: a Nano is. Only a square part, so turning it a quarter more changes nothing.
+    diagonal: bool = False
+    #: A radio module's antenna: how much of its length, at ``facing``, the shield can
+    #: leaves bare. And how far in from the module's sides and far end the can stands.
+    antenna: float = 0.0
+    inset: float = 0.0
+    #: The colour a part is seen as where that varies between parts of one kind -- an LED's
+    #: lens, a button's cap -- as ``#rrggbb``. Empty for the kind's own.
+    colour: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,11 +174,20 @@ class ModuleArt:
     #: How the art is laid against the pins. ``"power"``: ``u`` along the board's long side,
     #: the pins called IN at ``-u`` and the ones called ``+`` at ``-v``, as a buck module's
     #: silkscreen has them. ``"header"``: ``u`` along the single row of pins, which runs
-    #: down the ``-v`` edge.
-    frame: Literal["power", "header"]
+    #: down the ``-v`` edge. ``"columns"``: ``u`` along two columns of pins, one down each
+    #: long edge, as a devkit is drawn -- and turned so that ``landmark`` is where it says.
+    frame: Literal["power", "header", "columns"]
     parts: tuple[ArtPart, ...]
     #: Where the layout and its sizes come from.
     source: str
+    #: Fragments that name ANOTHER board of the same family -- a Nano Every, a Pico W --
+    #: which shares the footprint and not the parts, and is drawn as the block.
+    excludes: tuple[str, ...] = ()
+    #: For ``"columns"``: a pin name, and the ends of ``u`` and ``v`` it is at, +1 or -1.
+    #: The art is turned end for end, or side for side, until a pin of that name is there,
+    #: so a module described from its other end is still drawn with its USB socket at the
+    #: socket's end. A module whose pins carry no such name is drawn as the art has it.
+    landmark: tuple[str, int, int] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +200,8 @@ class PlacedArt:
     x: float
     y: float
     #: The part's extent along local x and local y, and its height off the module's board.
+    #: For a part turned on its corner, its own length and width: ``outline`` is what it
+    #: covers.
     size_x: float
     size_y: float
     height: float
@@ -118,6 +210,10 @@ class PlacedArt:
     #: Which end of that axis its feature is at, +1 or -1 along it.
     facing: int
     text: str
+    diagonal: bool = False
+    antenna: float = 0.0
+    inset: float = 0.0
+    colour: str = ""
 
 
 # -- the layouts -------------------------------------------------------------------------
@@ -179,15 +275,185 @@ SN65HVD230_MODULE = ModuleArt(
     source="TI SN65HVD230 D package; seller photographs and board size (placement)",
 )
 
+# -- the catalog's modules ----------------------------------------------------------------
+#
+# Each is in the catalog's own frame (``catalog.py``): its two pin columns running down the
+# board, pin 1 at the top left, the board the catalog's footprint describes -- which takes in
+# an antenna or a USB socket standing past the bare board, so a part flush with that edge is
+# flush with the footprint's. ``u`` is down the columns and ``v`` across, from that board's
+# centre.
+
+#: Espressif's ESP32-DevKitC V4: the WROOM-32 at the top with its antenna 6 mm past the
+#: board, the regulator and the USB bridge under it, the two auto-reset transistors by the
+#: right-hand pins, and EN and Boot either side of the micro-USB socket. Positions read off
+#: Espressif's esp32_devkitc_v4_dimensions drawing; the WROOM's can and antenna measured on
+#: KiCad's ESP32-WROOM-32 model. Sellers' clones copy this board part for part.
+DEVKITC_MODULE = ModuleArt(
+    key="esp32-devkitc",
+    names=("devkitc",),
+    excludes=("s2", "s3", "c3", "c6", "h2", "wrover", "devkitc-ve", "devkitc ve", "32u"),
+    board=(54.3, 27.94),
+    pins=38,
+    frame="columns",
+    landmark=("3V3", -1, -1),
+    parts=(
+        ArtPart("rf-module", -14.4, 0.0, 25.5, 18.0, 3.1, facing=-1, antenna=6.94, inset=1.0,
+                text="ESP32-WROOM-32"),
+        ArtPart("chip-c", 5.68, -8.0, 2.0, 1.25, 0.85),
+        ArtPart("chip-c", 5.68, -5.85, 2.0, 1.25, 0.85),
+        ArtPart("chip-c", 9.4, -5.85, 2.0, 1.25, 0.85),
+        ArtPart("sot223", 7.67, 0.12, 7.0, 6.5, 1.7, along_v=True, facing=-1),
+        ArtPart("sot23", 7.75, 7.77, 2.4, 2.9, 1.1),
+        ArtPart("qfn", 14.68, 0.2, 5.0, 5.0, 0.9, facing=-1, text="CP2102N"),
+        ArtPart("sot23", 15.71, 7.77, 2.4, 2.9, 1.1),
+        ArtPart("led", 18.82, -4.65, 1.6, 0.8, 0.6, colour="#d83a32"),
+        ArtPart("button", 23.67, -7.76, 4.7, 3.5, 2.0),
+        ArtPart("usb", 24.65, 0.0, 5.0, 7.5, 2.5, facing=1),
+        ArtPart("button", 23.67, 7.77, 4.7, 3.5, 2.0),
+    ),
+    source=(
+        "Espressif esp32_devkitc_v4_dimensions (positions); KiCad ESP32-WROOM-32 model "
+        "(the can and the antenna)"
+    ),
+)
+
+#: Espressif's ESP32-C3-DevKitM-1: the ESP32-C3-MINI-1 at the top, its antenna past the
+#: board, the regulator under it, the RGB LED on IO8 and the USB bridge, two transistors
+#: by the right-hand pins, and Boot and RST either side of the micro-USB socket. Positions
+#: read off Espressif's DIMENSION_ESP32-C3-DEVKITM-1 drawing. The two buttons stand 0.5 mm
+#: and the transistors 0.1 mm further in than the board has them: where the board has them,
+#: the names beside those pins would be squeezed past reading.
+C3_DEVKITM_MODULE = ModuleArt(
+    key="esp32-c3-devkitm-1",
+    names=("c3-devkitm", "c3 devkitm", "c3_devkitm"),
+    board=(44.31, 25.4),
+    pins=30,
+    frame="columns",
+    landmark=("IO19", 1, 1),
+    parts=(
+        ArtPart("rf-module", -13.85, 0.0, 16.6, 13.2, 2.4, facing=-1, antenna=5.4, inset=0.4,
+                text="ESP32-C3-MINI-1"),
+        ArtPart("sot223", 1.18, -0.83, 7.0, 6.5, 1.7, along_v=True, facing=-1),
+        ArtPart("led", -0.44, 6.69, 3.5, 3.5, 1.5),
+        ArtPart("sot23", 8.03, 7.45, 2.4, 2.9, 1.1),
+        ArtPart("qfn", 8.48, -2.18, 4.0, 4.0, 0.9, facing=-1),
+        ArtPart("sot23", 11.84, 7.45, 2.4, 2.9, 1.1),
+        ArtPart("led", 12.35, -8.18, 1.6, 0.8, 0.6, colour="#d83a32"),
+        ArtPart("sma", 13.07, -4.53, 1.7, 1.25, 0.9, along_v=True),
+        ArtPart("button", 18.4, -7.0, 4.6, 3.1, 2.0),
+        ArtPart("usb", 19.65, 0.0, 5.0, 7.5, 2.5, facing=1),
+        ArtPart("button", 18.4, 7.0, 4.6, 3.1, 2.0),
+    ),
+    source=(
+        "Espressif DIMENSION_ESP32-C3-DEVKITM-1_V1 (positions); ESP32-C3-MINI-1 datasheet "
+        "(the module)"
+    ),
+)
+
+#: The Arduino Nano: the unfitted ICSP header at the far end, the four LEDs (TX, RX, power,
+#: L) across the board, the reset button, the ATmega328P turned on its corner and the mini-B
+#: socket at the USB end. Positions read off the mechanical drawing in Arduino's A000005
+#: datasheet, whose board is 43.2 mm with the pins centred on it; the catalog's footprint
+#: is KiCad's, whose 45.72 mm takes in the socket standing past the board. The chip is
+#: centred on a pin row, 1 mm short of where the drawing has it, so its corners stand in one
+#: name's way on each side rather than two; the outer LEDs stand 0.2-0.3 mm in. Both keep
+#: the pin names beside them readable.
+NANO_MODULE = ModuleArt(
+    key="arduino-nano",
+    names=("nano",),
+    excludes=("every", "33", "esp32", "rp2040", "matter", "r4", "nanovna"),
+    board=(45.72, 17.78),
+    pins=30,
+    frame="columns",
+    landmark=("D13", 1, 1),
+    parts=(
+        ArtPart("pads", -20.16, 0.0, 5.08, 7.62, 0.0),
+        ArtPart("led", -8.61, -4.6, 2.0, 1.25, 0.8),
+        ArtPart("led", -8.61, -2.12, 2.0, 1.25, 0.8),
+        ArtPart("led", -8.61, 1.44, 2.0, 1.25, 0.8),
+        ArtPart("led", -8.61, 4.6, 2.0, 1.25, 0.8),
+        ArtPart("button", -3.78, 0.44, 4.12, 2.95, 2.0, along_v=True, colour="#efece4"),
+        ArtPart("tqfp32", 3.81, 0.0, 9.0, 9.0, 1.2, facing=-1, diagonal=True,
+                text="ATMEGA328P"),
+        ArtPart("usb", 18.06, 0.0, 9.6, 7.7, 3.9, facing=1),
+    ),
+    source=(
+        "Arduino A000005 datasheet, mechanical drawing (positions); Microchip 32A package "
+        "(the chip)"
+    ),
+)
+
+#: The Raspberry Pi Pico: the micro-USB socket and the LED at the top, BOOTSEL, the flash,
+#: the regulator's inductors and diode, the RP2040 in the middle and its crystal under it.
+#: Every position and size measured on KiCad's RaspberryPi_Pico model. The diode and one
+#: inductor stand 0.5 and 0.7 mm in from where the model has them, clear of the names
+#: beside the right-hand pins.
+PICO_MODULE = ModuleArt(
+    key="raspberry-pi-pico",
+    names=("pico",),
+    excludes=("pico w", "pico-w", "pico_w", "picow", "pico 2", "pico2", "pico-2", "esp32"),
+    board=(52.3, 21.0),
+    pins=40,
+    frame="columns",
+    landmark=("VBUS", -1, 1),
+    parts=(
+        ArtPart("usb", -23.08, 0.0, 5.06, 6.66, 2.45, facing=-1),
+        ArtPart("led", -20.05, -5.7, 1.0, 0.8, 0.6, along_v=True, colour="#3fae49"),
+        ArtPart("sma", -18.35, 5.5, 3.6, 1.66, 0.95),
+        ArtPart("chip-c", -16.45, 2.9, 2.0, 1.25, 1.25, along_v=True),
+        ArtPart("inductor", -13.95, 2.9, 2.5, 2.5, 0.75),
+        ArtPart("inductor", -13.95, 5.3, 2.5, 2.0, 1.2),
+        ArtPart("button", -12.85, -3.5, 4.26, 3.2, 2.5, colour="#f2f0ea"),
+        ArtPart("chip-c", -11.45, 2.9, 2.0, 1.25, 1.25, along_v=True),
+        ArtPart("qfn", -5.75, -3.8, 3.0, 2.0, 0.6),
+        ArtPart("qfn", 1.15, 0.0, 7.0, 7.0, 0.9, facing=-1, text="RP2-B2"),
+        ArtPart("crystal", 9.7, -2.3, 3.2, 2.5, 0.6, along_v=True),
+    ),
+    source="KiCad RaspberryPi_Pico model (every position and size)",
+)
+
+#: The WEMOS D1 mini as everybody has it -- the v2 and v3 boards and their clones: the
+#: ESP-12F flush with the top edge and the reset button pressed from the left-hand edge.
+#: The USB socket and the USB bridge are underneath. Board and the module's place from
+#: KiCad's WEMOS_D1_mini_light model; the can and the antenna from its ESP-12E model.
+D1_MINI_MODULE = ModuleArt(
+    key="wemos-d1-mini",
+    names=("d1 mini", "d1-mini", "d1_mini", "d1mini"),
+    excludes=("pro", "lite", "light", "esp32", "c3", "s2"),
+    board=(34.2, 25.6),
+    pins=16,
+    frame="columns",
+    landmark=("5V", 1, 1),
+    parts=(
+        ArtPart("rf-module", -5.1, 0.0, 24.0, 16.0, 3.2, facing=-1, antenna=7.75, inset=2.0,
+                text="ESP-12F"),
+        ArtPart("side-button", 14.3, -11.5, 2.6, 4.0, 1.6, along_v=True, facing=-1),
+    ),
+    source=(
+        "KiCad WEMOS_D1_mini_light model (board, the module's place) and ESP-12E model "
+        "(the can and the antenna); LOLIN's D1 mini drawings (the reset button)"
+    ),
+)
+
 #: Every module there is a layout for, in the order they are tried.
-MODULE_ARTS: tuple[ModuleArt, ...] = (LM2596_MODULE, SN65HVD230_MODULE)
+MODULE_ARTS: tuple[ModuleArt, ...] = (
+    LM2596_MODULE,
+    SN65HVD230_MODULE,
+    DEVKITC_MODULE,
+    C3_DEVKITM_MODULE,
+    NANO_MODULE,
+    PICO_MODULE,
+    D1_MINI_MODULE,
+)
 
 
 def recognise_module(value: str) -> ModuleArt | None:
     """The layout a part's value names, or ``None``. Says nothing about whether it fits."""
     text = value.casefold()
     for art in MODULE_ARTS:
-        if any(name in text for name in art.names):
+        if any(name in text for name in art.names) and not any(
+            other in text for other in art.excludes
+        ):
             return art
     return None
 
@@ -214,6 +480,64 @@ def _is_positive(name: str) -> bool:
     return name.endswith("+") or name in ("VIN", "VOUT", "IN", "OUT")
 
 
+#: Which local axis the art's ``u`` lies along, and which way ``u`` and ``v`` point there.
+type _Frame = tuple[bool, float, float]
+
+
+def _frame(
+    art: ModuleArt,
+    component: ComponentInstance,
+    footprint: Footprint,
+    pins: dict[str, tuple[float, float]],
+    long_side_x: bool,
+) -> _Frame | None:
+    """How the art lies against these pins, or ``None`` when they are not laid out the way
+    its frame needs. ``pins`` are offsets from the board's centre."""
+    xs = {round(x, 6) for x, _y in pins.values()}
+    ys = {round(y, 6) for _x, y in pins.values()}
+    if art.frame == "power":
+        u_along_x = long_side_x
+    elif art.frame == "header":
+        if len(xs) > 1 and len(ys) > 1:
+            return None  # a header layout is for ONE row of pins
+        u_along_x = max(xs) - min(xs) >= max(ys) - min(ys)
+    else:
+        # Two columns of pins, one down each long edge.
+        if len(xs) == 2 and len(ys) != 2:
+            u_along_x = False
+        elif len(ys) == 2 and len(xs) != 2:
+            u_along_x = True
+        else:
+            return None
+
+    def along(point: tuple[float, float]) -> tuple[float, float]:
+        """A local offset from the board's centre, as (u, v) before any flip."""
+        return (point[0], point[1]) if u_along_x else (point[1], point[0])
+
+    sign_u = sign_v = 1.0
+    named = _named(component, footprint)
+    if art.frame == "power":
+        inputs = [along(pins[number])[0] for number, name in named if _is_input(name)]
+        outputs = [along(pins[number])[0] for number, name in named if _is_output(name)]
+        positive = [along(pins[number])[1] for number, name in named if _is_positive(name)]
+        if inputs and outputs and sum(inputs) / len(inputs) > sum(outputs) / len(outputs):
+            sign_u = -1.0
+        if positive and sum(positive) / len(positive) > 0:
+            sign_v = -1.0
+    elif art.frame == "header":
+        row_v = sum(along(point)[1] for point in pins.values()) / len(pins)
+        if row_v > 0:
+            sign_v = -1.0
+    elif art.landmark is not None:
+        name, end_u, end_v = art.landmark
+        found = [along(pins[number]) for number, pin_name in named if pin_name == name.upper()]
+        if len(found) == 1:
+            u, v = found[0]
+            sign_u = -1.0 if u * end_u < 0 else 1.0
+            sign_v = -1.0 if v * end_v < 0 else 1.0
+    return u_along_x, sign_u, sign_v
+
+
 def fit_module_art(
     footprint: Footprint, component: ComponentInstance, pitch: float
 ) -> tuple[PlacedArt, ...] | None:
@@ -231,35 +555,10 @@ def fit_module_art(
     if top <= 0:
         return None
     pins = {pin.number: (pin.d_col * pitch - cx, pin.d_row * pitch - cy) for pin in footprint.pins}
-
-    # Which local axis ``u`` lies along, and which way each art axis points in it.
-    if art.frame == "power":
-        u_along_x = placement.size_x >= placement.size_y
-    else:
-        xs = [x for x, _y in pins.values()]
-        ys = [y for _x, y in pins.values()]
-        if max(ys) - min(ys) > 1e-6 and max(xs) - min(xs) > 1e-6:
-            return None  # a header layout is for ONE row of pins
-        u_along_x = max(xs) - min(xs) >= max(ys) - min(ys)
-
-    def along(point: tuple[float, float]) -> tuple[float, float]:
-        """A local offset from the board's centre, as (u, v) before any flip."""
-        return (point[0], point[1]) if u_along_x else (point[1], point[0])
-
-    sign_u = sign_v = 1.0
-    if art.frame == "power":
-        named = _named(component, footprint)
-        inputs = [along(pins[number])[0] for number, name in named if _is_input(name)]
-        outputs = [along(pins[number])[0] for number, name in named if _is_output(name)]
-        positive = [along(pins[number])[1] for number, name in named if _is_positive(name)]
-        if inputs and outputs and sum(inputs) / len(inputs) > sum(outputs) / len(outputs):
-            sign_u = -1.0
-        if positive and sum(positive) / len(positive) > 0:
-            sign_v = -1.0
-    else:
-        row_v = sum(along(point)[1] for point in pins.values()) / len(pins)
-        if row_v > 0:
-            sign_v = -1.0
+    frame = _frame(art, component, footprint, pins, placement.size_x >= placement.size_y)
+    if frame is None:
+        return None
+    u_along_x, sign_u, sign_v = frame
 
     span_u, span_v = (
         (placement.size_x, placement.size_y) if u_along_x else (placement.size_y, placement.size_x)
@@ -292,6 +591,88 @@ def fit_module_art(
                 axis=axis,
                 facing=facing,
                 text=part.text,
+                diagonal=part.diagonal,
+                antenna=part.antenna,
+                inset=part.inset,
+                colour=part.colour,
             )
         )
     return tuple(placed)
+
+
+# -- what a part covers ------------------------------------------------------------------
+
+
+def tqfp32_corner(length: float) -> float:
+    """How much of each corner of a TQFP-32's ``length``-square has no leg in it: a quad
+    pack's legs stop short of its corners, and turned on its corner that is the whole
+    difference between the chip and a square."""
+    reach = (TQFP32_LEGS_PER_SIDE - 1) / 2 * TQFP32_PITCH_MM + TQFP32_LEG_MM / 2
+    return max(length / 2 - reach, 0.0)
+
+
+def outline(part: PlacedArt) -> tuple[tuple[float, float], ...]:
+    """What ``part`` covers of the module's board, as a convex polygon in the footprint's
+    frame: its rectangle, less the empty corners of a quad pack, turned on its corner if
+    it stands that way. What the pin names stop at (``name_room``)."""
+    half_x, half_y = part.size_x / 2, part.size_y / 2
+    cut = tqfp32_corner(min(part.size_x, part.size_y)) if part.kind == "tqfp32" else 0.0
+    if cut > 0:
+        corners = [
+            (half_x, half_y - cut), (half_x - cut, half_y), (-half_x + cut, half_y),
+            (-half_x, half_y - cut), (-half_x, -half_y + cut), (-half_x + cut, -half_y),
+            (half_x - cut, -half_y), (half_x, -half_y + cut),
+        ]  # fmt: skip
+    else:
+        corners = [(half_x, half_y), (-half_x, half_y), (-half_x, -half_y), (half_x, -half_y)]
+    if part.diagonal:
+        turn = math.sqrt(0.5)
+        corners = [((x - y) * turn, (x + y) * turn) for x, y in corners]
+    return tuple((part.x + x, part.y + y) for x, y in corners)
+
+
+def _within_lane(
+    points: Sequence[tuple[float, float]], half: float
+) -> list[tuple[float, float]]:
+    """A convex polygon given as ``(along, across)`` points, cut to ``|across| <= half``."""
+    kept = list(points)
+    for sign in (1.0, -1.0):
+        if not kept:
+            break
+        cut: list[tuple[float, float]] = []
+        for index, (s0, t0) in enumerate(kept):
+            s1, t1 = kept[(index + 1) % len(kept)]
+            inside0, inside1 = sign * t0 <= half, sign * t1 <= half
+            if inside0:
+                cut.append((s0, t0))
+            if inside0 != inside1:
+                share = (sign * half - t0) / (t1 - t0)
+                cut.append((s0 + (s1 - s0) * share, sign * half))
+        kept = cut
+    return kept
+
+
+def name_room(
+    parts: Sequence[PlacedArt], x: float, y: float, dx: float, dy: float, start: float
+) -> float:
+    """How far a pin name may run from ``start`` before it meets one of ``parts``, less
+    ``NAME_CLEARANCE_MM``: the name of the pin at ``(x, y)``, running along ``(dx, dy)``
+    across the module's board. Infinite when nothing stands in its lane; printing on the
+    board (``silk``) stands in nothing's way."""
+    room = math.inf
+    for part in parts:
+        if part.kind == "silk":
+            continue
+        # Along the name from its pin, and across it.
+        local = [
+            ((px - x) * dx + (py - y) * dy, (py - y) * dx - (px - x) * dy)
+            for px, py in outline(part)
+        ]
+        lane = _within_lane(local, NAME_LANE_MM)
+        if not lane:
+            continue
+        nearest = min(s for s, _t in lane)
+        if max(s for s, _t in lane) <= start:
+            continue  # between the pin and where its name starts: under the pad ring
+        room = min(room, nearest - start - NAME_CLEARANCE_MM)
+    return max(room, 0.0)

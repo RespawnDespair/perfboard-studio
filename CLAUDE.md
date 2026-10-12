@@ -866,26 +866,43 @@ blue slab with a dark brick on it, and a vertical terminal was a green box. A mo
 carries its board, its pins and its tallest part's height and nothing about what the parts
 are, so `ui/moduleart.py` (pure, no VTK) draws them for the modules it RECOGNISES — by the
 part's VALUE, as `resistor_bands` reads a colour code, so the picture cannot disagree with
-the parts list. Four rules hold it, each pinned in `tests/test_module_art.py` for every turn
-and flip:
+the parts list. Those two, and the catalog's five modules (DevKitC, C3-DevKitM-1, Nano,
+Pico, D1 mini), whose art keys are their catalog ids. Five rules hold it, each pinned in
+`tests/test_module_art.py` for every turn and flip:
 
 - **Only on the board the layout was drawn for.** Same pin count, the right frame (a
-  `"header"` layout is for one row of pins) and a board within `SIZE_TOLERANCE` (15 %) of the
-  reference; anything else keeps the block. A guessed layout on another board is a picture
-  of a part that is not there.
+  `"header"` layout is for one row of pins, a `"columns"` one for two columns down the long
+  edges) and a board within `SIZE_TOLERANCE` (15 %) of the reference; anything else keeps
+  the block. A guessed layout on another board is a picture of a part that is not there,
+  which is also why `ModuleArt.excludes` exists: a Nano Every or a Pico W shares the
+  footprint and the name fragment, and not the parts.
 - **Inside the envelope DRC measures.** `fit_module_art` clamps every part to the id's
   `top`, and every part stays on the module's board — measured on the built actors too, a
   decal's `_DECAL_PROUD_MM` allowed. The STEP export is untouched: it is the envelope.
-- **Clear of the module's pin names.** `bodies.pin_labels` still sizes their room from
-  `module_block_size`, and the layout leaves that strip empty, so the silkscreen is not
-  printed under a capacitor.
+- **The pin names stop at the first part in their way, and are still left room to read.**
+  An 18 mm WROOM between pin rows 25.4 mm apart means no fixed strip beside the pins can be
+  kept clear on a real devkit, so `bodies.pin_labels` asks `moduleart.name_room` how far each
+  name may run — measured against `outline`, which is the SHAPE a part covers: a Nano's chip
+  turned on its corner is an octagon, and its box would cut four names it does not touch.
+  `pin_labels` imports `moduleart` inside the function because `moduleart` builds on
+  `placement_for`. A layout must leave every name `PIN_NAME_MIN_SQUEEZE` of its width or
+  `NAME_ROOM_ENOUGH_MM`; where the real board crowds its pins closer, the part is drawn moved
+  in and the layout's comment says by how much. The LM2596 and SN65HVD230 layouts were drawn
+  round the old strip and print every name exactly as the block does, which is pinned.
 - **Oriented by pin NAMES, not by pin numbers.** A `"power"` layout puts the pins called
   IN at `-u` and the `+` ones at `-v`; a `"header"` layout lies on the board's side of its
-  row. An LM2596 described with IN on the right is drawn with its regulator on the right.
+  row; a `"columns"` layout is turned end for end or side for side until its `landmark` pin
+  (D13 on a Nano) is where it says. An LM2596 described with IN on the right is drawn with its
+  regulator on the right.
+- **Measured, not eyeballed.** Every layout's `source` names the drawing or model its
+  positions come from — Espressif's and Arduino's dimension drawings, KiCad's models of the
+  Pico, the D1 mini and the radio modules.
 
 A new module is an entry in `MODULE_ARTS` with datasheet sizes, drawn from the kinds
-`view3d._ART_BUILDERS` knows; `test_every_layout_is_tested` makes sure it is measured. The 2D
-view keeps the block on purpose — what that view is for is the names beside the pins.
+`view3d._ART_BUILDERS` knows (`test_every_kind_of_part_has_a_builder`);
+`test_every_layout_is_tested` makes sure it is measured. The 2D view keeps the block on
+purpose — what that view is for is the names beside the pins — and because their room comes
+from the one `pin_labels`, its names stop where the 3D parts stand as well.
 
 **A vertical terminal is KiCad's header with our plug standing in it**: wires in from above,
 screws in the plug's SIDE, as on every pluggable block on a vertical header (and as the 2D

@@ -597,6 +597,12 @@ def pin_labels(
         behind = -1.0 if along_entry > 0 else 1.0 if along_entry < 0 else None
     block = module_block_size(placement.size_x, placement.size_y)
     block_half = (block[1] if across_y else block[0]) / 2
+    art = None
+    if module:
+        # Here rather than at the top: ``moduleart`` builds on this module's placement.
+        from .moduleart import fit_module_art, name_room
+
+        art = fit_module_art(footprint, component, pitch)
     labels: list[PinLabel] = []
     for pin in footprint.pins:
         name = (
@@ -622,6 +628,10 @@ def pin_labels(
             room = PIN_NAME_MAX_MM
             either_side = behind is None and abs(toward) <= 1e-6
         dx, dy = (0.0, sign) if across_y else (sign, 0.0)
+        if art is not None:
+            # A module drawn as what is on it: the parts stand where they stand on the real
+            # board, and a name stops short of the first one in its way.
+            room = min(room, name_room(art, x, y, dx, dy, start))
         labels.append(
             PinLabel(pin.number, name, x, y, dx, dy, start, room, module, either_side)
         )

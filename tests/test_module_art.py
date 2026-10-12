@@ -2,24 +2,40 @@
 
 A module's id says how big its board is and how tall its tallest part stands, and nothing
 about what the parts are; ``ui/moduleart.py`` draws them for the modules it recognises by
-the part's VALUE. Everything here holds the picture to the facts the checker uses: the parts
-stay on the module's board and under its ``top`` (the height DRC measures), they leave the
-strip the module's pin names are printed in clear, they turn and flip with the part, and a
+the part's VALUE -- the two of the first real board, and the five the catalog offers.
+Everything here holds the picture to the facts the checker uses: the parts stay on the
+module's board and under its ``top`` (the height DRC measures), the module's pin names stop
+short of them and are still left room to be read, they turn and flip with the part, and a
 value or a board the layout was not drawn for keeps the plain block.
 """
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
+from perfboard_studio.catalog import CATALOG
 from perfboard_studio.footprints import MODULE_PCB_MM, get_footprint
 from perfboard_studio.model import ComponentInstance, HoleCoord
-from perfboard_studio.ui.bodies import PIN_NAME_HEIGHT_MM, pin_labels, placement_for
+from perfboard_studio.ui.bodies import (
+    PIN_NAME_HEIGHT_MM,
+    PIN_NAME_MIN_SQUEEZE,
+    pin_labels,
+    placement_for,
+)
 from perfboard_studio.ui.moduleart import (
     LM2596_MODULE,
     MODULE_ARTS,
+    NAME_ROOM_ENOUGH_MM,
+    NANO_MODULE,
     SN65HVD230_MODULE,
+    TQFP32_BODY_MM,
+    TQFP32_LEG_MM,
+    TQFP32_LEGS_PER_SIDE,
+    TQFP32_PITCH_MM,
     fit_module_art,
+    outline,
     recognise_module,
 )
 
@@ -28,6 +44,9 @@ BUCK = "mod-2x2-p16-r7-43.18x21.08x12-s5"
 BUCK_NAMES = (("1", "IN+"), ("2", "OUT+"), ("3", "IN-"), ("4", "OUT-"))
 CAN = "mod-6x1-p1-r1-16x14.5x3-s8.5-o0x6"
 CAN_NAMES = (("1", "3V3"), ("2", "GND"), ("3", "CTX"), ("4", "CRX"), ("5", "CANH"), ("6", "CANL"))
+
+#: The catalog's modules, as choosing one places it: its footprint, value and pin names.
+CATALOG_MODULES = tuple(part for part in CATALOG if part.category == "module")
 
 PITCH = 2.54
 TURNS = (0, 90, 180, 270)
@@ -70,6 +89,12 @@ def _footprint(footprint_id: str):
         ("SN65HVD230 modülü", "sn65hvd230"),
         ("CJMCU-230", "sn65hvd230"),
         ("VP230 CAN", "sn65hvd230"),
+        ("ESP32 DevKitC (38 pin)", "esp32-devkitc"),
+        ("ESP32-C3-DevKitM-1", "esp32-c3-devkitm-1"),
+        ("Arduino_Nano_v3.x", "arduino-nano"),  # KiCad's symbol, which a netlist brings
+        ("NANO V3.0 CH340", "arduino-nano"),
+        ("Raspberry Pi Pico H", "raspberry-pi-pico"),
+        ("D1 mini", "wemos-d1-mini"),
     ],
 )
 def test_a_module_is_recognised_by_its_value(value: str, key: str) -> None:
@@ -77,9 +102,37 @@ def test_a_module_is_recognised_by_its_value(value: str, key: str) -> None:
     assert art is not None and art.key == key
 
 
-@pytest.mark.parametrize("value", ["", "ESP32-DevKitC V4", "MP1584", "10k", "Module"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        "MP1584",
+        "10k",
+        "Module",
+        # The same footprint as one with a layout, and other parts on it.
+        "Arduino Nano Every",
+        "Arduino Nano 33 IoT",
+        "Raspberry Pi Pico W",
+        "Raspberry Pi Pico 2",
+        "ESP32-S3-DevKitC-1",
+        "ESP32-DevKitC-VE",
+        "LOLIN D1 mini Pro",
+    ],
+)
 def test_a_value_nobody_wrote_a_layout_for_is_not_guessed(value: str) -> None:
     assert recognise_module(value) is None
+
+
+@pytest.mark.parametrize("part", CATALOG_MODULES, ids=lambda part: part.id)
+def test_every_catalog_module_is_drawn_as_what_is_on_it(part) -> None:
+    """Chosen from the catalog, a module is drawn as itself and not as the block: the one
+    place a person picks a module by name is the one place it must be recognised."""
+    art = recognise_module(part.placed_value)
+    assert art is not None and art.key == part.id
+    placed = fit_module_art(
+        _footprint(part.footprint_id), _part(part.footprint_id, part.placed_value, part.pin_names), PITCH
+    )
+    assert placed is not None and len(placed) == len(art.parts)
 
 
 def test_the_plaket_modules_get_their_parts() -> None:
@@ -114,30 +167,59 @@ def test_a_board_a_little_off_the_drawing_still_fits_and_stretches_the_layout() 
 # ---------------------------------------------------------------------- what is drawn
 
 
-def _rect(part) -> tuple[float, float, float, float]:
-    return (
-        part.x - part.size_x / 2,
-        part.x + part.size_x / 2,
-        part.y - part.size_y / 2,
-        part.y + part.size_y / 2,
-    )
+def _layouts():
+    """Every layout on the footprint it was drawn for, with the names that part carries."""
+    yield LM2596_MODULE, BUCK, BUCK_NAMES
+    yield SN65HVD230_MODULE, CAN, CAN_NAMES
+    for part in CATALOG_MODULES:
+        art = recognise_module(part.placed_value)
+        assert art is not None
+        yield art, part.footprint_id, part.pin_names
 
 
 def _cases():
-    for art, footprint_id, names in (
-        (LM2596_MODULE, BUCK, BUCK_NAMES),
-        (SN65HVD230_MODULE, CAN, CAN_NAMES),
-    ):
+    for art, footprint_id, names in _layouts():
         for rotation in TURNS:
             for mirrored in (False, True):
                 yield art, footprint_id, names, rotation, mirrored
+
+
+def _case_id(value) -> str:
+    return value.key if hasattr(value, "key") else ""
+
+
+def _bounds(part) -> tuple[float, float, float, float]:
+    """What a placed part covers, as ``(x0, x1, y0, y1)``: its outline's box."""
+    points = outline(part)
+    xs = [x for x, _y in points]
+    ys = [y for _x, y in points]
+    return min(xs), max(xs), min(ys), max(ys)
+
+
+def _polygon_meets_box(points, box) -> bool:
+    """Whether a convex polygon and an axis-aligned box share any area -- separating axes,
+    written here rather than borrowed from ``moduleart`` so the two are checked against
+    each other and not against themselves."""
+    x0, x1, y0, y1 = box
+    corners = ((x0, y0), (x1, y0), (x1, y1), (x0, y1))
+    axes = [(1.0, 0.0), (0.0, 1.0)]
+    for (ax, ay), (bx, by) in zip(points, (*points[1:], points[0]), strict=True):
+        axes.append((ay - by, bx - ax))
+    for nx, ny in axes:
+        a = [x * nx + y * ny for x, y in points]
+        b = [x * nx + y * ny for x, y in corners]
+        if max(a) <= min(b) + 1e-9 or max(b) <= min(a) + 1e-9:
+            return False
+    return True
 
 
 def test_every_layout_is_tested() -> None:
     assert {art.key for art, *_ in _cases()} == {art.key for art in MODULE_ARTS}
 
 
-@pytest.mark.parametrize(("art", "footprint_id", "names", "rotation", "mirrored"), list(_cases()))
+@pytest.mark.parametrize(
+    ("art", "footprint_id", "names", "rotation", "mirrored"), list(_cases()), ids=_case_id
+)
 def test_every_part_stands_on_the_module_and_under_its_top(
     art, footprint_id: str, names, rotation: int, mirrored: bool
 ) -> None:
@@ -151,10 +233,23 @@ def test_every_part_stands_on_the_module_and_under_its_top(
     up = placement.centre_y - placement.size_y / 2
     down = placement.centre_y + placement.size_y / 2
     for part in placed:
-        x0, x1, y0, y1 = _rect(part)
+        x0, x1, y0, y1 = _bounds(part)
         assert left - 1e-9 <= x0 and x1 <= right + 1e-9, part
         assert up - 1e-9 <= y0 and y1 <= down + 1e-9, part
         assert 0 <= part.height <= top
+
+
+@pytest.mark.parametrize(("art", "footprint_id", "names"), list(_layouts()), ids=_case_id)
+def test_no_two_parts_on_a_module_stand_in_one_place(art, footprint_id: str, names) -> None:
+    placed = fit_module_art(_footprint(footprint_id), _part(footprint_id, art.names[0], names), PITCH)
+    assert placed is not None
+    solid = [part for part in placed if part.kind != "silk"]
+    for index, part in enumerate(solid):
+        for other in solid[index + 1 :]:
+            # A part that is not turned is its own box, so measuring the turned one against
+            # it is exact.
+            turned, square = (other, part) if other.diagonal else (part, other)
+            assert not _polygon_meets_box(outline(turned), _bounds(square)), (part, other)
 
 
 def test_a_part_taller_than_the_id_says_is_cut_to_it() -> None:
@@ -165,36 +260,72 @@ def test_a_part_taller_than_the_id_says_is_cut_to_it() -> None:
     assert sum(part.kind == "can" for part in placed) == 2
 
 
-@pytest.mark.parametrize(("art", "footprint_id", "names", "rotation", "mirrored"), list(_cases()))
+def _strip(label) -> tuple[float, float, float, float]:
+    """The strip a module's pin name is printed in: from its start to its room, its letters
+    high and a fifth of a millimetre either side."""
+    half = PIN_NAME_HEIGHT_MM / 2 + 0.2
+    start, end = label.start, label.start + label.room
+    xs = sorted((label.x + label.dx * start, label.x + label.dx * end))
+    ys = sorted((label.y + label.dy * start, label.y + label.dy * end))
+    return (
+        xs[0] - (half if label.dx == 0 else 0),
+        xs[1] + (half if label.dx == 0 else 0),
+        ys[0] - (half if label.dy == 0 else 0),
+        ys[1] + (half if label.dy == 0 else 0),
+    )
+
+
+@pytest.mark.parametrize(
+    ("art", "footprint_id", "names", "rotation", "mirrored"), list(_cases()), ids=_case_id
+)
 def test_the_layout_leaves_the_pin_names_clear(
     art, footprint_id: str, names, rotation: int, mirrored: bool
 ) -> None:
     """The names run in from each pin across the module's board (``bodies.pin_labels``),
     as far as the room they are given. No part may stand on that strip, or the silkscreen
-    the module carries is printed under a capacitor."""
+    the module carries is printed under a capacitor -- the turned chip of a Nano measured as
+    the shape it is, which is not its box."""
     footprint = _footprint(footprint_id)
     component = _part(footprint_id, art.names[0], names, rotation, mirrored)
     placed = fit_module_art(footprint, component, PITCH)
     assert placed is not None
     labels = pin_labels(footprint, component, PITCH)
     assert labels and all(label.on_module for label in labels)
-    half = PIN_NAME_HEIGHT_MM / 2 + 0.2
     for label in labels:
-        start, end = label.start, label.start + label.room
-        xs = sorted((label.x + label.dx * start, label.x + label.dx * end))
-        ys = sorted((label.y + label.dy * start, label.y + label.dy * end))
-        strip = (
-            xs[0] - (half if label.dx == 0 else 0),
-            xs[1] + (half if label.dx == 0 else 0),
-            ys[0] - (half if label.dy == 0 else 0),
-            ys[1] + (half if label.dy == 0 else 0),
-        )
+        strip = _strip(label)
         for part in placed:
             if part.kind == "silk":
                 continue
-            x0, x1, y0, y1 = _rect(part)
-            overlaps = x0 < strip[1] and strip[0] < x1 and y0 < strip[3] and strip[2] < y1
-            assert not overlaps, (label.name, part)
+            assert not _polygon_meets_box(outline(part), strip), (label.name, part)
+
+
+#: How wide a pin name is printed, per letter, at its full width -- generous for a sans
+#: face, which is what the views print in, so the test fails before a view squeezes harder.
+LETTER_MM = 0.6 * PIN_NAME_HEIGHT_MM
+
+
+@pytest.mark.parametrize(("art", "footprint_id", "names"), list(_layouts()), ids=_case_id)
+def test_every_name_on_a_module_is_left_room_to_be_read(art, footprint_id: str, names) -> None:
+    """Stopping a name at the first part in its way only helps if what is left can be read:
+    each is printed no narrower than the views print a name anywhere, or is given
+    ``NAME_ROOM_ENOUGH_MM`` where its name is long -- which is how a real devkit's
+    silkscreen is printed too, small beside its pins."""
+    footprint = _footprint(footprint_id)
+    component = _part(footprint_id, art.names[0], names)
+    for label in pin_labels(footprint, component, PITCH):
+        wanted = PIN_NAME_MIN_SQUEEZE * LETTER_MM * len(label.name)
+        assert label.room >= min(wanted, NAME_ROOM_ENOUGH_MM) - 1e-9, label
+
+
+def test_a_layout_drawn_round_the_names_leaves_them_as_they_were() -> None:
+    """The room a name is given changes only where a part stands in it: the two modules of
+    the first real board, whose layouts were drawn round the strip, print every name as the
+    plain block does."""
+    for footprint_id, names, value in ((BUCK, BUCK_NAMES, "LM2596S"), (CAN, CAN_NAMES, "SN65HVD230")):
+        footprint = _footprint(footprint_id)
+        drawn = pin_labels(footprint, _part(footprint_id, value, names), PITCH)
+        plain = pin_labels(footprint, _part(footprint_id, "a module", names), PITCH)
+        assert drawn == plain
 
 
 def test_the_regulator_is_at_the_end_the_input_pins_are() -> None:
@@ -225,6 +356,56 @@ def test_a_breakout_lies_away_from_its_header() -> None:
         assert (chip.y - row_y) * (centre_y - row_y) > 0
 
 
+NANO = next(part for part in CATALOG_MODULES if part.id == "arduino-nano")
+
+
+def _nano_usb_y(names: tuple[tuple[str, str], ...]) -> float:
+    """Where a Nano described with these pin names has its USB socket, down the rows."""
+    placed = fit_module_art(
+        _footprint(NANO.footprint_id), _part(NANO.footprint_id, "Arduino Nano", names), PITCH
+    )
+    assert placed is not None
+    return next(part.y for part in placed if part.kind == "usb")
+
+
+def test_a_devkit_described_from_its_other_end_is_turned_by_its_names() -> None:
+    """A two-column module is drawn so its landmark pin is where the layout has it: a Nano
+    whose names run the other way down its columns still has its socket at the D13 end,
+    and one whose pins carry no names is drawn as the catalog lays it out."""
+    centre_y = placement_for(_footprint(NANO.footprint_id), PITCH).centre_y
+    unnamed = _nano_usb_y(())
+    assert unnamed > centre_y  # as the catalog has it: USB at the bottom, by D12 and D13
+    assert _nano_usb_y(NANO.pin_names) == pytest.approx(unnamed)
+
+    # The same names numbered from the other end: pin 1 is now in D12's hole.
+    rows = len(NANO.pin_names) // 2
+    names = dict(NANO.pin_names)
+    from_the_other_end = tuple(
+        (str(2 * row + column + 1), names[str(2 * (rows - 1 - row) + column + 1)])
+        for row in range(rows)
+        for column in (0, 1)
+    )
+    assert _nano_usb_y(from_the_other_end) < centre_y
+
+
+def test_a_nanos_chip_stands_on_its_corner() -> None:
+    """Turned an eighth, with its legs stopping short of its corners: the shape the pin
+    names stop at is the chip's, reaching out exactly as far as its corner legs do."""
+    assert any(part.kind == "tqfp32" and part.diagonal for part in NANO_MODULE.parts)
+    placed = fit_module_art(
+        _footprint(NANO.footprint_id), _part(NANO.footprint_id, "Arduino Nano"), PITCH
+    )
+    assert placed is not None
+    chip = next(part for part in placed if part.kind == "tqfp32")
+    assert chip.diagonal
+    points = outline(chip)
+    assert len(points) == 8
+    leg_reach = (TQFP32_LEGS_PER_SIDE - 1) / 2 * TQFP32_PITCH_MM + TQFP32_LEG_MM / 2
+    corner_reach = (chip.size_x / 2 + leg_reach) * math.sqrt(0.5)
+    assert max(abs(x - chip.x) for x, _y in points) == pytest.approx(corner_reach)
+    assert max(abs(y - chip.y) for _x, y in points) == pytest.approx(corner_reach)
+
+
 # ---------------------------------------------------------------------- in 3D
 
 vtk = pytest.importorskip("vtk")
@@ -251,13 +432,80 @@ def test_a_recognised_module_draws_its_parts_and_not_the_block() -> None:
     assert not [piece for piece in pieces if piece.rgb == view3d._MODULE_BLOCK_RGB]
     _body, _fp, plain = _board_and_pieces(BUCK, "step-down module", BUCK_NAMES)
     assert len([piece for piece in plain if piece.rgb == view3d._MODULE_BLOCK_RGB]) == 1
+    for part in CATALOG_MODULES:
+        _body, _fp, pieces = _board_and_pieces(part.footprint_id, part.placed_value, part.pin_names)
+        assert not [piece for piece in pieces if piece.rgb == view3d._MODULE_BLOCK_RGB], part.id
+
+
+def test_every_kind_of_part_has_a_builder() -> None:
+    from typing import get_args
+
+    from perfboard_studio.ui import view3d
+    from perfboard_studio.ui.moduleart import ArtKind
+
+    assert set(view3d._ART_BUILDERS) == set(get_args(ArtKind))
+    used = {part.kind for art in MODULE_ARTS for part in art.parts}
+    assert used <= set(get_args(ArtKind))
+
+
+@pytest.mark.parametrize("rotation", TURNS)
+@pytest.mark.parametrize("mirrored", [False, True])
+def test_the_nanos_chip_is_drawn_on_its_corner(rotation: int, mirrored: bool) -> None:
+    """The body and the legs are turned an eighth off the board's axes however the Nano
+    is turned or flipped, and its pin-1 dot sits towards the end ``moduleart`` says."""
+    from perfboard_studio.ui import view3d
+
+    _body, _fp, pieces = _board_and_pieces(
+        NANO.footprint_id, "Arduino Nano", NANO.pin_names, rotation, mirrored
+    )
+    turned = [
+        piece
+        for piece in pieces
+        if not piece.instances and abs(piece.orientation[2] % 90.0 - 45.0) < 1e-6
+    ]
+    # The body and the legs, and the marking printed along a side.
+    assert {piece.rgb for piece in turned} == {
+        view3d._ART_EPOXY_RGB,
+        view3d.LEAD_RGB,
+        view3d._ART_INK_RGB,
+    }
+    # The legs reach out along the board's axes as far as the turned outline says --
+    # measured on their points, since an actor's own bounds are the turned box of its box.
+    legs = next(piece for piece in turned if piece.rgb == view3d.LEAD_RGB)
+    matrix = view3d._actor_for(legs).GetMatrix()
+    points = [
+        matrix.MultiplyPoint((*legs.source.GetPoint(index), 1.0))
+        for index in range(legs.source.GetNumberOfPoints())
+    ]
+    leg_reach = (TQFP32_LEGS_PER_SIDE - 1) / 2 * TQFP32_PITCH_MM + TQFP32_LEG_MM / 2
+    corner_reach = (9.0 / 2 + leg_reach) * math.sqrt(0.5)
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    assert (max(xs) - min(xs)) / 2 == pytest.approx(corner_reach, abs=1e-6)
+    assert (max(ys) - min(ys)) / 2 == pytest.approx(corner_reach, abs=1e-6)
+    # The pin-1 dot is on the corner away from the USB socket, as Arduino's drawing has it.
+    chip = next(piece for piece in turned if piece.rgb == view3d._ART_EPOXY_RGB)
+    usb = next(piece for piece in pieces if piece.rgb == view3d._ART_USB_RGB)
+    dot = min(
+        (piece for piece in pieces if piece.rgb == view3d._ART_DOT_RGB),
+        key=lambda piece: math.dist(piece.position[:2], chip.position[:2]),
+    )
+    assert math.dist(dot.position[:2], chip.position[:2]) < TQFP32_BODY_MM / 2 * math.sqrt(2)
+    to_dot = (dot.position[0] - chip.position[0], dot.position[1] - chip.position[1])
+    to_usb = (usb.position[0] - chip.position[0], usb.position[1] - chip.position[1])
+    assert to_dot[0] * to_usb[0] + to_dot[1] * to_usb[1] < 0
 
 
 @pytest.mark.parametrize("rotation", TURNS)
 @pytest.mark.parametrize("mirrored", [False, True])
 @pytest.mark.parametrize(
     ("footprint_id", "value", "names"),
-    [(BUCK, "LM2596S", BUCK_NAMES), (CAN, "SN65HVD230", CAN_NAMES)],
+    [
+        (BUCK, "LM2596S", BUCK_NAMES),
+        (CAN, "SN65HVD230", CAN_NAMES),
+        *((part.footprint_id, part.placed_value, part.pin_names) for part in CATALOG_MODULES),
+    ],
+    ids=lambda value: value if isinstance(value, str) and not value.startswith("mod-") else "",
 )
 def test_what_is_drawn_stays_inside_the_envelope_drc_measures(
     footprint_id: str, value: str, names, rotation: int, mirrored: bool
