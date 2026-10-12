@@ -60,6 +60,7 @@ from PySide6.QtGui import (
     QIcon,
     QKeySequence,
     QResizeEvent,
+    QShortcut,
     QShowEvent,
 )
 from PySide6.QtWidgets import (
@@ -96,6 +97,7 @@ from PySide6.QtWidgets import (
     QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
+    QTreeWidgetItemIterator,
     QVBoxLayout,
     QWidget,
 )
@@ -438,7 +440,12 @@ WINDOW_STATE_KEY = "session/windowState"
 #: were left over, off the side of the window in the case that found this. Refusing the old
 #: state outright costs one person one rearranged window, once; honouring it costs them a
 #: window with two views missing from it.
-WINDOW_STATE_VERSION = 4
+#:
+#: And bumped when the opening layout moves a view into another place, which is what 6 is:
+#: board, sheet and 3D side by side, where a saved layout would have gone on opening the 3D
+#: view as a strip beside a board stacked on the sheet for everybody who had ever closed
+#: the window.
+WINDOW_STATE_VERSION = 6
 BOARD_COLOUR_KEY = "session/boardColour"
 RATSNEST_KEY = "session/showRatsnest"
 RULERS_KEY = "session/showRulers"
@@ -3514,6 +3521,19 @@ class MainWindow(QMainWindow):
         self._build_guide_dock()
         self._build_drc_dock()
         self._arrange_docks()
+        for dock in self._view_docks():
+            dock.visibilityChanged.connect(
+                lambda visible, dock=dock: self._make_room(dock) if visible else None
+            )
+            # Opened rather than merely uncovered: the switch is checked only by opening.
+            dock.toggleViewAction().toggled.connect(
+                lambda opened, dock=dock: self._on_view_opened(dock) if opened else None
+            )
+        # The 3D view and the guide report moving as the board and the sheet do, now that
+        # one of them shares the board's group and any of them can be put beside another.
+        for dock in (self.dock_3d, self.dock_guide):
+            dock.dockLocationChanged.connect(self._on_view_dock_moved)
+            dock.topLevelChanged.connect(self._on_view_dock_moved)
         self._build_menu()
         self._build_toolbar()
         self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
@@ -3810,6 +3830,11 @@ class MainWindow(QMainWindow):
         dock.dockLocationChanged.connect(self._on_view_dock_moved)
         dock.topLevelChanged.connect(self._on_view_dock_moved)
         self.dock_schematic = dock
+        # Shut on start, like the 3D view: side by side, an open sheet is a sheet laid out
+        # again on every edit, and the board is what a window opened on a board is for. It
+        # comes up beside the board when it is asked for, and by itself on an empty design
+        # (``_open_the_schematic_on_an_empty_design``).
+        dock.hide()
 
     def _on_view_dock_visibility(self, visible: bool) -> None:
         # WHICH OF A TAB GROUP IS IN FRONT, recorded as Qt says so. A dock stacked behind
@@ -3830,6 +3855,37 @@ class MainWindow(QMainWindow):
         self._sync_dock_titlebars()
         self._refresh_schematic_float_button()
 
+    # -- the three views, side by side ------------------------------------------
+
+    def _views(self) -> tuple[QDockWidget, QDockWidget, QDockWidget]:
+        """The three views of the design, in the order they stand in the middle."""
+        return (self.dock_board, self.dock_schematic, self.dock_3d)
+
+    def _on_view_opened(self, dock: QDockWidget) -> None:
+        """A view opened while the window is up takes its place in the row, and the row is
+        shared out again rather than the newcomer getting what was left. Not while the
+        window is being built or restored, which would undo the widths somebody left it
+        with.
+
+        TWO turns of the event loop later, and both are needed: one turn on, Qt has put the
+        panel in the row but not yet laid the row out, and the widths shared then come out
+        419, 420 and 454 instead of three 431s.
+        """
+        if self.isVisible() and dock in self._views():
+            QTimer.singleShot(0, lambda: QTimer.singleShot(0, self._share_the_middle))
+
+    def _share_the_middle(self) -> None:
+        """The open views that stand side by side, given the same width each."""
+        row = [
+            dock
+            for dock in self._views()
+            if not dock.isHidden() and not dock.isFloating() and not self.tabifiedDockWidgets(dock)
+        ]
+        if len(row) < 2:
+            return
+        each = sum(dock.width() for dock in row) // len(row)
+        self.resizeDocks(row, [each] * len(row), Qt.Orientation.Horizontal)
+
     #: What the default layout gives each panel, in pixels, on a window the size this one
     #: opens at. Proportions rather than promises -- they are applied once and the user
     #: owns the layout afterwards -- but the ratios between them are the layout, so they
@@ -3841,16 +3897,20 @@ class MainWindow(QMainWindow):
     def _arrange_docks(self) -> None:
         """The layout a window opens on the first time, before anyone has rearranged it.
 
-        It is close to the layout the application had when the board was a central widget:
-        parts and nets down the left, the board filling the middle with the sheet stacked on
-        it, the two expensive panels to the right. Everything here is a default that
-        ``restoreState`` overwrites on every later start.
+        Parts and nets down the left; the three views of the design -- board, sheet, 3D --
+        side by side in the middle, with the findings under them; the build guide down the
+        right. Everything here is a default that ``restoreState`` overwrites on every later
+        start.
         """
         # EVERY SPLIT BEFORE EVERY TABIFY, and the order is not taste. Qt's
         # splitDockWidget, handed a dock that is already in a tab group, adds the second
         # one to that GROUP instead of splitting -- so a DRC panel asked for underneath the
         # board arrived as a third tab behind it, present, checked and invisible.
         #
+        # THE GUIDE FIRST, so it is split from the whole column and runs its full height;
+        # the findings are split from the board's half afterwards and stay under the views.
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dock_drc)
+        self.splitDockWidget(self.dock_board, self.dock_guide, Qt.Orientation.Horizontal)
         # DRC UNDER THE BOARD, NOT ACROSS THE BOTTOM OF THE WINDOW, and that is a layout
         # fact rather than a preference. A window whose central widget is capped to nothing
         # -- which is what gives the panels the whole of it -- hands every leftover pixel of
@@ -3859,17 +3919,15 @@ class MainWindow(QMainWindow):
         # size policy would take it back. Split into the same area as the board, the two
         # divide their column the way any splitter does. It also puts the findings directly
         # under the thing they are findings about.
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dock_drc)
         self.splitDockWidget(self.dock_board, self.dock_drc, Qt.Orientation.Vertical)
-        # ...and the two expensive panels to the RIGHT of that column rather than tabbed
-        # with the board: a 3D view stacked behind it is a 3D view nobody can check the
-        # board against, which is the only reason to open one.
-        self.splitDockWidget(self.dock_board, self.dock_3d, Qt.Orientation.Horizontal)
-        self.tabifyDockWidget(self.dock_3d, self.dock_guide)
-        # Board and sheet stacked on one another, so the pair opens looking exactly like
-        # the tabs it replaces -- and a dock area's tab bar is the "more distinct
-        # transition" the two never had while they were a thin document-mode tab strip.
-        self.tabifyDockWidget(self.dock_board, self.dock_schematic)
+        # BOARD, SHEET AND 3D SIDE BY SIDE, never stacked as tabs. Which of the three is
+        # open is the user's; the ones that are share the middle (``_share_the_middle``),
+        # and one opened later takes its place in the row. They were tabs once, and moving
+        # between them was a matter of finding which tab hid which view; before that the 3D
+        # view was split off on its own and opened as a strip 190 px wide, because it is shut
+        # on every start and the opening proportions never reached it.
+        self.splitDockWidget(self.dock_board, self.dock_schematic, Qt.Orientation.Horizontal)
+        self.splitDockWidget(self.dock_schematic, self.dock_3d, Qt.Orientation.Horizontal)
         # Tabs on top, where a tab bar is: Qt puts a dock area's at the bottom by default,
         # which is where nobody looks for the switch between two views.
         for area in (
@@ -3922,9 +3980,10 @@ class MainWindow(QMainWindow):
         self._sync_central_hint()
 
     def _cap_for_default_sizes(self, on: bool) -> None:
+        # The guide is not here: it is shut on a first run, and a cap on a closed panel
+        # changes nothing. It is given its room when it opens (``_make_room``).
         for dock, width, height in (
             (self.dock_library, self.LAYOUT_LEFT_WIDTH, None),
-            (self.dock_3d, self.LAYOUT_RIGHT_WIDTH, None),
             (self.dock_drc, None, self.LAYOUT_DRC_HEIGHT),
         ):
             if width is not None:
@@ -3933,10 +3992,33 @@ class MainWindow(QMainWindow):
             if height is not None:
                 dock.setMinimumHeight(height if on else 0)
                 dock.setMaximumHeight(height if on else self.UNCAPPED)
-        if on:
-            # The 3D panel is shut on a first run, so capping it changes nothing; the
-            # minimum it carries for its own sake is put back either way.
-            self.dock_3d.setMinimumWidth(280)
+
+    #: Narrower than this, a view panel that has just opened is given room rather than left
+    #: as it is: the build guide's lines are cut to "R1 1k – P19 → M1…" well before it.
+    PANEL_OPEN_MIN_WIDTH = 320
+
+    def _make_room(self, dock: QDockWidget) -> None:
+        """Give a panel that opened as a strip the width it needs, once the layout has
+        settled: a panel shut on start never received the opening proportions, and Qt opens
+        it as narrow as it can. A tabbed panel has its group's room and a floating one its
+        own window, so neither is touched; nor is one somebody has already made wide enough.
+
+        ``resizeDocks``, unlike the opening proportions' cap-and-let-go, because by now the
+        window is on screen with a layout to divide -- which is what that call needs -- and
+        because it asks the neighbours for room rather than demanding it: a panel HELD at a
+        width the others could not make room for is a width the window grows to, and with
+        the three views side by side that pushed a 1600 px window out past the screen.
+        """
+
+        def widen() -> None:
+            if dock.isHidden() or dock.isFloating() or self.tabifiedDockWidgets(dock):
+                return
+            if dock.width() >= self.PANEL_OPEN_MIN_WIDTH:
+                return
+            wanted = min(self.LAYOUT_RIGHT_WIDTH, max(self.PANEL_OPEN_MIN_WIDTH, self.width() // 3))
+            self.resizeDocks([dock], [wanted], Qt.Orientation.Horizontal)
+
+        QTimer.singleShot(0, widen)
 
     #: The narrowest the Parts and Nets panels may be. At 1280 x 720 they came up about
     #: 170 px wide: the parts list showed only icons, and the Nets panel's name column --
@@ -3953,7 +4035,7 @@ class MainWindow(QMainWindow):
 
     def _toolbars(self) -> tuple[QToolBar, ...]:
         """The three bars of the top row, left to right."""
-        return (self.toolbar, self.board_toolbar, self.views_toolbar)
+        return (self.toolbar, self.views_toolbar, self.board_toolbar)
 
     def toolbar_button(self, action: QAction) -> QToolButton | None:
         """The button ``action`` has on whichever of the three bars it is on."""
@@ -4026,9 +4108,10 @@ class MainWindow(QMainWindow):
             self.act_connect,
             self.act_autoplace,
             self.act_autoroute,
-            self.act_show_3d,
-            self.act_show_schematic,
-            self.act_show_board,
+            self.act_guide_panel,
+            self.act_3d,
+            self.act_schematic,
+            self.act_board_panel,
             self.act_draw["top-jumper"],
             self.act_draw["insulated-wire"],
             self.act_draw["bare-wire"],
@@ -4147,6 +4230,11 @@ class MainWindow(QMainWindow):
         self.dock_3d.visibilityChanged.connect(self._on_3d_visibility_changed)
 
     def _on_3d_visibility_changed(self, visible: bool) -> None:
+        # Which of the views' tab group is in front, as the board and the sheet record it.
+        if visible:
+            self._note_in_front(self.dock_3d)
+        else:
+            self._in_front.discard(self.dock_3d)
         if visible:
             if self.vtk_widget is None:
                 self._create_3d_widget()
@@ -4186,6 +4274,7 @@ class MainWindow(QMainWindow):
             self._vtk_style = style
             self.vtk_widget = widget
             self._3d_placeholder.hide()
+            self._3d_layout.insertWidget(0, self._build_3d_toolbar())
             self._3d_layout.addWidget(widget)
             self._3d_layout.addWidget(self._build_assembly_bar())
             self._3d_stale = False
@@ -4194,6 +4283,22 @@ class MainWindow(QMainWindow):
             # has no console for a print to land in.
             self._vtk_renderer = None
             self._3d_placeholder.setText(f"{t('3D view unavailable:')}\n{exc}")
+
+    def _build_3d_toolbar(self) -> QToolBar:
+        """What the 3D view does, on the 3D view, as the schematic panel carries its own
+        tools: the exploded view and the camera lived in the View menu, three menus away
+        from the panel they work on and with nothing on the panel to say they existed. They
+        are still in the menu, where a keyboard looks for them."""
+        bar = QToolBar(t("3D View"), self)
+        bar.setObjectName("view3dToolbar")
+        bar.setMovable(False)
+        bar.setFloatable(False)
+        bar.setIconSize(QSize(icons.SIZE, icons.SIZE))
+        bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.act_reset_3d.setIconText(t("Reset Camera"))
+        bar.addAction(self.act_exploded)
+        bar.addAction(self.act_reset_3d)
+        return bar
 
     # -- assembly playback (PLAN.md D7) --------------------------------------
     #
@@ -4219,6 +4324,28 @@ class MainWindow(QMainWindow):
         self.act_play.setToolTip(t("Play the build from here, one step at a time."))
         self.act_play.toggled.connect(self._on_play_toggled)
 
+        # ONE STEP AT A TIME, by hand, beside the playing. Playing is for watching the build
+        # go by; a person following it at the bench wants the next step when they have done
+        # this one, and the slider's one-pixel-per-step precision on a 40-step board is not
+        # a way to ask for that. The arrow keys do the same while the 3D view has the focus
+        # -- only then, because on the board they nudge parts.
+        self.act_step_back = QToolButton()
+        self.act_step_back.setArrowType(Qt.ArrowType.LeftArrow)
+        self.act_step_back.setToolTip(
+            t("Back one step. The left arrow key does the same while the 3D view has the focus.")
+        )
+        self.act_step_back.clicked.connect(lambda: self.step_assembly(-1))
+        self.act_step_next = QToolButton()
+        self.act_step_next.setArrowType(Qt.ArrowType.RightArrow)
+        self.act_step_next.setToolTip(
+            t("Forward one step. The right arrow key does the same while the 3D view has the focus.")
+        )
+        self.act_step_next.clicked.connect(lambda: self.step_assembly(1))
+        for key, delta in ((Qt.Key.Key_Left, -1), (Qt.Key.Key_Right, 1)):
+            shortcut = QShortcut(QKeySequence(key), self.dock_3d)
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(lambda delta=delta: self.step_assembly(delta))
+
         self.assembly_slider = QSlider(Qt.Orientation.Horizontal)
         self.assembly_slider.setToolTip(
             t("Drag back to see the board part-way through the build.")
@@ -4228,7 +4355,9 @@ class MainWindow(QMainWindow):
         self.assembly_label = QLabel()
         self.assembly_label.setMinimumWidth(160)
 
+        row.addWidget(self.act_step_back)
         row.addWidget(self.act_play)
+        row.addWidget(self.act_step_next)
         row.addWidget(self.assembly_slider, 1)
         row.addWidget(self.assembly_label)
 
@@ -4293,6 +4422,7 @@ class MainWindow(QMainWindow):
         self.assembly_slider.blockSignals(blocked)
         self.act_play.setEnabled(bool(steps))
         self._update_assembly_label()
+        self._sync_step_buttons()
 
     def _assembly_index(self) -> int | None:
         """Which step the slider is showing, or ``None`` for "the finished board".
@@ -4320,7 +4450,55 @@ class MainWindow(QMainWindow):
 
     def _on_assembly_moved(self, _value: int) -> None:
         self._update_assembly_label()
+        self._sync_step_buttons()
+        self._follow_step_in_guide()
         self._refresh_3d()
+
+    def step_assembly(self, delta: int) -> None:
+        """One step back or forward through the build, by hand: playing stops, because a
+        step asked for and a timer stepping on past it are two people at one slider."""
+        if self.assembly_slider is None or not self.assembly_slider.isEnabled():
+            return
+        self.act_play.setChecked(False)
+        value = self.assembly_slider.value() + delta
+        self.assembly_slider.setValue(max(0, min(self.assembly_slider.maximum(), value)))
+
+    def _sync_step_buttons(self) -> None:
+        """Back and forward, each while there is somewhere to go: nothing before the bare
+        board, nothing after the finished one."""
+        slider = self.assembly_slider
+        if slider is None:
+            return
+        live = slider.isEnabled()
+        self.act_step_back.setEnabled(live and slider.value() > 0)
+        self.act_step_next.setEnabled(live and slider.value() < slider.maximum())
+
+    def _follow_step_in_guide(self) -> None:
+        """The build guide's row for the step the 3D view is showing, so the panel beside
+        it is at the same place in the build -- the other half of ``_on_guide_step_selected``,
+        which moves the slider when a row is picked. Only the row: picking it here would
+        select the step's parts on the board too, which nobody asked for by stepping.
+        """
+        tree = getattr(self, "guide_tree", None)
+        if tree is None or self._guide_stale or self.dock_guide.isHidden():
+            return
+        index = self._assembly_index()
+        blocked = tree.blockSignals(True)
+        try:
+            tree.clearSelection()
+            if index is None or index < 0:
+                return
+            found = QTreeWidgetItemIterator(tree)
+            while found.value() is not None:
+                item = found.value()
+                if item.data(0, ROLE_STEP_INDEX) == index:
+                    item.setSelected(True)
+                    tree.setCurrentItem(item)
+                    tree.scrollToItem(item)
+                    return
+                found += 1
+        finally:
+            tree.blockSignals(blocked)
 
     def _on_play_toggled(self, playing: bool) -> None:
         if playing:
@@ -5309,10 +5487,10 @@ class MainWindow(QMainWindow):
 
         bar = new_bar("Main", "mainToolbar")
         self.toolbar = bar
-        board_bar = new_bar("Board", "boardToolbar")
-        self.board_toolbar = board_bar
         views_bar = new_bar("Views", "viewsToolbar")
         self.views_toolbar = views_bar
+        board_bar = new_bar("Board", "boardToolbar")
+        self.board_toolbar = board_bar
         #: What the toolbar needs with its words under the icons. Measured the first time
         #: the window is laid out, in the mode it was built in -- before that it has no
         #: buttons to measure -- and only once, because the answer depends on the language
@@ -5340,9 +5518,10 @@ class MainWindow(QMainWindow):
             (self.act_delete, t("Delete")),
             (self.act_flip, t("Flip")),
             (self.act_ratsnest, t("Ratsnest")),
-            (self.act_show_board, t("Board")),
-            (self.act_show_schematic, t("Schematic")),
-            (self.act_show_3d, t("3D")),
+            (self.act_board_panel, t("Board")),
+            (self.act_schematic, t("Schematic")),
+            (self.act_3d, t("3D")),
+            (self.act_guide_panel, t("Guide")),
             (self.act_fit, t("Fit")),
         ):
             action.setIconText(short)
@@ -5391,17 +5570,25 @@ class MainWindow(QMainWindow):
         board_bar.addAction(self.act_ratsnest)
         board_bar.addAction(self.act_fit)
 
-        # THE VIEWS, LAST AND TOGETHER, and each button brings its view to the front --
-        # the same action as Ctrl+1..3 and the View menu's Show entries. They used to be
-        # the docks' toggleViewActions, which are lit while a panel is OPEN rather than in
-        # front, so with the board and the sheet stacked both were lit and pressing Board
-        # closed the board. See the View menu for where opening and closing went.
+        # THE VIEWS, FIRST AND TOGETHER, as switches: each opens or closes its panel and
+        # is lit while it is open. They were at the far end of the row, where they read as
+        # one more tool rather than as what is on screen, and they could not be switches
+        # while the views were stacked -- open is not in front there, so with the board and
+        # the sheet in one group both were lit and pressing Board closed the board. Side by
+        # side, open IS on screen. Ctrl+1-4 and the View menu's Show entries still only
+        # ever bring a view forward.
         self.act_show_board.setIcon(icons.icon("board"))
         self.act_show_schematic.setIcon(icons.icon("schematic"))
         self.act_show_3d.setIcon(icons.icon("3d"))
-        views_bar.addAction(self.act_show_board)
-        views_bar.addAction(self.act_show_schematic)
-        views_bar.addAction(self.act_show_3d)
+        self.act_show_guide.setIcon(icons.icon("guide"))
+        for toggle, picture in (
+            (self.act_board_panel, "board"),
+            (self.act_schematic, "schematic"),
+            (self.act_3d, "3d"),
+            (self.act_guide_panel, "guide"),
+        ):
+            toggle.setIcon(icons.icon(picture))
+            views_bar.addAction(toggle)
 
         # The menu entries carry the same pictures. A toolbar that teaches one icon and a
         # menu that shows another teaches nothing.
@@ -11091,7 +11278,8 @@ class MainWindow(QMainWindow):
         self._arrange_docks()
         for dock in (self.dock_board, self.dock_library, self.dock_nets, self.dock_drc):
             dock.show()
-        # The two that cost something to fill stay shut, exactly as they do on a first run.
+        # The three that cost something to fill stay shut, exactly as on a first run.
+        self.dock_schematic.hide()
         self.dock_3d.hide()
         self.dock_guide.hide()
         self._apply_default_sizes()

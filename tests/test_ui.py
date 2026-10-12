@@ -4296,6 +4296,61 @@ def test_the_two_ends_of_the_assembly_slider_mean_different_things() -> None:
     assert assembly_step_for(6, 5) is None, "and past the end is still the finished board"
 
 
+def test_the_build_steps_forward_and_back_one_at_a_time() -> None:
+    """Playing is for watching; somebody following the build at the bench wants the next
+    step when they have done this one. Each arrow goes as far as there is to go, and a step
+    asked for stops the playing rather than racing it."""
+    window = _window_on(_load_dense())
+    # What opening the 3D view adds under it, held by the panel as it is there.
+    window._3d_layout.addWidget(window._build_assembly_bar())
+    slider = window.assembly_slider
+    end = slider.maximum()
+
+    assert slider.value() == end  # the finished board
+    assert window.act_step_back.isEnabled() and not window.act_step_next.isEnabled()
+
+    window.act_step_back.click()
+    assert slider.value() == end - 1  # the last step, picked out
+    window.act_step_next.click()
+    assert slider.value() == end
+
+    window.act_play.setChecked(True)  # from the finished board, playing starts over
+    assert slider.value() == 0
+    assert not window.act_step_back.isEnabled() and window.act_step_next.isEnabled()
+    window.act_step_next.click()
+    assert slider.value() == 1
+    assert not window.act_play.isChecked()
+
+    window.step_assembly(-5)
+    assert slider.value() == 0
+    _close(window)
+
+
+def test_stepping_the_3d_view_brings_the_guide_to_the_same_step() -> None:
+    """The guide moves the 3D view when a row is picked; the other way round, the guide's
+    row follows the step being shown -- without selecting that step's parts on the board,
+    which nobody asked for by stepping."""
+    from perfboard_studio.ui.main import ROLE_STEP_INDEX
+
+    window = _window_on(_load_dense())
+    window.dock_guide.show()
+    window._refresh_guide_panel()
+    window._3d_layout.addWidget(window._build_assembly_bar())
+    selected_before = window.scene.selected_component_ids()
+
+    window.act_step_back.click()
+    window.act_step_back.click()
+
+    rows = window.guide_tree.selectedItems()
+    last = len(window._assembly_steps()) - 1
+    assert [row.data(0, ROLE_STEP_INDEX) for row in rows] == [last - 1]
+    assert window.scene.selected_component_ids() == selected_before
+
+    window.step_assembly(10)  # the finished board: no step to point at
+    assert window.guide_tree.selectedItems() == []
+    _close(window)
+
+
 def test_the_slider_counts_things_fitted_not_steps_done() -> None:
     """Value 1 is "one thing on the board", which is step 0 having just been done."""
     from perfboard_studio.ui.main import assembly_step_for
@@ -5641,9 +5696,9 @@ def test_a_narrow_window_keeps_every_toolbar_button_on_screen() -> None:
 
 
 def test_a_board_opened_after_a_blank_launch_comes_up_on_the_board(tmp_path) -> None:
-    """A blank launch puts the schematic in front, which is right for a design with nothing
-    in it -- and nothing put the board back, so the first example anybody opened came up as
-    its schematic, with the board behind a tab."""
+    """A blank launch puts the schematic up, which is right for a design with nothing in
+    it -- and nothing put the board back, so the first example anybody opened came up as
+    its schematic, with the board behind a tab. Side by side, the board is simply there."""
     from perfboard_studio.commands import create_starter_document
     from perfboard_studio.model import DocumentMeta
 
@@ -5656,7 +5711,6 @@ def test_a_board_opened_after_a_blank_launch_comes_up_on_the_board(tmp_path) -> 
 
     window._load_path(board)
 
-    assert window.schematic_is_showing() is False
     assert window.board_is_showing()
     _close(window)
 
@@ -6057,19 +6111,22 @@ def test_every_tool_on_the_bar_has_a_picture_and_a_short_label() -> None:
     _close(window)
 
 
-def test_the_boards_tools_are_on_the_bar_only_while_the_board_is_in_front() -> None:
+def test_the_boards_tools_are_on_the_bar_only_while_the_board_is_on_screen(monkeypatch) -> None:
     """With the sheet in front the bar still offered five conductor tools, Auto-place and
     Autoroute, and a Rotate and a Mirror that turned whatever was selected on the BOARD --
-    the sheet has its own. The board's bar goes while the board is behind, and the menus
-    and shortcuts keep every one of those actions."""
-    window = _window_on(_load_dense())
-    try:
-        window.show_board()
-        assert window.board_is_showing()
-        assert not window.board_toolbar.isHidden()
+    the sheet has its own. The board's bar goes while the board is off screen: closed, or
+    stacked behind the sheet by hand. Beside the sheet it is on screen, and the bar stays.
+    The menus and shortcuts keep every one of those actions."""
+    from PySide6.QtWidgets import QApplication
 
+    window = _shown_window_without_3d(monkeypatch)
+    try:
         window.show_schematic()
-        assert not window.board_is_showing()
+        _settle_events(QApplication)
+        assert window.board_is_showing() and not window.board_toolbar.isHidden()
+
+        window.act_board_panel.trigger()  # closed
+        _settle_events(QApplication)
         assert window.board_toolbar.isHidden()
         assert window.act_autoroute.isEnabled(), "the menu entry must still work"
         # Save, undo and the views stay: they are about the document, not about a panel.
@@ -6077,32 +6134,47 @@ def test_the_boards_tools_are_on_the_bar_only_while_the_board_is_in_front() -> N
         assert not window.views_toolbar.isHidden()
 
         window.show_board()
+        window.tabifyDockWidget(window.dock_board, window.dock_schematic)  # stacked by hand
+        window.show_schematic()
+        _settle_events(QApplication)
+        assert not window.board_is_showing() and window.board_toolbar.isHidden()
+
+        window.show_board()
+        _settle_events(QApplication)
         assert not window.board_toolbar.isHidden()
     finally:
         _close(window)
 
 
-def test_opening_a_panel_in_the_other_group_leaves_this_one_in_front() -> None:
-    """There are two tab groups -- the board with the sheet, the 3D view with the guide --
-    and which panel was in front was ONE variable for both. Pressing 3D or Build Guide made
-    that panel "the one in front", so the board, still showing in its own group, read as
-    behind: its tools left the bar until somebody clicked the tab that was already open.
-    With the sheet in front the same press stopped the sheet redrawing itself."""
-    window = _window_on(_load_dense())
+def test_opening_a_panel_in_the_other_group_leaves_this_one_in_front(monkeypatch) -> None:
+    """Which panel was in front was once ONE variable for the whole window, which has more
+    than one place a panel can stand. Opening the guide made it "the one in front", so the
+    board, still showing in a tab group of its own, read as behind: its tools left the bar
+    until somebody clicked the tab that was already open. With the sheet in front the same
+    press stopped the sheet redrawing itself. Kept per group, for views stacked by hand."""
+    from PySide6.QtWidgets import QApplication
+
+    window = _shown_window_without_3d(monkeypatch)
     try:
+        window.show_schematic()
+        window.tabifyDockWidget(window.dock_board, window.dock_schematic)
         window.show_board()
+        _settle_events(QApplication)
         window.act_show_guide.trigger()
+        _settle_events(QApplication)
         assert window.dock_guide not in window.tabifiedDockWidgets(window.dock_board)
         assert window.board_is_showing()
         assert not window.board_toolbar.isHidden()
 
         window.show_schematic()
         window.act_show_guide.trigger()
+        _settle_events(QApplication)
         assert window.schematic_is_showing()
         assert window.board_toolbar.isHidden()
 
         # Within a group, the one brought forward still puts the other behind.
         window.show_board()
+        _settle_events(QApplication)
         assert window.board_is_showing() and not window.schematic_is_showing()
     finally:
         _close(window)
@@ -6914,19 +6986,129 @@ def test_a_dragged_part_carries_its_reference_in_a_format_of_its_own() -> None:
     _close(window)
 
 
-def test_the_board_and_the_sheet_are_both_panels() -> None:
+def test_the_board_and_the_sheet_are_both_panels(monkeypatch) -> None:
     """They were a central widget and a tab beside it -- the one pair in the window that
     could not be arranged. Side by side, stacked, floated or closed is now a drag, and Qt
-    remembers wherever it was left."""
-    window = _window_on(_golden_document("ne555"))
+    remembers wherever it was left. They open side by side; the sheet is shut on start."""
+    from PySide6.QtWidgets import QApplication
+
+    window = _shown_window_without_3d(monkeypatch)
 
     assert window.dock_board.widget() is window.view
     assert window.dock_schematic.widget() is window.schematic_page
-    # Stacked on one another to start with, so the pair opens looking like the tabs it
-    # replaces...
-    assert window.dock_schematic in window.tabifiedDockWidgets(window.dock_board)
-    # ...and the board is the one in front.
-    assert window.schematic_is_showing() is False
+    assert window.board_is_showing()
+    assert window.dock_schematic.isHidden() and window.schematic_is_showing() is False
+
+    window.show_schematic()
+    _settle_events(QApplication)
+    assert window.dock_schematic not in window.tabifiedDockWidgets(window.dock_board)
+    assert window.dock_schematic.x() > window.dock_board.x()
+    assert window.board_is_showing() and window.schematic_is_showing()
+    _close(window)
+
+
+def test_the_views_open_side_by_side_and_share_the_middle(monkeypatch) -> None:
+    """Board, sheet and 3D stand side by side, never as tabs: a view opened takes its place
+    in the row and the row is shared out again, one closed gives its room back, and the
+    guide stands apart to the right. The 3D view used to open split off on its own, as a
+    strip 190 px wide -- it is shut on every start, so the opening proportions never
+    reached it."""
+    from PySide6.QtWidgets import QApplication
+
+    window = _shown_window_without_3d(monkeypatch)
+    width = window.width()
+
+    window.act_schematic.trigger()  # the toolbar's switch
+    _settle_events(QApplication)
+    assert _the_views_stand_in_a_row(window)
+    assert abs(window.dock_board.width() - window.dock_schematic.width()) <= 2
+
+    window.act_show_3d.trigger()
+    _settle_events(QApplication)
+    assert _the_views_stand_in_a_row(window)
+    assert window.dock_3d.x() > window.dock_schematic.x()
+    widths = [dock.width() for dock in window._views()]
+    assert max(widths) - min(widths) <= 2, widths
+    assert window.board_is_showing() and window.schematic_is_showing()
+
+    board_before = window.dock_board.width()
+    window.act_schematic.trigger()  # closed again
+    _settle_events(QApplication)
+    assert window.dock_board.width() > board_before
+
+    window.act_show_guide.trigger()
+    _settle_events(QApplication)
+    assert window.dock_guide.x() >= window.dock_3d.x() + window.dock_3d.width()
+    assert window.width() == width
+    _close(window)
+
+
+def _shown_window_without_3d(monkeypatch, width: int = 1600):
+    """A window on screen -- Qt counts a panel into a tab group only once it is -- with the
+    3D panel's contents stubbed, because a shown 3D panel builds VTK's pipeline."""
+    from PySide6.QtWidgets import QApplication
+
+    from perfboard_studio.ui.main import MainWindow
+
+    monkeypatch.setattr(MainWindow, "_create_3d_widget", lambda self: None)
+    window = _window_on(_golden_document("ne555"))
+    window.resize(width, 950)
+    window.show()
+    _settle_events(QApplication)
+    return window
+
+
+def _settle_events(application, rounds: int = 25) -> None:
+    for _ in range(rounds):
+        application.processEvents()
+
+
+def _the_views_stand_in_a_row(window) -> bool:
+    views = [dock for dock in window._views() if not dock.isHidden()]
+    if any(other in views for dock in views for other in window.tabifiedDockWidgets(dock)):
+        return False
+    xs = [dock.x() for dock in views]
+    return xs == sorted(xs) and len(set(xs)) == len(xs)
+
+
+def test_the_guide_beside_three_views_does_not_grow_the_window(monkeypatch) -> None:
+    """Room for the guide is ASKED of its neighbours, never demanded: held at its width
+    while three views stood beside it, it pushed a 1600 px window out to 2110."""
+    from PySide6.QtWidgets import QApplication
+
+    window = _shown_window_without_3d(monkeypatch)
+    window.show_schematic()
+    window.act_show_3d.trigger()
+    _settle_events(QApplication)
+    window.act_show_guide.trigger()
+    _settle_events(QApplication)
+
+    assert window.width() == 1600
+    assert window.dock_guide.width() >= window.PANEL_OPEN_MIN_WIDTH
+    assert _the_views_stand_in_a_row(window)
+    _close(window)
+
+
+def test_a_panel_that_opens_as_a_strip_is_given_room() -> None:
+    """Shut on start, the guide was never given the opening proportions, and Qt opened it
+    as narrow as it would go: every step cut to its first few letters."""
+    from PySide6.QtWidgets import QApplication
+
+    window = _window_on(_golden_document("ne555"))
+    window.resize(1600, 950)
+    window.show()
+    for _ in range(10):
+        QApplication.processEvents()
+
+    window.act_show_guide.trigger()
+    for _ in range(20):
+        QApplication.processEvents()
+
+    assert window.dock_guide.width() >= window.PANEL_OPEN_MIN_WIDTH
+    # ...and let go of afterwards: the room is a starting point, not a cage. (Qt clamps
+    # an unbounded maximum to its own ceiling, so the question is only whether it is held.)
+    assert window.dock_guide.maximumWidth() > window.LAYOUT_RIGHT_WIDTH
+    assert window.dock_guide.minimumWidth() < window.PANEL_OPEN_MIN_WIDTH
     _close(window)
 
 
@@ -6979,8 +7161,10 @@ def test_a_view_is_put_away_from_the_panels_submenu() -> None:
     toggles = panels.actions()
     assert window.act_board_panel in toggles and window.act_schematic in toggles
     assert all(toggle.isCheckable() for toggle in toggles)
-    # A dock's switch says whether it is VISIBLE, which a window never shown is not.
+    # A dock's switch says whether it is VISIBLE, which a window never shown is not -- and
+    # the sheet is shut on start, so it is opened first.
     window.show()
+    window.show_schematic()
     QApplication.processEvents()
     assert window.act_schematic.isChecked()
 
@@ -6992,9 +7176,14 @@ def test_a_view_is_put_away_from_the_panels_submenu() -> None:
 
 def test_a_tabbed_panel_drops_its_own_title_bar() -> None:
     """Qt draws both: the tab bar for the group, and under it the current dock's title --
-    the same word twice, on two rows, above a view that wanted the height."""
+    the same word twice, on two rows, above a view that wanted the height. The views open
+    side by side, each with its title; stacked by hand, they lose it."""
     window = _window_on(_golden_document("ne555"))
+    assert window.dock_board.titleBarWidget() is None
 
+    window.dock_schematic.show()
+    window.tabifyDockWidget(window.dock_board, window.dock_schematic)
+    window._on_view_dock_moved()
     assert window.dock_board.titleBarWidget() is not None
 
     window.dock_schematic.setFloating(True)

@@ -20,7 +20,36 @@ closed without a bump.
 
 ## [Unreleased]
 
+### Added
+
+- **The 3D view steps through the build one step at a time, as well as playing it.** Two
+  arrows either side of Play go back and forward a step -- and so do the left and right arrow
+  keys while the 3D view has the focus (only then, because on the board they nudge parts).
+  Playing is for watching the build go by; somebody following it at the bench wants the next
+  step when they have done this one, and dragging the slider a pixel at a time on a 40-step
+  board was the only way to ask for it. A step asked for stops the playing, and the Build
+  Guide beside the view moves to the same step, as the view already followed a step picked
+  in the guide.
+
+
 ### Changed
+
+- **Board, Schematic and 3D stand side by side.** The 3D view used to open split off to the
+  right of the board as a strip about 190 px wide -- it is shut on every start, so the
+  window's opening proportions never reached it -- with the build guide stacked behind it
+  as a tab, both their names cut short. Now a view opened takes its place beside the others
+  and the middle is shared out equally between them; one closed gives its room back. The
+  window opens on the board, the schematic and the 3D view come up beside it when they are
+  asked for, and the build guide stands down the right, given room to be read when it opens.
+  Because this is a new opening layout, a panel arrangement saved by an earlier version is
+  set aside once and the window opens on the new one.
+- **The Board, Schematic, 3D and Guide buttons are at the start of the toolbar, as
+  switches.** They sat at the far end of the row, where they read as one more tool rather
+  than as what is on screen; now each opens or closes its panel and is lit while it is
+  open. Ctrl+1 to Ctrl+4 still only ever bring a view forward.
+- **The 3D view carries its own tools.** Exploded View and Reset Camera are on a bar across
+  the top of the 3D panel, as the schematic panel carries its own; they lived in the View
+  menu, three menus away from the view they work on, and they are still there too.
 
 - **An LM2596 buck module and an SN65HVD230 CAN breakout are drawn as what is on them.** A
   module's id carries its board and the height of its tallest part and nothing else, so in

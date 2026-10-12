@@ -1281,7 +1281,15 @@ for, and wanting both at once meant a second top-level window (`_DetachedSheet`)
 button and handed back on close. All of that is what a `QDockWidget` already is, and none
 of it could be undone by dragging.
 
-Six things follow, and each has a test:
+The opening arrangement is parts and nets on the left, **board, sheet and 3D side by side in
+the middle** with DRC under them, and the build guide down the right. Only the board is open
+on a first start; a view opened takes its place in the row and the row is shared out again
+(`_on_view_opened`, two turns of the event loop later — one turn on, the row is not laid out
+yet and the widths come out uneven). The views were tabs for a while, and before that the 3D
+view was split off on its own and opened as a strip 190 px wide, because it is shut on every
+start and the opening proportions never reached it.
+
+Seven things follow, and each has a test:
 
 - **The central widget is capped to nothing** (`_sync_central_hint`, `UNCAPPED`). QMainWindow
   surrounds a central widget with dock areas, so for the panels to have the whole window
@@ -1302,21 +1310,31 @@ Six things follow, and each has a test:
   moment; the splitters move to it; and the arrangement is photographed with `saveState`
   and put back afterwards, because a dock that is the only thing in its area springs
   straight back when the cap comes off.
+- **A view panel that OPENS as a strip is given room** (`_make_room`, on `visibilityChanged`),
+  for a panel shut at start that the opening proportions never reached, narrower than
+  `PANEL_OPEN_MIN_WIDTH`. With `resizeDocks` this time, not cap-and-let-go: the window is on
+  screen by then, which is what that call needs, and it ASKS the neighbours for room. A
+  panel held at a width they could not make room for is a width the window grows to — the
+  guide held at 460 px beside three views side by side pushed a 1600 px window to 2110.
+  A tabbed or floating panel is left alone.
 - **A tabbed panel drops its own title bar** (`_sync_dock_titlebars`). Qt draws both the tab
   bar for the group and the current dock's title under it — the same word twice, on two
   rows, above a view that wanted the height. Dragging the tab moves the panel and
   View ▸ Panels closes it, so nothing is lost; the title bar comes back the moment the
   panel is pulled out beside another and is the only handle it has.
-- **The view buttons and Ctrl+1–4 bring a view FORWARD and never put it away**
-  (`act_show_board` and its three siblings). They were the docks' toggleViewActions, lit
-  while a panel was OPEN, and open is not in front: with the board and the sheet stacked
-  both buttons were lit, and pressing Board to reach the board closed it. The dock
-  toggles (`act_board_panel`, …) live in View ▸ Panels, where a check mark is the honest
-  thing for them to show.
-- **`WINDOW_STATE_VERSION` is bumped when a dock is added or removed.** `restoreState` puts
-  back the docks it knows and leaves the ones it has never heard of wherever the constructor
-  put them, which landed the board and the sheet off the side of the window for anybody with
-  a saved layout. Refusing the old state costs one person one rearranged window, once.
+- **Ctrl+1–4 bring a view FORWARD and never put it away** (`act_show_board` and its three
+  siblings); **the toolbar's view buttons are switches** — the docks' own toggleViewActions,
+  first in the row, lit while a panel is open. That is honest only because the views stand
+  side by side: while they were stacked, open was not in front, both Board and Schematic
+  were lit, and pressing Board to reach the board closed it. A view somebody stacks by hand
+  is still tracked per group (`_note_in_front`, below).
+- **`WINDOW_STATE_VERSION` is bumped when a dock is added or removed**, or when the opening
+  layout moves a view somewhere else. `restoreState` puts back the docks it knows and leaves
+  the ones it has never heard of wherever the constructor put them, which landed the board
+  and the sheet off the side of the window for anybody with a saved layout; and a saved
+  layout keeps an old arrangement for everybody who ever closed the window, which is why
+  the 3D view joining the board's group was version 5. Refusing the old state costs one
+  person one rearranged window, once.
 
 **`schematic_is_showing` needs `_in_front`, which a tab widget answered for free.** The
 panel fills itself only while it is in front of somebody, the same rule the 3D panel and the
@@ -1329,9 +1347,10 @@ whether the board's toolbar is up.
 
 **It is kept PER TAB GROUP** (`_note_in_front`): a panel brought forward puts only its own
 group-mates behind. It was one variable, "the panel raised last", in a window with two
-groups — board with sheet, 3D with guide — so pressing 3D or Build Guide made the board read
-as behind while it sat in front: its tools left the bar and a sheet stopped redrawing, until
-somebody clicked the tab already showing. Anything that brings a view panel forward goes
+groups — then board with sheet, 3D with guide — so pressing 3D or Build Guide made the board
+read as behind while it sat in front: its tools left the bar and a sheet stopped redrawing,
+until somebody clicked the tab already showing. Qt counts a panel into a tab group only once
+the window is on screen, so a test about the groups shows its window. Anything that brings a view panel forward goes
 through `_raise_view`, because `raise_()` on a window not on screen sends Qt no notice at
 all — floating the sheet and docking it back lost it exactly that way.
 

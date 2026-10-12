@@ -448,6 +448,12 @@ TURKISH: Mapping[str, str] = {
     "Drag back to see the board part-way through the build.": (
         "Geriye sürükleyerek kartın montajın ortasındaki hâlini görün."
     ),
+    "Back one step. The left arrow key does the same while the 3D view has the focus.": (
+        "Bir adım geri. 3D görünüm odaktayken sol ok tuşu da aynısını yapar."
+    ),
+    "Forward one step. The right arrow key does the same while the 3D view has the focus.": (
+        "Bir adım ileri. 3D görünüm odaktayken sağ ok tuşu da aynısını yapar."
+    ),
     "Finished board": "Bitmiş kart",
     "Bare board": "Boş kart",
     "Lift every part off the board, with a line down to the holes it goes in.": (
@@ -1043,6 +1049,8 @@ TURKISH: Mapping[str, str] = {
         "Lehimleme sırası, pencerenin içinde: önce en alçak parça, üzerinde bir şey duran "
         "jumperlar ondan önce, entegreler en sonda. Bir adımı seçmek onu kart üzerinde gösterir."
     ),
+    "Guide": "Rehber",
+    "Reset Camera": "Kamerayı Sıfırla",
     "Export the Guide…": "Rehberi Dışa Aktar…",
     "Build guide written": "Montaj rehberi yazıldı",
     "Written to {folder}, with {count} other files.": (
