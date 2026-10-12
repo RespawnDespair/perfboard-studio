@@ -907,6 +907,14 @@ with its legs, a radio module its can and antenna, no text. Both views paint fro
 stop at parts both views show — the block it replaced said nothing about which way round a
 module was, and the names stopped short of nothing visible.
 
+**A module's own board colour is one answer with three askers**: `moduleart.board_colour_for`,
+read by the 2D body, the 3D board piece and the STEP export (`Palette.component_body`, asked
+per part before the per-footprint `body`). A Pico is green and an Espressif devkit black;
+everything else keeps the module style's blue. It answers only where `fit_module_art` does —
+a board coloured as a Pico is a board drawn as one, so a part merely NAMED "Pico" on a
+footprint the layout does not fit stays blue rather than claiming to be something it is not
+drawn as.
+
 **A vertical terminal is KiCad's header with our plug standing in it**: wires in from above,
 screws in the plug's SIDE, as on every pluggable block on a vertical header (and as the 2D
 view's comment always said). The header is the sliced MSTBVA model above; the plug is drawn

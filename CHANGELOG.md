@@ -29,6 +29,10 @@ closed without a bump.
   same -- and the pin names stopped short of parts this view did not show; now they stop at
   parts both views show, in the same colours.
 
+- **A module's board is the colour its maker makes it**: a Raspberry Pi Pico is green and the
+  Espressif devkits black, in the board view, the 3D view and the STEP export alike. Every
+  other module keeps the blue most of them are made on.
+
 - **The build guide keeps your place.** Each step in the Build Guide panel has a tick, and a
   ticked step is remembered for that board: the phase headings and the summary count what
   is done, and **Next Step to Do** picks the first step without a tick -- shown on the

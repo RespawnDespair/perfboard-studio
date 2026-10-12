@@ -23,6 +23,7 @@ consistently everywhere, not a family of ad hoc sign flips that can drift apart.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from typing import Any, cast
 
 from PySide6.QtCore import QEvent, QMimeData, QPoint, QPointF, QRectF, Qt, Signal
@@ -153,6 +154,7 @@ from .moduleart import (
     TQFP32_LEGS_PER_SIDE,
     TQFP32_PITCH_MM,
     PlacedArt,
+    board_colour_for,
     fit_module_art,
 )
 from .partnames import footprint_label
@@ -2456,6 +2458,8 @@ class ComponentItem(QGraphicsItem):
         #: What stands on a module ``moduleart`` recognises, laid out once: the part is a
         #: frozen snapshot and the item is rebuilt with the document.
         self.art = fit_module_art(fp, comp, board.pitch)
+        #: Its own board's colour, when that is not the module style's (a Pico is green).
+        self.board_colour = board_colour_for(fp, comp, board.pitch)
         self._names_rect = self._pin_names_rect()
         self._sync_position()
 
@@ -2541,6 +2545,10 @@ class ComponentItem(QGraphicsItem):
         placement = placement_for(self.fp, self.board.pitch)
         style = style_for(self.fp)
         keyed = polarity_pin_offset(self.fp, self.board.pitch)
+        if self.board_colour is not None:
+            style = replace(
+                style, fill=self.board_colour, edge=QColor(self.board_colour).darker(160).name()
+            )
 
         # The courtyard, faint and only when it matters. It is what DRC checks for overlap,
         # and it is padded well beyond the part -- drawing it as the body is what used to make

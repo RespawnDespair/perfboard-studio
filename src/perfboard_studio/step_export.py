@@ -170,18 +170,25 @@ class ModelPart:
 class Palette:
     """What each solid is coloured. The engine has no opinion about colour, so the window
     passes the one its own views use (``ui/export_step``) and a bare call gets neutral
-    ones; ``body`` is asked per footprint, which is where a resistor and a DIP differ."""
+    ones; ``body`` is asked per footprint, which is where a resistor and a DIP differ, and
+    ``component_body`` per part first, for a part whose own colour is not its kind's -- a
+    Pico's board is green where a module's is blue. ``None`` from it means "its kind's"."""
 
     board: Rgb = (0.20, 0.42, 0.25)
     lead: Rgb = (0.78, 0.80, 0.84)
     part: Rgb = (0.30, 0.31, 0.34)
     body: Callable[[Footprint], Rgb] | None = None
+    component_body: Callable[[ComponentInstance, Footprint], Rgb | None] | None = None
     #: Asked per conductor, which is where a red supply wire and a black ground differ.
     #: Left out, a sleeved wire is ``sleeve`` and a bare one ``lead``.
     wire: Callable[[Conductor], Rgb] | None = None
     sleeve: Rgb = (0.20, 0.35, 0.70)
 
-    def body_rgb(self, footprint: Footprint) -> Rgb:
+    def body_rgb(self, footprint: Footprint, component: ComponentInstance | None = None) -> Rgb:
+        if component is not None and self.component_body is not None:
+            own = self.component_body(component, footprint)
+            if own is not None:
+                return own
         return self.part if self.body is None else self.body(footprint)
 
     def wire_rgb(self, conductor: Conductor) -> Rgb:
@@ -336,7 +343,7 @@ def _part_solids(
     x1, y0 = place(max_x, max_y)
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     height = footprint.body_height if footprint.body_height > 0 else MIN_BODY_MM
-    rgb = palette.body_rgb(footprint)
+    rgb = palette.body_rgb(footprint, comp)
     archetype = footprint.body.archetype
 
     pins = [

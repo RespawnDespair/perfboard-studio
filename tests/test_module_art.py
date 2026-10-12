@@ -478,6 +478,44 @@ def test_the_2d_view_draws_what_is_on_a_recognised_module() -> None:
     assert middle.name() != "#1b1d22", "the block is still drawn across the module"
 
 
+def test_a_module_board_is_the_colour_its_maker_makes_it() -> None:
+    """A Pico is green and an Espressif devkit black; the rest keep the module style's blue.
+    Only where the layout is drawn: a board coloured as a Pico is a board drawn as one."""
+    from perfboard_studio.ui.moduleart import ESPRESSIF_BLACK, PICO_MODULE, board_colour_for
+
+    colours = {
+        part.id: board_colour_for(
+            _footprint(part.footprint_id), _part(part.footprint_id, part.placed_value, part.pin_names), PITCH
+        )
+        for part in CATALOG_MODULES
+    }
+    assert colours == {
+        "esp32-devkitc": ESPRESSIF_BLACK,
+        "esp32-c3-devkitm-1": ESPRESSIF_BLACK,
+        "arduino-nano": None,
+        "raspberry-pi-pico": PICO_MODULE.board_colour,
+        "wemos-d1-mini": None,
+    }
+    # A Pico named on a board the layout was not drawn for is not coloured as one.
+    square = "mod-2x20-p7-r1-30x30x3.5-s8.5"
+    assert board_colour_for(_footprint(square), _part(square, "Raspberry Pi Pico"), PITCH) is None
+
+
+def test_the_2d_view_paints_a_pico_green() -> None:
+    from PySide6.QtGui import QColor
+
+    from perfboard_studio.ui.moduleart import PICO_MODULE
+
+    image, item, source, scale, component, _scene = _render_part("raspberry-pi-pico")
+    assert item.board_colour == PICO_MODULE.board_colour
+    placement = placement_for(_footprint(component.footprint_id), PITCH)
+    # Bare board, below everything on it: the board's own colour, give or take the sheen.
+    bare = _pixel_at(image, item, source, scale, component, placement.centre_x, placement.centre_y + 20)
+    green = QColor(PICO_MODULE.board_colour)
+    assert bare.hue() == pytest.approx(green.hue(), abs=12)
+    assert bare.green() > bare.red() + 40 and bare.green() > bare.blue() + 40
+
+
 def test_a_module_nobody_wrote_a_layout_for_keeps_its_block_in_2d() -> None:
     _qt_app()
     from perfboard_studio.mcp.session import new_board
@@ -519,6 +557,29 @@ def test_a_recognised_module_draws_its_parts_and_not_the_block() -> None:
     for part in CATALOG_MODULES:
         _body, _fp, pieces = _board_and_pieces(part.footprint_id, part.placed_value, part.pin_names)
         assert not [piece for piece in pieces if piece.rgb == view3d._MODULE_BLOCK_RGB], part.id
+
+
+def test_3d_and_the_step_file_paint_a_pico_green() -> None:
+    """The colour the 2D view paints a module's board, the 3D view and the STEP export
+    paint it too: one answer, ``moduleart.board_colour_for``."""
+    from perfboard_studio.model import PerfDocument
+    from perfboard_studio.ui import view3d
+    from perfboard_studio.ui.export_step import step_palette
+    from perfboard_studio.ui.moduleart import PICO_MODULE
+
+    pico = next(part for part in CATALOG_MODULES if part.id == "raspberry-pi-pico")
+    _body, footprint, pieces = _board_and_pieces(pico.footprint_id, pico.placed_value, pico.pin_names)
+    green = view3d._rgb(PICO_MODULE.board_colour)
+    assert pieces[0].rgb == green  # the module's own board, first
+
+    from perfboard_studio.mcp.session import new_board
+
+    document: PerfDocument = new_board(cols=40, rows=40)
+    component = _part(pico.footprint_id, pico.placed_value, pico.pin_names)
+    palette = step_palette(document)
+    assert palette.body_rgb(footprint, component) == pytest.approx(green)
+    plain = _part(pico.footprint_id, "a module")
+    assert palette.body_rgb(footprint, plain) == palette.body_rgb(footprint)
 
 
 def test_every_kind_of_part_has_a_builder() -> None:

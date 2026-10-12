@@ -213,6 +213,9 @@ class ModuleArt:
     #: Fragments that name ANOTHER board of the same family -- a Nano Every, a Pico W --
     #: which shares the footprint and not the parts, and is drawn as the block.
     excludes: tuple[str, ...] = ()
+    #: The module's own board, where it is not the blue most modules are made on: a Pico's
+    #: is green, an Espressif devkit's black. Empty for the module style's own.
+    board_colour: str = ""
     #: For ``"columns"``: a pin name, and the ends of ``u`` and ``v`` it is at, +1 or -1.
     #: The art is turned end for end, or side for side, until a pin of that name is there,
     #: so a module described from its other end is still drawn with its USB socket at the
@@ -306,6 +309,10 @@ SN65HVD230_MODULE = ModuleArt(
 )
 
 # -- the catalog's modules ----------------------------------------------------------------
+
+#: Espressif's devkits are made on black board -- a little lighter than black, so the dark
+#: parts on it still stand apart from it, as they do under a bench lamp.
+ESPRESSIF_BLACK = "#24262c"
 #
 # Each is in the catalog's own frame (``catalog.py``): its two pin columns running down the
 # board, pin 1 at the top left, the board the catalog's footprint describes -- which takes in
@@ -320,6 +327,7 @@ SN65HVD230_MODULE = ModuleArt(
 #: KiCad's ESP32-WROOM-32 model. Sellers' clones copy this board part for part.
 DEVKITC_MODULE = ModuleArt(
     key="esp32-devkitc",
+    board_colour=ESPRESSIF_BLACK,
     names=("devkitc",),
     excludes=("s2", "s3", "c3", "c6", "h2", "wrover", "devkitc-ve", "devkitc ve", "32u"),
     board=(54.3, 27.94),
@@ -355,6 +363,7 @@ DEVKITC_MODULE = ModuleArt(
 #: the names beside those pins would be squeezed past reading.
 C3_DEVKITM_MODULE = ModuleArt(
     key="esp32-c3-devkitm-1",
+    board_colour=ESPRESSIF_BLACK,
     names=("c3-devkitm", "c3 devkitm", "c3_devkitm"),
     board=(44.31, 25.4),
     pins=30,
@@ -420,6 +429,7 @@ NANO_MODULE = ModuleArt(
 #: beside the right-hand pins.
 PICO_MODULE = ModuleArt(
     key="raspberry-pi-pico",
+    board_colour="#2a7a40",
     names=("pico",),
     excludes=("pico w", "pico-w", "pico_w", "picow", "pico 2", "pico2", "pico-2", "esp32"),
     board=(52.3, 21.0),
@@ -628,6 +638,20 @@ def fit_module_art(
             )
         )
     return tuple(placed)
+
+
+def board_colour_for(
+    footprint: Footprint, component: ComponentInstance, pitch: float
+) -> str | None:
+    """The colour of this module's own board, when that is not the module style's blue --
+    or ``None``. Only where the layout itself is drawn: a board coloured as a Pico is a board
+    drawn as one. Asked by both views and the STEP export, so the three agree."""
+    art = recognise_module(component.value)
+    if art is None or not art.board_colour:
+        return None
+    if fit_module_art(footprint, component, pitch) is None:
+        return None
+    return art.board_colour
 
 
 # -- what a part covers ------------------------------------------------------------------

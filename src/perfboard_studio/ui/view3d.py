@@ -94,6 +94,7 @@ from .moduleart import (
     TQFP32_LEGS_PER_SIDE,
     TQFP32_PITCH_MM,
     PlacedArt,
+    board_colour_for,
     fit_module_art,
 )
 from .partmodels import (
@@ -3302,7 +3303,9 @@ def _module_pieces(body: _WorldBody, footprint: Any, comp: Any, board: Board) ->
     pieces: list[_Piece] = [
         _Piece(
             source=_box(body.size_x, body.size_y, MODULE_PCB_MM),
-            rgb=_rgb(body.style.fill),
+            # The module's own board colour where it has one -- a Pico is green -- or the
+            # style's, as the 2D view and the STEP export have it.
+            rgb=_rgb(board_colour_for(footprint, comp, pitch) or body.style.fill),
             position=(body.x, body.y, seat + MODULE_PCB_MM / 2),
             material=MASK,
         )

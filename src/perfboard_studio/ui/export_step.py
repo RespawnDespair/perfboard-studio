@@ -10,17 +10,19 @@ run and a project save all come through here, which is what keeps the three file
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtGui import QColor
 
 from perfboard_studio.connectivity import FootprintLookup
-from perfboard_studio.model import Conductor, Footprint, PerfDocument
+from perfboard_studio.model import ComponentInstance, Conductor, Footprint, PerfDocument
 from perfboard_studio.step_export import Palette, Rgb, document_to_step
 
 from .boardcolors import scheme_for
 from .bodies import style_for
+from .moduleart import board_colour_for
 from .view3d import LEAD_RGB, net_colouring, wire_rgb
 
 
@@ -33,6 +35,16 @@ def _body_rgb(footprint: Footprint) -> Rgb:
     return _rgb(style_for(footprint).fill)
 
 
+def _component_rgb(pitch: float) -> Callable[[ComponentInstance, Footprint], Rgb | None]:
+    """A part's own colour where it is not its kind's: a recognised module's board."""
+
+    def own(component: ComponentInstance, footprint: Footprint) -> Rgb | None:
+        colour = board_colour_for(footprint, component, pitch)
+        return None if colour is None else _rgb(colour)
+
+    return own
+
+
 def step_palette(doc: PerfDocument) -> Palette:
     """The colours the 3D view paints this board with, as sRGB -- what STEP reads."""
     net_class, signal_index = net_colouring(doc)
@@ -42,7 +54,11 @@ def step_palette(doc: PerfDocument) -> Palette:
         return wire_rgb(conductor, net_class.get(net), signal_index.get(net, 0))
 
     return Palette(
-        board=scheme_for(doc.board.material).rgb, lead=LEAD_RGB, body=_body_rgb, wire=wire
+        board=scheme_for(doc.board.material).rgb,
+        lead=LEAD_RGB,
+        body=_body_rgb,
+        component_body=_component_rgb(doc.board.pitch),
+        wire=wire,
     )
 
 
