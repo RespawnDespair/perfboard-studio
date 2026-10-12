@@ -20,6 +20,8 @@ closed without a bump.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-12
+
 ### Added
 
 - **The board view draws a module as what is on it too**, from above, for every module the
@@ -80,7 +82,6 @@ closed without a bump.
 - **The Turkish interface calls the 3D view one thing.** The toolbar button, the workflow
   bar and four tooltips said "3B" while every menu, dialog and the README said "3D"; it is
   "3D" throughout now.
-
 - **An LM2596 buck module and an SN65HVD230 CAN breakout are drawn as what is on them.** A
   module's id carries its board and the height of its tallest part and nothing else, so in
   3D every module was its blue board with one dark block standing on it. A module whose value
@@ -4076,7 +4077,8 @@ was introduced during 0.4.0 development, so they are accurate but were not writt
 release time. Their compare links point at commits rather than tags for the same reason;
 from v0.4.0 onwards every release is tagged.
 
-[Unreleased]: https://github.com/medinstech/perfboard-studio/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/medinstech/perfboard-studio/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/medinstech/perfboard-studio/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/medinstech/perfboard-studio/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/medinstech/perfboard-studio/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/medinstech/perfboard-studio/compare/v0.13.0...v0.14.0
