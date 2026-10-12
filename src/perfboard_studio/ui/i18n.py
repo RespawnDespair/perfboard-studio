@@ -1052,6 +1052,18 @@ TURKISH: Mapping[str, str] = {
     "Guide": "Rehber",
     "Reset Camera": "Kamerayı Sıfırla",
     "Export the Guide…": "Rehberi Dışa Aktar…",
+    "Next Step to Do": "Sıradaki Adım",
+    "The first step not ticked off yet, shown on the board and in 3D.": (
+        "Henüz işaretlenmemiş ilk adım; kartta ve 3D'de gösterilir."
+    ),
+    "Clear Progress": "İlerlemeyi Temizle",
+    "Clear": "Temizle",
+    "Untick every step of this board.": "Bu kartın bütün adımlarının işaretini kaldırır.",
+    "{done} of {total} steps done": "{total} adımın {done} tanesi yapıldı",
+    "Every step is done.": "Bütün adımlar yapıldı.",
+    "Untick all {count} steps done on this board?": (
+        "Bu kartta yapılmış {count} adımın işareti kaldırılsın mı?"
+    ),
     "Build guide written": "Montaj rehberi yazıldı",
     "Written to {folder}, with {count} other files.": (
         "{folder} içine yazıldı, {count} dosya daha."

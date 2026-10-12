@@ -22,6 +22,15 @@ closed without a bump.
 
 ### Added
 
+- **The build guide keeps your place.** Each step in the Build Guide panel has a tick, and a
+  ticked step is remembered for that board: the phase headings and the summary count what
+  is done, and **Next Step to Do** picks the first step without a tick -- shown on the
+  board, and in 3D when the 3D view is open -- which is where somebody coming back to the
+  bench left off. The ticks live in the application's settings, not in the board file, so
+  ticking one off does not mark the board modified or join the undo stack; a board saved
+  under a new name takes them with it, and **Clear Progress** takes them all off, asking
+  first.
+
 - **A click in the 3D view selects what it lands on.** A part clicked there is selected on
   the board, which scrolls to it, and on the schematic, and the Build Guide goes to the step
   that fits it; a wire or a solder run clicked lights its net everywhere, as clicking a wire

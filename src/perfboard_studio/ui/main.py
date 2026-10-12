@@ -24,6 +24,7 @@ import contextlib
 import dataclasses
 import datetime
 import gc
+import hashlib
 import math
 import os
 import re
@@ -87,6 +88,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressDialog,
     QPushButton,
+    QSizePolicy,
     QSlider,
     QSpinBox,
     QStatusBar,
@@ -303,7 +305,7 @@ from .i18n import language as current_language
 from .i18n import set_language, t
 from .partnames import footprint_label
 from .project import write_project
-from .theme import ACCENT, ERROR, OK, STYLESHEET, TEXT_DIM, WARNING
+from .theme import ACCENT, ERROR, OK, STYLESHEET, TEXT, TEXT_DIM, WARNING
 from .view2d import (
     FOOTPRINT_MIME,
     BoardScene,
@@ -407,6 +409,34 @@ RECOVERY_OFFER_DELAY_MS = 400
 WELCOME_OFFER_DELAY_MS = 500
 
 
+#: Which build-guide steps somebody has ticked off, per board file (``MainWindow._done_steps``).
+#:
+#: IN THE SETTINGS AND NOT IN THE DOCUMENT, for the reason the board colour is: ticking a step
+#: off at the bench is not an edit to the circuit. In the file it would mark the board
+#: modified, join the undo stack and be written over the board by autosave -- three things
+#: that are each wrong for a pencil mark. The cost is that the marks stay on this computer.
+PROGRESS_GROUP = "buildProgress"
+
+
+def progress_key(path: Path) -> str:
+    """The settings key a board's progress is kept under: its full path, hashed. A path is
+    full of the separators QSettings reads as groups, and Windows spells one path several
+    ways, so it is normalised first."""
+    normal = os.path.normcase(str(path.resolve()))
+    return f"{PROGRESS_GROUP}/{hashlib.sha256(normal.encode('utf-8')).hexdigest()}"
+
+
+def _stored_strings(settings: QSettings, key: str) -> set[str]:
+    """A list of strings from the store. The INI backend hands a one-item list back as the
+    item itself, and an empty one as nothing at all."""
+    stored = settings.value(key, [])
+    if isinstance(stored, str):
+        return {stored} if stored else set()
+    if isinstance(stored, (list, tuple)):
+        return {str(item) for item in stored}
+    return set()
+
+
 def _stored_bool(settings: QSettings, key: str, default: bool) -> bool:
     """A tick from the store, whichever way the platform round-tripped it.
 
@@ -470,6 +500,11 @@ ROLE_COMPONENT_IDS = int(Qt.ItemDataRole.UserRole) + 2
 ROLE_NET_ID = int(Qt.ItemDataRole.UserRole) + 3
 ROLE_FOOTPRINT_ID = int(Qt.ItemDataRole.UserRole) + 4
 ROLE_STEP_INDEX = int(Qt.ItemDataRole.UserRole) + 5
+#: What a guide step is ABOUT (``guide.step_focus``): the id its progress is kept under,
+#: which survives the renumbering every edit brings.
+ROLE_STEP_FOCUS = int(Qt.ItemDataRole.UserRole) + 8
+#: A guide phase's title without its count, which ``_show_guide_progress`` adds.
+ROLE_PHASE_TITLE = int(Qt.ItemDataRole.UserRole) + 9
 ROLE_FINDING_KEY = int(Qt.ItemDataRole.UserRole) + 6
 #: On a Parts row that is a real part from the catalog rather than a bare package.
 ROLE_CATALOG_ID = int(Qt.ItemDataRole.UserRole) + 7
@@ -3324,6 +3359,8 @@ class MainWindow(QMainWindow):
         #: (``view3d.show_selection``).
         self._3d_owners: dict[Any, view3d.ActorOwner] = {}
         self._3d_tinted: dict[Any, Any] = {}
+        #: The steps ticked off on a board that has no file yet, kept until it has one.
+        self._unsaved_progress: set[str] = set()
         #: The document changed while the 3D panel was hidden, so it needs re-actoring
         #: before it is shown again.
         self._3d_stale = False
@@ -7579,6 +7616,27 @@ class MainWindow(QMainWindow):
         self.guide_tree.itemSelectionChanged.connect(self._on_guide_step_selected)
         layout.addWidget(self.guide_tree)
 
+        # WHERE YOU ARE IN THE BUILD. Each step has a tick, kept per board in the settings
+        # (``PROGRESS_GROUP``); Next Step to Do picks the first one without, which is the
+        # step to show on the board and in 3D when somebody comes back to the bench.
+        self.guide_tree.itemChanged.connect(self._on_guide_item_changed)
+        progress = QHBoxLayout()
+        self.act_next_step = QPushButton(t("Next Step to Do"))
+        self.act_next_step.setToolTip(
+            t("The first step not ticked off yet, shown on the board and in 3D.")
+        )
+        self.act_next_step.clicked.connect(self.on_next_step_to_do)
+        self.act_clear_progress = QPushButton(t("Clear Progress"))
+        self.act_clear_progress.setToolTip(t("Untick every step of this board."))
+        self.act_clear_progress.clicked.connect(self.on_clear_progress)
+        # Free to narrow, both of them: a panel takes its minimum width from what is in it,
+        # and two buttons side by side at their words' width held the guide at 426 px.
+        for button in (self.act_next_step, self.act_clear_progress):
+            button.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        progress.addWidget(self.act_next_step, 3)
+        progress.addWidget(self.act_clear_progress, 2)
+        layout.addLayout(progress)
+
         export = QPushButton(t("Export the Guide…"))
         export.clicked.connect(self.on_export_guide)
         layout.addWidget(export)
@@ -7612,7 +7670,7 @@ class MainWindow(QMainWindow):
         self._guide_stale = False
         guide = self.current_guide()
         steps = self._assembly_cached
-        self.guide_summary.setText(describe_guide(guide))
+        done = self._done_steps()
 
         tree = self.guide_tree
         blocked = tree.blockSignals(True)
@@ -7623,10 +7681,8 @@ class MainWindow(QMainWindow):
                 # The order is physical, not editorial (guide.py), and a board simply may
                 # not need a phase. An empty heading reads as a step somebody forgot.
                 continue
-            heading = f"{phase.number}. {phase.title}"
-            if phase.steps:
-                heading += f" ({len(phase.steps)})"
-            head = QTreeWidgetItem([heading])
+            head = QTreeWidgetItem([f"{phase.number}. {phase.title}"])
+            head.setData(0, ROLE_PHASE_TITLE, f"{phase.number}. {phase.title}")
             head.setFlags(head.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             tree.addTopLevelItem(head)
             for step in phase.steps:
@@ -7636,6 +7692,10 @@ class MainWindow(QMainWindow):
                 # The index into the FLAT list, which is what the assembly slider and
                 # document_at_step both count in -- see guide.all_steps.
                 leaf.setData(0, ROLE_STEP_INDEX, index)
+                leaf.setData(0, ROLE_STEP_FOCUS, step_focus(step))
+                leaf.setFlags(leaf.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                ticked = step_focus(step) in done
+                leaf.setCheckState(0, Qt.CheckState.Checked if ticked else Qt.CheckState.Unchecked)
                 head.addChild(leaf)
                 index += 1
             for checkpoint in phase.checkpoints:
@@ -7644,10 +7704,129 @@ class MainWindow(QMainWindow):
                 mark.setFlags(mark.flags() & ~Qt.ItemFlag.ItemIsSelectable)
                 head.addChild(mark)
             head.setExpanded(True)
+        self._show_guide_progress()
         tree.blockSignals(blocked)
         # Every step accounted for, or the panel and the slider are counting different
         # things and one of them is wrong.
         assert index == len(steps), f"{index} steps in phases, {len(steps)} in the flat list"
+
+    # -- progress through the build ---------------------------------------------------
+
+    def _done_steps(self) -> set[str]:
+        """The steps ticked off on this board, by what each is about (``step_focus``) --
+        an id, so a tick stays on its step when an edit renumbers the build. A board with
+        no file keeps its ticks in the window until it is saved, and they go with it."""
+        if self.current_path is None:
+            return set(self._unsaved_progress)
+        done = _stored_strings(app_settings(), progress_key(self.current_path))
+        if not done and self._unsaved_progress:
+            done = set(self._unsaved_progress)
+            self._store_done(done)
+            self._unsaved_progress = set()
+        return done
+
+    def _store_done(self, done: set[str]) -> None:
+        if self.current_path is None:
+            self._unsaved_progress = set(done)
+            return
+        settings = app_settings()
+        key = progress_key(self.current_path)
+        if done:
+            settings.setValue(key, sorted(done))
+        else:
+            settings.remove(key)
+
+    def _carry_progress(self, old: Path, new: Path) -> None:
+        """A board saved under a new name takes its ticks with it, unless the new name
+        has some of its own."""
+        settings = app_settings()
+        ticks = _stored_strings(settings, progress_key(old))
+        if ticks and not _stored_strings(settings, progress_key(new)):
+            settings.setValue(progress_key(new), sorted(ticks))
+
+    def _guide_leaves(self) -> list[QTreeWidgetItem]:
+        """Every step's row, in build order."""
+        found = QTreeWidgetItemIterator(self.guide_tree)
+        leaves = []
+        while found.value() is not None:
+            item = found.value()
+            if item.data(0, ROLE_STEP_INDEX) is not None:
+                leaves.append(item)
+            found += 1
+        return leaves
+
+    def _show_guide_progress(self) -> None:
+        """How far the build has got, said in the summary and on every phase's heading,
+        with the rows already done dimmed -- from the ticks in the tree, so the words can
+        never disagree with the marks."""
+        tree = self.guide_tree
+        blocked = tree.blockSignals(True)
+        try:
+            leaves = self._guide_leaves()
+            done = sum(leaf.checkState(0) == Qt.CheckState.Checked for leaf in leaves)
+            for index in range(tree.topLevelItemCount()):
+                head = tree.topLevelItem(index)
+                if head is None:
+                    continue
+                children = [head.child(i) for i in range(head.childCount())]
+                rows = [c for c in children if c is not None and c.data(0, ROLE_STEP_INDEX) is not None]
+                ticked = sum(row.checkState(0) == Qt.CheckState.Checked for row in rows)
+                title = str(head.data(0, ROLE_PHASE_TITLE))
+                if rows:
+                    title += f" ({ticked}/{len(rows)})" if ticked else f" ({len(rows)})"
+                head.setText(0, title)
+                for row in rows:
+                    dim = row.checkState(0) == Qt.CheckState.Checked
+                    row.setForeground(0, QColor(TEXT_DIM) if dim else QColor(TEXT))
+            summary = describe_guide(self.current_guide())
+            if done:
+                summary += "\n" + t("{done} of {total} steps done").format(
+                    done=done, total=len(leaves)
+                )
+            self.guide_summary.setText(summary)
+            self.act_clear_progress.setEnabled(bool(done))
+        finally:
+            tree.blockSignals(blocked)
+
+    def _on_guide_item_changed(self, item: QTreeWidgetItem, _column: int) -> None:
+        """A step ticked or unticked: remembered for this board at once, and counted."""
+        focus = item.data(0, ROLE_STEP_FOCUS)
+        if focus is None:
+            return
+        done = self._done_steps()
+        if item.checkState(0) == Qt.CheckState.Checked:
+            done.add(str(focus))
+        else:
+            done.discard(str(focus))
+        self._store_done(done)
+        self._show_guide_progress()
+
+    def on_next_step_to_do(self) -> None:
+        """The first step without a tick, picked: shown on the board, and in 3D when the
+        3D view is open -- where somebody coming back to the bench left off."""
+        if self._guide_stale:
+            self._refresh_guide_panel()
+        for leaf in self._guide_leaves():
+            if leaf.checkState(0) != Qt.CheckState.Checked:
+                self.guide_tree.clearSelection()
+                leaf.setSelected(True)
+                self.guide_tree.setCurrentItem(leaf)
+                self.guide_tree.scrollToItem(leaf)
+                return
+        self.statusBar().showMessage(t("Every step is done."), 6000)
+
+    def on_clear_progress(self) -> None:
+        done = len(self._done_steps())
+        if not done:
+            return
+        if not self._confirm(
+            t("Clear Progress"),
+            t("Untick all {count} steps done on this board?").format(count=done),
+            t("Clear"),
+        ):
+            return
+        self._store_done(set())
+        self._refresh_guide_panel()
 
     def _on_guide_step_selected(self) -> None:
         """Show the step on the board: its parts selected, its holes brought into view.
@@ -10522,6 +10701,7 @@ class MainWindow(QMainWindow):
         self._board_chosen = False
         self._judged = None
         self._placement_ready = None
+        self._unsaved_progress = set()
 
     # -- nets, entered by hand -----------------------------------------------
     #
@@ -10921,6 +11101,8 @@ class MainWindow(QMainWindow):
             # Not saved there, so not "the file this window is on" either.
             self.current_path = previous
             return False
+        if previous is not None and previous != path:
+            self._carry_progress(previous, path)
         return True
 
     # -- unsaved work --------------------------------------------------------

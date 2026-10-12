@@ -4428,6 +4428,115 @@ def test_what_is_selected_on_the_board_is_tinted_in_3d() -> None:
     _close(window)
 
 
+def _guide_window_on_a_file(tmp_path):
+    """A window on a board that has a file, with its build guide open."""
+    from perfboard_studio.ui.main import MainWindow
+
+    path = tmp_path / "board.perf"
+    path.write_text(GOLDEN.read_text(encoding="utf-8"), encoding="utf-8")
+    window = MainWindow(_load_dense(), path)
+    window.dock_guide.show()
+    window._refresh_guide_panel()
+    return window, path
+
+
+def _tick(window, number: int):
+    from PySide6.QtCore import Qt
+
+    leaf = window._guide_leaves()[number]
+    leaf.setCheckState(0, Qt.CheckState.Checked)
+    return leaf
+
+
+def test_a_step_ticked_off_is_remembered_for_that_board(tmp_path) -> None:
+    """At the bench, the guide says where the build has got: a tick is kept for the board's
+    file in the settings, under what the step is ABOUT rather than its number, so it is
+    still there in the next window on the same file. It is not an edit: the board is not
+    modified and nothing joins the undo stack."""
+    from PySide6.QtCore import Qt
+
+    from perfboard_studio.ui.main import ROLE_STEP_FOCUS, MainWindow
+
+    window, path = _guide_window_on_a_file(tmp_path)
+    document = window.bus.document
+    leaf = _tick(window, 1)
+    focus = leaf.data(0, ROLE_STEP_FOCUS)
+
+    assert window._done_steps() == {focus}
+    assert window.bus.document is document and not window.bus.can_undo()
+    assert not window.is_modified
+    total = len(window._guide_leaves())
+    assert f"1 of {total} steps done" in window.guide_summary.text()
+    window._refresh_guide_panel()  # rebuilt, as every edit rebuilds it
+    assert window._guide_leaves()[1].checkState(0) == Qt.CheckState.Checked
+    _close(window)
+
+    again = MainWindow(_load_dense(), path)
+    again.dock_guide.show()
+    again._refresh_guide_panel()
+    ticked = [leaf for leaf in again._guide_leaves() if leaf.checkState(0) == Qt.CheckState.Checked]
+    assert [leaf.data(0, ROLE_STEP_FOCUS) for leaf in ticked] == [focus]
+    _close(again)
+
+
+def test_an_unsaved_boards_ticks_go_with_it_to_its_file(tmp_path) -> None:
+    """A board with no file keeps its ticks in the window; once it has one -- saved, or
+    saved under a new name -- they are that file's."""
+    from perfboard_studio.ui.main import ROLE_STEP_FOCUS
+
+    window = _window_on(_load_dense())
+    window.dock_guide.show()
+    window._refresh_guide_panel()
+    focus = _tick(window, 0).data(0, ROLE_STEP_FOCUS)
+
+    window.current_path = tmp_path / "first.perf"
+    assert window._done_steps() == {focus}
+    assert window._unsaved_progress == set()
+
+    window._carry_progress(tmp_path / "first.perf", tmp_path / "second.perf")
+    window.current_path = tmp_path / "second.perf"
+    assert window._done_steps() == {focus}
+    _close(window)
+
+
+def test_next_step_to_do_picks_the_first_step_without_a_tick(tmp_path) -> None:
+    """Coming back to the bench: the first step not done, picked -- which shows it on the
+    board, and in 3D when the 3D view is open."""
+    from perfboard_studio.guide import PartStep
+
+    window, _path = _guide_window_on_a_file(tmp_path)
+    _tick(window, 0)
+    _tick(window, 1)
+
+    window.act_next_step.click()
+
+    rows = window.guide_tree.selectedItems()
+    assert rows == [window._guide_leaves()[2]]
+    step = window._assembly_steps()[2]
+    if isinstance(step, PartStep):
+        assert window.scene.selected_component_ids() == (step.component_id,)
+    _close(window)
+
+
+def test_clearing_the_progress_asks_first(tmp_path, monkeypatch) -> None:
+    """Every tick on the board, taken off -- asked first, with Cancel under Enter."""
+    from perfboard_studio.ui.main import MainWindow
+
+    window, _path = _guide_window_on_a_file(tmp_path)
+    _tick(window, 0)
+    _tick(window, 3)
+
+    monkeypatch.setattr(MainWindow, "_confirm", lambda self, *_args: False)
+    window.act_clear_progress.click()
+    assert len(window._done_steps()) == 2
+
+    monkeypatch.setattr(MainWindow, "_confirm", lambda self, *_args: True)
+    window.act_clear_progress.click()
+    assert window._done_steps() == set()
+    assert not window.act_clear_progress.isEnabled()
+    _close(window)
+
+
 def test_the_slider_counts_things_fitted_not_steps_done() -> None:
     """Value 1 is "one thing on the board", which is step 0 having just been done."""
     from perfboard_studio.ui.main import assembly_step_for

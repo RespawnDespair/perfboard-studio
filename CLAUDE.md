@@ -1810,6 +1810,15 @@ because `build_guide` runs DRC and LVS, and `MainWindow.current_guide()` is the 
 cache both it and the 3D assembly slider read — two views of one list that must not
 disagree about how many steps there are.
 
+**The guide's ticks are kept there too, per board file** (`PROGRESS_GROUP`,
+`progress_key`: the file's normalised path, hashed, because a path is full of the separators
+QSettings reads as groups). Not in the document, for the board colour's reason: ticking a
+step off at the bench is not an edit, and in the file it would mark the board modified,
+join the undo stack and be written over the board by autosave. A tick is kept under what
+the step is ABOUT (`guide.step_focus`), never its number, which every edit renumbers. A
+board with no file keeps its ticks in the window until it has one, and Save As takes them
+to the new name.
+
 
 ### The update check decides nothing on the network and installs nothing at all
 
