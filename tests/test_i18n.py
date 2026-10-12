@@ -317,7 +317,9 @@ def test_every_catalogue_translates_to_something_different() -> None:
         # Acronyms, and the same in both languages. The list stays short on purpose:
         # everything else that comes out identical is a translation somebody started and
         # did not finish, which is the whole thing this catches.
-        assert same == ["DRC / LVS", "LED"], f"{code} has untranslated entries: {same}"
+        # "3D" was "3B" on the toolbar alone while every menu, dialog and the README said
+        # "3D" -- one view, two names.
+        assert same == ["3D", "DRC / LVS", "LED"], f"{code} has untranslated entries: {same}"
 
 
 def test_accelerators_survive_translation() -> None:

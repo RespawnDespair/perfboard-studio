@@ -129,7 +129,7 @@ regülatörler, diyotlar, DIP entegreler, butonlar ve geliştirme kartları — 
 onu değeri, veri sayfasının her bacağa verdiği ad ve çizildiği sembolle yerleştirir; her
 birinin hangi veri sayfasından geldiği de yazılıdır.
 
-**Bu adlar pinlerin yanına basılır**, kartta ve 3B'de; bir klemens ya da bir geliştirme
+**Bu adlar pinlerin yanına basılır**, kartta ve 3D'de; bir klemens ya da bir geliştirme
 kartı onlara bakılarak kablolanır. Bütün kart için bir kerede yerleşirler: bir ad önüne
 çıkan ilk engelde durur, tek sıralı bir parça adlarını boş olan yanına basar, yeri biraz
 dar olan ad daraltılır, hiç yeri olmayan basılmaz ve parçanın araç ipucunda listelenir. Bir
@@ -137,7 +137,7 @@ geliştirme kartı bir **modüldür** — pin başlıklarının üstünde duran 
 üstüne yazılabilir**: onu alan klemensin yanına "12V IN" gibi bir etiket iki yüzden birine
 konur, 1:1 çıktıda ve rehberde basılır.
 
-![Aynı kart 3B'de: başlıklarının üstündeki Nano, pinlerin yanındaki adlar](./docs/images/module-3d.png)
+![Aynı kart 3D'de: başlıklarının üstündeki Nano, pinlerin yanındaki adlar](./docs/images/module-3d.png)
 
 **Bir KiCad netlist'i tahminlerle değil parçalarla gelir.** Yukarıdaki kart,
 [`examples/nano-relay.net`](./examples/nano-relay.net) dosyasının olduğu gibi içe

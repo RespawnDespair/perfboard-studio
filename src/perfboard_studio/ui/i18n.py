@@ -366,7 +366,7 @@ TURKISH: Mapping[str, str] = {
     # started sharing the View menu's, whose button label is "Flip".
     "Flip": "Çevir",
     "Ratsnest": "Bağlantı Ağı",
-    "3D": "3B",
+    "3D": "3D",
     "Fit": "Sığdır",
     # -- the connect tool ------------------------------------------------------
     "Connecting": "Bağlanıyor",
@@ -704,9 +704,9 @@ TURKISH: Mapping[str, str] = {
     "Every view is closed. Board (Ctrl+1) and Schematic (Ctrl+2) are on the "
     "toolbar, beside 3D — and each of them can be dragged anywhere in "
     "the window, or out of it.": (
-        "Bütün görünümler kapalı. Kart (Ctrl+1) ve Şema (Ctrl+2) araç çubuğunda, 3B'nin "
+        "Bütün görünümler kapalı. Kart (Ctrl+1) ve Şema (Ctrl+2) araç çubuğunda, 3D'nin "
         "yanında — ve her biri pencerenin herhangi bir yerine ya da dışına "
-        "sürüklenebılir."
+        "sürüklenebilir."
     ),
     # The strip the update check puts across the top. Its title is never drawn -- the panel
     # has no title bar -- but it is what Qt calls the dock, so it is named like one.
@@ -1613,7 +1613,7 @@ TURKISH: Mapping[str, str] = {
     "No room to print:": "Basacak yer yok:",
     "Show Labels on &the Board": "Karttaki &Etiketleri Göster",
     "Show the labels written on the board, on the board and in 3D.": (
-        "Karta yazılmış etiketleri kartta ve 3B'de gösterir."
+        "Karta yazılmış etiketleri kartta ve 3D'de gösterir."
     ),
     "Add La&bel…": "&Etiket Ekle…",
     "Write something on the board -- \"MOTOR 24V\" beside the terminal that "
@@ -1639,7 +1639,7 @@ TURKISH: Mapping[str, str] = {
     "Add Label Here…": "Buraya Etiket Ekle…",
     "Print each part's pin names beside its pins, on the board and in 3D. Turn "
     "it off while placing or routing a crowded board.": (
-        "Her parçanın pin adlarını pinlerinin yanına yazar, kartta ve 3B'de. Kalabalık "
+        "Her parçanın pin adlarını pinlerinin yanına yazar, kartta ve 3D'de. Kalabalık "
         "bir kartı yerleştirirken ya da iz çekerken kapatın."
     ),
     # -- the parts catalog -------------------------------------------------------------
@@ -1880,7 +1880,7 @@ TURKISH: Mapping[str, str] = {
     "all joined": "hepsi bağlı",
     "nothing to check yet": "henüz denetlenecek bir şey yok",
     "{errors} error(s) · {warnings} warning(s)": "{errors} hata · {warnings} uyarı",
-    "guide · 3D": "rehber · 3B",
+    "guide · 3D": "rehber · 3D",
     "What the board is: its parts and what joins them. Drawn on the sheet, or by "
     "placing parts on the board and connecting their pins.": (
         "Kartın ne olduğu: parçaları ve onları neyin birleştirdiği. Şemada çizilir ya da "
@@ -1905,7 +1905,7 @@ TURKISH: Mapping[str, str] = {
         "aynı olup olmadığı (LVS)."
     ),
     "The soldering guide, step by step, with the board in 3D beside it.": (
-        "Adım adım lehimleme rehberi, yanında kartın 3B görünümüyle."
+        "Adım adım lehimleme rehberi, yanında kartın 3D görünümüyle."
     ),
     # -- what the engine says it did (ui/engine_text.py) ---------------------------
     "Place {parts} part(s) and {links} connection(s)": "{parts} parça ve {links} bağlantı yerleştir",

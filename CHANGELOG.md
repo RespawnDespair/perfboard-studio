@@ -77,6 +77,9 @@ closed without a bump.
 - **The 3D view carries its own tools.** Exploded View and Reset Camera are on a bar across
   the top of the 3D panel, as the schematic panel carries its own; they lived in the View
   menu, three menus away from the view they work on, and they are still there too.
+- **The Turkish interface calls the 3D view one thing.** The toolbar button, the workflow
+  bar and four tooltips said "3B" while every menu, dialog and the README said "3D"; it is
+  "3D" throughout now.
 
 - **An LM2596 buck module and an SN65HVD230 CAN breakout are drawn as what is on them.** A
   module's id carries its board and the height of its tallest part and nothing else, so in
