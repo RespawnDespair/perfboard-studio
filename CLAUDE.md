@@ -900,9 +900,12 @@ Pico, D1 mini), whose art keys are their catalog ids. Five rules hold it, each p
 
 A new module is an entry in `MODULE_ARTS` with datasheet sizes, drawn from the kinds
 `view3d._ART_BUILDERS` knows (`test_every_kind_of_part_has_a_builder`);
-`test_every_layout_is_tested` makes sure it is measured. The 2D view keeps the block on
-purpose — what that view is for is the names beside the pins — and because their room comes
-from the one `pin_labels`, its names stop where the 3D parts stand as well.
+`test_every_layout_is_tested` makes sure it is measured. **The 2D view draws the same
+layout from above** (`view2d._paint_module_art`): a can is a circle, a chip a dark rectangle
+with its legs, a radio module its can and antenna, no text. Both views paint from ONE table,
+`moduleart.ART_COLOURS`, so a trimmer is the same blue in each, and the names beside the pins
+stop at parts both views show — the block it replaced said nothing about which way round a
+module was, and the names stopped short of nothing visible.
 
 **A vertical terminal is KiCad's header with our plug standing in it**: wires in from above,
 screws in the plug's SIDE, as on every pluggable block on a vertical header (and as the 2D

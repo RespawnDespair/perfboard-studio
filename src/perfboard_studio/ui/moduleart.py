@@ -38,7 +38,8 @@ measures all of it.
 The layout is in the ART's frame -- ``u`` along the module, ``v`` across it, millimetres
 from the board's centre -- and ``fit_module_art`` turns it into the footprint's own frame
 (x along the columns, y down the rows, pin 1 at the origin), which both views already know
-how to turn with the part. It knows nothing about VTK: ``view3d`` draws what comes back.
+how to turn with the part. It knows nothing about VTK or Qt: ``view3d`` stands what comes
+back up, and ``view2d`` draws it from above, both in ``ART_COLOURS``.
 """
 
 from __future__ import annotations
@@ -101,6 +102,35 @@ ArtKind = Literal[
     "pads",
     "silk",
 ]
+
+#: What the parts on a module are made of, as the colours both views paint them in -- one
+#: table, so a trimmer is the same blue in 2D as in 3D and a WROOM's can the same steel.
+#: Picked as sRGB hex, like ``bodies.BODY_STYLES``; an electrolytic takes that table's own
+#: colours instead, so a can on a buck module is the colour of the one beside it.
+ART_COLOURS: dict[str, str] = {
+    "ferrite": "#2a2b2f",
+    "ferrite-top": "#3a3b40",
+    "epoxy": "#1d1e22",
+    "trimmer": "#2f6fd0",
+    "brass": "#c9a45a",
+    "slot": "#4a3a1c",
+    "resistor": "#17181b",
+    "mlcc": "#b48c5a",
+    "band": "#a9adb3",
+    "ink": "#d9dce1",
+    "dot": "#0b0c0e",
+    "rf-board": "#15171d",
+    "shield": "#c9cbce",
+    "antenna": "#8c7440",
+    "etch": "#5f6268",
+    "usb": "#c4c6c9",
+    "mouth": "#101113",
+    "switch": "#2a2b2f",
+    "frame": "#b9bcc0",
+    "lens": "#e7e1cc",
+    "package": "#efede6",
+    "ceramic": "#d8cfb8",
+}
 
 #: How far a module's board may be from the reference a layout was drawn on, either way, as a
 #: fraction. Wide enough for one maker's board against another's drawing of the same module

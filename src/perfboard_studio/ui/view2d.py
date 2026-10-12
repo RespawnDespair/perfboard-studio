@@ -129,6 +129,7 @@ from perfboard_studio.stripboard import cut_holes, is_stripboard, segments
 
 from .boardcolors import scheme_for
 from .bodies import (
+    BODY_STYLES,
     PIN_NAME_HEIGHT_MM,
     PIN_NAME_TAG_HEIGHT_MM,
     PIN_NAME_TAG_PAD_MM,
@@ -145,6 +146,15 @@ from .bodies import (
     surface_for,
 )
 from .i18n import t
+from .moduleart import (
+    ART_COLOURS,
+    TQFP32_BODY_MM,
+    TQFP32_LEG_MM,
+    TQFP32_LEGS_PER_SIDE,
+    TQFP32_PITCH_MM,
+    PlacedArt,
+    fit_module_art,
+)
 from .partnames import footprint_label
 from .scenetext import (
     draw_label,
@@ -1972,6 +1982,7 @@ def _paint_body(
     selected: bool,
     pitch: float,
     bands: tuple[str, ...] | None = None,
+    art: tuple[PlacedArt, ...] | None = None,
 ) -> None:
     rect = _body_rect(placement)
     path = _body_path(footprint, placement, keyed)
@@ -2098,10 +2109,14 @@ def _paint_body(
         _paint_pin_marks(painter, footprint, pitch, accent, square=False)
         _paint_wire_entries(painter, footprint, rect, pitch)
 
+    elif archetype == "module-board" and art:
+        _paint_module_art(painter, art)
+
     elif archetype == "module-board":
         # The module's chip, as a dark block in the middle of its board: enough to read as
         # a board with something on it rather than an empty rectangle, and no more -- the
-        # pin names beside the pins are what this view is for (``_paint_pin_names``).
+        # pin names beside the pins are what this view is for (``_paint_pin_names``). A
+        # module ``moduleart`` recognises is drawn as what is on it instead, above.
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(QBrush(QColor("#1b1d22")))
         chip_w, chip_h = module_block_size(rect.width(), rect.height())
@@ -2126,6 +2141,204 @@ def _paint_body(
         painter.setPen(QPen(QColor(style.edge), 0.14))
         painter.setBrush(QBrush(accent))
         painter.drawEllipse(rect.center(), radius, radius)
+
+
+# -- what stands on a recognised module, from above ---------------------------------------
+#
+# THE PARTS THE 3D VIEW STANDS UP, SEEN FROM ABOVE. The block a module was drawn as said
+# nothing about which way round it was -- an ESP32 devkit's antenna end and its USB end
+# were the same -- and the module's pin names stopped short of parts this view did not
+# show. Each part is the shape it has from above, in ``moduleart.ART_COLOURS``, the table
+# the 3D view paints with: a can is a circle, a chip a dark rectangle with its legs, a radio
+# module its can and its antenna. No text: at this size it is noise, and the names beside
+# the pins are what this view is for.
+
+
+def _art_colour(name: str) -> QColor:
+    return QColor(ART_COLOURS[name])
+
+
+def _art_box(painter: QPainter, x0: float, x1: float, half: float, colour: QColor) -> None:
+    """A rectangle along the part's own axis, from ``x0`` to ``x1``, ``half`` either side."""
+    painter.setBrush(QBrush(colour))
+    painter.drawRect(QRectF(x0, -half, x1 - x0, 2 * half))
+
+
+def _art_legs(
+    painter: QPainter, x0: float, x1: float, at: Sequence[float], width: float
+) -> None:
+    """Legs from ``x0`` to ``x1`` along the part's own axis, one at each ``at`` across it."""
+    painter.setBrush(QBrush(LEAD))
+    for across in at:
+        painter.drawRect(QRectF(min(x0, x1), across - width / 2, abs(x1 - x0), width))
+
+
+def _paint_module_art(painter: QPainter, parts: Sequence[PlacedArt]) -> None:
+    """Each part in its own frame: its own axis along x, its feature (a can's stripe, a
+    regulator's legs, an antenna) at +x, as ``view3d``'s builders have it."""
+    painter.setPen(QPen(QColor("#0c0d10"), 0.05))
+    for part in parts:
+        if part.kind == "silk":
+            continue
+        painter.save()
+        painter.translate(part.x, part.y)
+        if part.axis == "y":
+            painter.rotate(90)
+        if part.facing < 0:
+            # Mirrored along the axis rather than turned round: what is ACROSS the part --
+            # a chip's pin-1 dot, a transistor's two legs -- stays on the side it is on.
+            painter.scale(-1, 1)
+        length, width = (part.size_x, part.size_y) if part.axis == "x" else (part.size_y, part.size_x)
+        _paint_art_part(painter, part, length, width)
+        painter.restore()
+
+
+def _paint_art_part(painter: QPainter, part: PlacedArt, length: float, width: float) -> None:
+    half_l, half_w = length / 2, width / 2
+    kind = part.kind
+    if kind == "can":
+        style = BODY_STYLES["radial-electrolytic"]
+        radius = min(length, width) / 2
+        painter.setBrush(QBrush(QColor(style.fill)))
+        painter.drawEllipse(QPointF(0.0, 0.0), radius, radius)
+        painter.setBrush(QBrush(QColor(style.accent)))
+        painter.drawPie(QRectF(-radius, -radius, 2 * radius, 2 * radius), -40 * 16, 80 * 16)
+        painter.setBrush(QBrush(QColor(style.accent).darker(115)))
+        painter.drawEllipse(QPointF(0.0, 0.0), radius - 0.75, radius - 0.75)
+    elif kind == "inductor":
+        side = min(length, width)
+        corner = min(1.6, side * 0.14)
+        painter.setBrush(QBrush(_art_colour("ferrite")))
+        painter.drawRoundedRect(QRectF(-side / 2, -side / 2, side, side), corner, corner)
+        painter.setBrush(QBrush(_art_colour("ferrite-top")))
+        painter.drawEllipse(QPointF(0.0, 0.0), side * 0.36, side * 0.36)
+    elif kind == "to263":
+        tab, legs = 1.3, 2.5
+        _art_box(painter, -half_l, -half_l + tab + 0.6, half_w * 0.86, LEAD)
+        _art_legs(painter, half_l - legs, half_l, [(i - 2) * 1.7 for i in range(5)], 0.8)
+        _art_box(painter, -half_l + tab, half_l - legs, half_w, _art_colour("epoxy"))
+    elif kind == "sot223":
+        body = 3.5
+        _art_legs(painter, body / 2, half_l, [-2.3, 0.0, 2.3], 0.7)
+        _art_legs(painter, -half_l, -body / 2, [0.0], width * 0.47)
+        _art_box(painter, -body / 2, body / 2, half_w, _art_colour("epoxy"))
+    elif kind == "sot23":
+        body = length * 0.55
+        _art_legs(painter, -half_l, -body / 2, [-width * 0.33, width * 0.33], 0.4)
+        _art_legs(painter, body / 2, half_l, [0.0], 0.4)
+        _art_box(painter, -body / 2, body / 2, half_w, _art_colour("epoxy"))
+    elif kind == "trimpot":
+        screw = min(1.1, width * 0.25)
+        _art_box(painter, -half_l, half_l, half_w, _art_colour("trimmer"))
+        painter.setBrush(QBrush(_art_colour("brass")))
+        painter.drawEllipse(QPointF(half_l - screw - 0.45, 0.0), screw, screw)
+    elif kind == "soic8":
+        body_half = half_w - 1.05
+        for side in (-1.0, 1.0):
+            for along in (-1.905, -0.635, 0.635, 1.905):
+                painter.setBrush(QBrush(LEAD))
+                painter.drawRect(QRectF(along - 0.21, min(side * body_half, side * half_w), 0.42, 1.05))
+        _art_box(painter, -half_l, half_l, body_half, _art_colour("epoxy"))
+        painter.setBrush(QBrush(_art_colour("dot")))
+        painter.drawEllipse(QPointF(half_l - 0.75, -(body_half - 0.7)), 0.32, 0.32)
+    elif kind == "qfn":
+        dot = min(0.35, min(length, width) * 0.1)
+        _art_box(painter, -half_l, half_l, half_w, _art_colour("epoxy"))
+        painter.setBrush(QBrush(_art_colour("dot")))
+        painter.drawEllipse(QPointF(half_l - dot * 2.2, -(half_w - dot * 2.2)), dot, dot)
+    elif kind == "tqfp32":
+        if part.diagonal:
+            # A corner along the axis: the chip's own (1, 1) corner, turned onto +x.
+            painter.rotate(-45)
+        body = TQFP32_BODY_MM / 2
+        offsets = [
+            (index - (TQFP32_LEGS_PER_SIDE - 1) / 2) * TQFP32_PITCH_MM
+            for index in range(TQFP32_LEGS_PER_SIDE)
+        ]
+        painter.setBrush(QBrush(LEAD))
+        for offset in offsets:
+            for x0, y0, w, h in (
+                (body, offset - TQFP32_LEG_MM / 2, half_l - body, TQFP32_LEG_MM),
+                (-half_l, offset - TQFP32_LEG_MM / 2, half_l - body, TQFP32_LEG_MM),
+                (offset - TQFP32_LEG_MM / 2, body, TQFP32_LEG_MM, half_l - body),
+                (offset - TQFP32_LEG_MM / 2, -half_l, TQFP32_LEG_MM, half_l - body),
+            ):
+                painter.drawRect(QRectF(x0, y0, w, h))
+        painter.setBrush(QBrush(_art_colour("epoxy")))
+        painter.drawRect(QRectF(-body, -body, 2 * body, 2 * body))
+        painter.setBrush(QBrush(_art_colour("dot")))
+        corner = body - 1.0
+        painter.drawEllipse(QPointF(corner, corner if part.diagonal else 0.0), 0.4, 0.4)
+    elif kind == "rf-module":
+        _art_box(painter, -half_l, half_l, half_w, _art_colour("rf-board"))
+        _art_box(
+            painter, -half_l + part.inset, half_l - part.antenna, half_w - part.inset,
+            _art_colour("shield"),
+        )
+        # The antenna: a row of teeth on a feed line, as ``view3d._art_rf_module`` prints it.
+        teeth, reach, depth = 5, width * 0.8, part.antenna * 0.55
+        near = half_l - part.antenna / 2 - depth / 2
+        step = reach / (2 * teeth - 1)
+        trace = QPen(_art_colour("antenna"), 0.35)
+        trace.setCapStyle(Qt.PenCapStyle.FlatCap)
+        painter.setPen(trace)
+        painter.drawLine(QPointF(near, -reach / 2), QPointF(near, reach / 2))
+        for index in range(2 * teeth):
+            across = -reach / 2 + index * step
+            painter.drawLine(QPointF(near, across), QPointF(near + depth, across))
+            if index % 2 == 0:
+                painter.drawLine(QPointF(near + depth, across), QPointF(near + depth, across + step))
+        painter.setPen(QPen(QColor("#0c0d10"), 0.05))
+    elif kind == "usb":
+        _art_box(painter, -half_l, half_l, half_w, _art_colour("usb"))
+        _art_box(painter, half_l - 0.35, half_l, half_w * 0.82, _art_colour("mouth"))
+    elif kind == "button":
+        coloured = bool(part.colour)
+        cap_colour = QColor(part.colour) if coloured else _art_colour("switch")
+        _art_box(painter, -half_l, half_l, half_w, cap_colour.darker(113) if coloured else cap_colour)
+        if not coloured:
+            _art_box(painter, -half_l + 0.25, half_l - 0.25, half_w - 0.25, _art_colour("frame"))
+        painter.setBrush(QBrush(cap_colour))
+        radius = min(length, width) * 0.3
+        painter.drawEllipse(QPointF(0.0, 0.0), radius, radius)
+    elif kind == "side-button":
+        cap = min(0.6, length / 3)
+        _art_box(painter, -half_l, half_l - cap, half_w, _art_colour("frame"))
+        _art_box(painter, half_l - cap, half_l, half_w * 0.4, _art_colour("switch"))
+    elif kind == "led":
+        lens = QColor(part.colour) if part.colour else _art_colour("lens")
+        if abs(length - width) < 0.3:
+            _art_box(painter, -half_l, half_l, half_w, _art_colour("package"))
+            painter.setBrush(QBrush(lens))
+            radius = min(length, width) * 0.36
+            painter.drawEllipse(QPointF(0.0, 0.0), radius, radius)
+        else:
+            cap = min(0.3, length * 0.2)
+            _art_box(painter, -half_l, half_l, half_w, LEAD)
+            _art_box(painter, -half_l + cap, half_l - cap, half_w, lens)
+            die = min(length, width) * 0.15
+            _art_box(painter, -die, die, die, _art_colour("dot"))
+    elif kind == "crystal":
+        _art_box(painter, -half_l, half_l, half_w, _art_colour("ceramic"))
+        _art_box(painter, -half_l + 0.15, half_l - 0.15, half_w - 0.15, _art_colour("shield"))
+    elif kind == "sma":
+        _art_box(painter, -half_l, half_l, half_w, _art_colour("epoxy"))
+        _art_box(painter, half_l - 1.1, half_l - 0.4, half_w, _art_colour("band"))
+    elif kind in ("chip-r", "chip-c"):
+        cap = min(0.4, length * 0.2)
+        _art_box(painter, -half_l, half_l, half_w, LEAD)
+        filling = _art_colour("resistor" if kind == "chip-r" else "mlcc")
+        _art_box(painter, -half_l + cap, half_l - cap, half_w, filling)
+    elif kind == "pads":
+        along_count = max(round(length / 2.54), 1)
+        across_count = max(round(width / 2.54), 1)
+        for a in range(along_count):
+            for b in range(across_count):
+                centre = QPointF((a - (along_count - 1) / 2) * 2.54, (b - (across_count - 1) / 2) * 2.54)
+                painter.setBrush(QBrush(LEAD))
+                painter.drawEllipse(centre, 0.85, 0.85)
+                painter.setBrush(QBrush(_art_colour("mouth")))
+                painter.drawEllipse(centre, 0.5, 0.5)
 
 
 def _paint_wire_entries(
@@ -2240,6 +2453,9 @@ class ComponentItem(QGraphicsItem):
             pins = ", ".join(f"{number} {name}" for number, name in names_left_off)
             tip += f"\n{t('No room to print:')} {pins}"
         self.setToolTip(tip)
+        #: What stands on a module ``moduleart`` recognises, laid out once: the part is a
+        #: frozen snapshot and the item is rebuilt with the document.
+        self.art = fit_module_art(fp, comp, board.pitch)
         self._names_rect = self._pin_names_rect()
         self._sync_position()
 
@@ -2379,6 +2595,7 @@ class ComponentItem(QGraphicsItem):
                 # From the document's own value, so the bands cannot disagree with the
                 # netlist. None for anything that is not a resistor with a readable value.
                 bands=resistor_bands(self.fp, self.comp.value),
+                art=self.art,
             )
             if self.show_pin_names:
                 _paint_pin_names(painter, self.pin_names, self.comp, style.accent)

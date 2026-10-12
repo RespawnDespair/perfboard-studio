@@ -22,6 +22,13 @@ closed without a bump.
 
 ### Added
 
+- **The board view draws a module as what is on it too**, from above, for every module the
+  3D view knows: the WROOM's can and antenna, the Nano's chip on its corner, the USB socket,
+  the buttons, the cans of a buck module. The dark block across the middle said nothing about
+  which way round a module was -- an ESP32 devkit's antenna end and its USB end looked the
+  same -- and the pin names stopped short of parts this view did not show; now they stop at
+  parts both views show, in the same colours.
+
 - **The build guide keeps your place.** Each step in the Build Guide panel has a tick, and a
   ticked step is remembered for that board: the phase headings and the summary count what
   is done, and **Next Step to Do** picks the first step without a tick -- shown on the

@@ -88,6 +88,7 @@ from .bodies import (
     surface_for,
 )
 from .moduleart import (
+    ART_COLOURS,
     TQFP32_BODY_MM,
     TQFP32_LEG_MM,
     TQFP32_LEGS_PER_SIDE,
@@ -3400,17 +3401,17 @@ _MODULE_PAD_RADIUS_MM = 0.9
 
 _ELECTROLYTIC_STYLE = BODY_STYLES["radial-electrolytic"]
 _MODULE_STYLE = BODY_STYLES["module-board"]
-_ART_FERRITE_RGB = _hex_rgb("#2a2b2f", BODY_RGB)
-_ART_FERRITE_TOP_RGB = _hex_rgb("#3a3b40", BODY_RGB)
-_ART_EPOXY_RGB = _hex_rgb("#1d1e22", BODY_RGB)
-_ART_TRIMMER_RGB = _hex_rgb("#2f6fd0", BODY_RGB)
-_ART_BRASS_RGB = _hex_rgb("#c9a45a", LEAD_RGB)
-_ART_SLOT_RGB = _hex_rgb("#4a3a1c", BODY_RGB)
-_ART_RESISTOR_RGB = _hex_rgb("#17181b", BODY_RGB)
-_ART_MLCC_RGB = _hex_rgb("#b48c5a", BODY_RGB)
-_ART_BAND_RGB = _hex_rgb("#a9adb3", LEAD_RGB)
-_ART_INK_RGB = _hex_rgb("#d9dce1", LEGEND_RGB)
-_ART_DOT_RGB = _hex_rgb("#0b0c0e", BODY_RGB)
+_ART_FERRITE_RGB = _hex_rgb(ART_COLOURS["ferrite"], BODY_RGB)
+_ART_FERRITE_TOP_RGB = _hex_rgb(ART_COLOURS["ferrite-top"], BODY_RGB)
+_ART_EPOXY_RGB = _hex_rgb(ART_COLOURS["epoxy"], BODY_RGB)
+_ART_TRIMMER_RGB = _hex_rgb(ART_COLOURS["trimmer"], BODY_RGB)
+_ART_BRASS_RGB = _hex_rgb(ART_COLOURS["brass"], LEAD_RGB)
+_ART_SLOT_RGB = _hex_rgb(ART_COLOURS["slot"], BODY_RGB)
+_ART_RESISTOR_RGB = _hex_rgb(ART_COLOURS["resistor"], BODY_RGB)
+_ART_MLCC_RGB = _hex_rgb(ART_COLOURS["mlcc"], BODY_RGB)
+_ART_BAND_RGB = _hex_rgb(ART_COLOURS["band"], LEAD_RGB)
+_ART_INK_RGB = _hex_rgb(ART_COLOURS["ink"], LEGEND_RGB)
+_ART_DOT_RGB = _hex_rgb(ART_COLOURS["dot"], BODY_RGB)
 
 
 @dataclass(frozen=True, slots=True)
@@ -3798,22 +3799,22 @@ def _art_silk(s: _ArtSolid) -> list[_Piece]:
 
 #: A radio module's own board, its shield can, the antenna trace printed past the can,
 #: and what is etched on the can.
-_ART_RF_BOARD_RGB = _hex_rgb("#15171d", BODY_RGB)
+_ART_RF_BOARD_RGB = _hex_rgb(ART_COLOURS["rf-board"], BODY_RGB)
 _ART_RF_BOARD_MM = 0.8
-_ART_SHIELD_RGB = _hex_rgb("#c9cbce", LEAD_RGB)
-_ART_ANTENNA_RGB = _hex_rgb("#8c7440", PAD_RGB)
-_ART_ETCH_RGB = _hex_rgb("#5f6268", BODY_RGB)
+_ART_SHIELD_RGB = _hex_rgb(ART_COLOURS["shield"], LEAD_RGB)
+_ART_ANTENNA_RGB = _hex_rgb(ART_COLOURS["antenna"], PAD_RGB)
+_ART_ETCH_RGB = _hex_rgb(ART_COLOURS["etch"], BODY_RGB)
 #: A USB socket's shell, and the dark of its mouth.
-_ART_USB_RGB = _hex_rgb("#c4c6c9", LEAD_RGB)
-_ART_MOUTH_RGB = _hex_rgb("#101113", BODY_RGB)
+_ART_USB_RGB = _hex_rgb(ART_COLOURS["usb"], LEAD_RGB)
+_ART_MOUTH_RGB = _hex_rgb(ART_COLOURS["mouth"], BODY_RGB)
 #: A tactile switch with nothing said about its colour: a black body under a steel frame.
-_ART_SWITCH_RGB = _hex_rgb("#2a2b2f", BODY_RGB)
-_ART_FRAME_RGB = _hex_rgb("#b9bcc0", LEAD_RGB)
+_ART_SWITCH_RGB = _hex_rgb(ART_COLOURS["switch"], BODY_RGB)
+_ART_FRAME_RGB = _hex_rgb(ART_COLOURS["frame"], LEAD_RGB)
 #: A chip LED with nothing said about its lens: water-clear over a white package.
-_ART_LENS_RGB = _hex_rgb("#e7e1cc", BODY_RGB)
-_ART_PACKAGE_RGB = _hex_rgb("#efede6", BODY_RGB)
+_ART_LENS_RGB = _hex_rgb(ART_COLOURS["lens"], BODY_RGB)
+_ART_PACKAGE_RGB = _hex_rgb(ART_COLOURS["package"], BODY_RGB)
 #: A crystal's ceramic base under its lid.
-_ART_CERAMIC_RGB = _hex_rgb("#d8cfb8", BODY_RGB)
+_ART_CERAMIC_RGB = _hex_rgb(ART_COLOURS["ceramic"], BODY_RGB)
 
 
 def _art_rf_module(s: _ArtSolid) -> list[_Piece]:

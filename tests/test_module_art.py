@@ -406,6 +406,90 @@ def test_a_nanos_chip_stands_on_its_corner() -> None:
     assert max(abs(y - chip.y) for _x, y in points) == pytest.approx(corner_reach)
 
 
+# ---------------------------------------------------------------------- in 2D
+
+
+def _qt_app():
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    return QApplication.instance() or QApplication(["perfboard-studio-tests"])
+
+
+def _render_part(part_id: str):
+    """One catalog module drawn by the 2D view alone, and what places its own frame in the
+    picture. The scene is handed back too: the item dies with it."""
+    _qt_app()
+    from PySide6.QtCore import QRectF
+    from PySide6.QtGui import QImage, QPainter
+    from PySide6.QtWidgets import QGraphicsScene
+
+    from perfboard_studio.mcp.session import new_board
+    from perfboard_studio.ui.view2d import ComponentItem
+
+    part = next(p for p in CATALOG_MODULES if p.id == part_id)
+    board = new_board(cols=40, rows=40).board
+    component = _part(part.footprint_id, part.placed_value, part.pin_names)
+    item = ComponentItem(component, _footprint(part.footprint_id), board, "top")
+    scene = QGraphicsScene()
+    scene.addItem(item)
+    source = item.sceneBoundingRect()
+    scale = 12.0
+    image = QImage(int(source.width() * scale), int(source.height() * scale), QImage.Format.Format_ARGB32)
+    image.fill(0)
+    painter = QPainter(image)
+    scene.render(painter, QRectF(0, 0, image.width(), image.height()), source)
+    painter.end()
+    return image, item, source, scale, component, scene
+
+
+def _pixel_at(image, item, source, scale, component, x_mm: float, y_mm: float):
+    from PySide6.QtCore import QPointF
+
+    from perfboard_studio.ui.view2d import _local_offset_mm
+
+    point = item.mapToScene(QPointF(*_local_offset_mm(x_mm, y_mm, component, "top")))
+    return image.pixelColor(
+        int((point.x() - source.left()) * scale), int((point.y() - source.top()) * scale)
+    )
+
+
+def test_the_2d_view_draws_what_is_on_a_recognised_module() -> None:
+    """The block said nothing about which way round a module was, and the pin names stopped
+    short of parts the 2D view did not show. A recognised module is its parts from above, in
+    the colours the 3D view paints with (``ART_COLOURS``): the WROOM's steel can where the
+    can is, and the board bare where nothing stands -- not the block across its middle."""
+    from perfboard_studio.ui.moduleart import ART_COLOURS
+
+    image, item, source, scale, component, _scene = _render_part("esp32-devkitc")
+    assert item.art is not None
+    can = next(part for part in item.art if part.kind == "rf-module")
+    # The can's middle: from the far end's inset to where the antenna starts, along y.
+    along = can.facing * (can.inset - can.antenna) / 2
+    shield = _pixel_at(image, item, source, scale, component, can.x, can.y + along)
+    expected = ART_COLOURS["shield"]
+    assert (shield.red(), shield.green(), shield.blue()) == pytest.approx(
+        (int(expected[1:3], 16), int(expected[3:5], 16), int(expected[5:7], 16)), abs=6
+    )
+    placement = placement_for(_footprint(component.footprint_id), PITCH)
+    middle = _pixel_at(image, item, source, scale, component, placement.centre_x, placement.centre_y)
+    assert middle.name() != "#1b1d22", "the block is still drawn across the module"
+
+
+def test_a_module_nobody_wrote_a_layout_for_keeps_its_block_in_2d() -> None:
+    _qt_app()
+    from perfboard_studio.mcp.session import new_board
+    from perfboard_studio.ui.view2d import ComponentItem
+
+    board = new_board(cols=40, rows=40).board
+    plain = ComponentItem(_part(BUCK, "step-down module", BUCK_NAMES), _footprint(BUCK), board, "top")
+    assert plain.art is None
+    buck = ComponentItem(_part(BUCK, "LM2596S", BUCK_NAMES), _footprint(BUCK), board, "top")
+    assert buck.art is not None
+
+
 # ---------------------------------------------------------------------- in 3D
 
 vtk = pytest.importorskip("vtk")
