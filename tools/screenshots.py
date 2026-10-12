@@ -165,14 +165,21 @@ def main() -> int:
     shots.append(("editor-solder-side.png", "2D editor, solder side"))
 
     # The same circuit as a sheet, in the panel that draws one: a 555 is a sheet a reader
-    # can check by eye, which is the point of it being the example.
+    # can check by eye, which is the point of it being the example. The sheet opens BESIDE
+    # the board, so the board is turned back to the face the parts are on and fitted again
+    # into the half it has left -- otherwise it keeps the zoom it had across the whole
+    # window and goes off the edge of its panel.
+    window.on_flip_board()
     window.show_schematic()
     _settle(app)
+    window.view.fit_board()
     window.schematic_view.fit()
     _settle(app)
     window.grab().save(str(OUT_DIR / "schematic.png"))
     shots.append(("schematic.png", "the schematic panel"))
-    window.show_board()
+    # Closed again, not merely put behind: the next window restores this one's layout from
+    # the same settings, and a close-up of the board wants the whole width.
+    window.dock_schematic.close()
     _settle(app)
 
     document = window.bus.document
