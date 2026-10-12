@@ -167,7 +167,7 @@ from perfboard_studio.commands import (
     create_starter_document,
     preset_payload,
 )
-from perfboard_studio.connectivity import FootprintLookup
+from perfboard_studio.connectivity import FootprintLookup, extract_physical_nets
 from perfboard_studio.drc import DrcViolation, run_drc
 from perfboard_studio.footprints import (
     MODULE_SEAT_SOCKETED_MM,
@@ -3319,6 +3319,11 @@ class MainWindow(QMainWindow):
         self._vtk_renderer: Any = None
         self._vtk_style: Any = None
         self.vtk_widget: Any = None
+        #: Which part or conductor each solid in the 3D view belongs to, rebuilt with the
+        #: actors, and what the selection tint has changed and must give back
+        #: (``view3d.show_selection``).
+        self._3d_owners: dict[Any, view3d.ActorOwner] = {}
+        self._3d_tinted: dict[Any, Any] = {}
         #: The document changed while the 3D panel was hidden, so it needs re-actoring
         #: before it is shown again.
         self._3d_stale = False
@@ -4253,12 +4258,15 @@ class MainWindow(QMainWindow):
             widget: Any = QVTKRenderWindowInteractor()  # type: ignore[no-untyped-call]
             if not vtk_paints_on_screen(sys.platform, qVersion()):
                 widget.setAttribute(Qt.WidgetAttribute.WA_PaintOnScreen, False)
+            self._3d_owners.clear()
+            self._3d_tinted.clear()
             ren, _stats = view3d.build_renderer(
                 self.bus.document,
                 self.lookup,
                 flipped=(self.side == "bottom"),
                 pin_names=self._pin_names_shown(),
                 board_notes=self._board_labels_shown(),
+                owners=self._3d_owners,
             )
             widget.GetRenderWindow().AddRenderer(ren)
             widget.Initialize()
@@ -4278,11 +4286,104 @@ class MainWindow(QMainWindow):
             self._3d_layout.addWidget(widget)
             self._3d_layout.addWidget(self._build_assembly_bar())
             self._3d_stale = False
+            self._install_3d_picking(widget)
+            self._show_selection_in_3d()
         except Exception as exc:  # pragma: no cover - environment dependent
             # In the panel, where the person who opened it is looking. A packaged build
             # has no console for a print to land in.
             self._vtk_renderer = None
             self._3d_placeholder.setText(f"{t('3D view unavailable:')}\n{exc}")
+
+    #: How far the pointer may move between press and release and still be a click: past
+    #: it, the button was dragging the camera round, and that is not a choice of a part.
+    CLICK_SLOP_PX = 4
+
+    def _install_3d_picking(self, widget: Any) -> None:
+        """A click in the 3D view chooses what it lands on; a drag still turns the camera.
+        Observers beside the trackball style rather than a style of our own, so the camera
+        handles exactly as it did."""
+        interactor = widget.GetRenderWindow().GetInteractor()
+        pressed_at: list[tuple[int, int]] = []
+
+        def pressed(_caller: Any, _event: str) -> None:
+            x, y = interactor.GetEventPosition()
+            pressed_at[:] = [(x, y)]
+
+        def released(_caller: Any, _event: str) -> None:
+            if not pressed_at:
+                return
+            (x0, y0), (x, y) = pressed_at.pop(), interactor.GetEventPosition()
+            if abs(x - x0) + abs(y - y0) <= self.CLICK_SLOP_PX:
+                self.pick_in_3d(x, y)
+
+        interactor.AddObserver("LeftButtonPressEvent", pressed)
+        interactor.AddObserver("LeftButtonReleaseEvent", released)
+
+    def pick_in_3d(self, x: int, y: int) -> None:
+        """A click at display position ``(x, y)`` of the 3D view, through the doors a click
+        on the sheet goes through: a part is selected on the board and the board brought to
+        it, and the build guide goes to the step that fits it; a conductor lights its net in
+        the Nets panel, which lights it everywhere else; the board or the room around it puts
+        the selection down, as a click on bare board does in 2D."""
+        if self._vtk_renderer is None:
+            return
+        owner = view3d.owner_at(self._vtk_renderer, self._3d_owners, x, y)
+        if owner is None:
+            self.scene.clearSelection()
+            return
+        kind, ident = owner
+        if kind == "component":
+            self.go_to_component(ident)
+            self._point_guide_at_part(ident)
+            return
+        net_id = self._net_of_conductor(ident)
+        if net_id is not None:
+            self._select_net(net_id)
+
+    def _net_of_conductor(self, conductor_id: str) -> str | None:
+        """The net a conductor is part of: the one it names, or else the one its copper
+        joins pins of. Most conductors name none -- the router and the hand alike lay copper
+        between holes and leave the net to connectivity -- so the second is the usual
+        answer, read the way LVS reads it."""
+        document = self.bus.document
+        conductor = next((c for c in document.conductors if c.id == conductor_id), None)
+        if conductor is None:
+            return None
+        if conductor.net_id is not None:
+            return conductor.net_id
+        physical = next(
+            (net for net in extract_physical_nets(document, self.lookup)
+             if conductor_id in net.conductor_ids),
+            None,
+        )
+        if physical is None:
+            return None
+        pins = {(pin.component_ref, pin.pin) for pin in physical.pins}
+        return next(
+            (
+                net.id
+                for net in document.nets
+                if any((node.component_ref, node.pin) in pins for node in net.nodes)
+            ),
+            None,
+        )
+
+    def _show_selection_in_3d(self) -> None:
+        """Tint in 3D what is selected anywhere: the parts selected on the board, or, with
+        no part selected, the wiring of the nets selected in the Nets panel. Not while the
+        slider is on a step, which is picked out already and would be muddled by a second
+        colour meaning something else."""
+        if self.vtk_widget is None or not self._3d_owners:
+            return
+        selected: set[str] = set()
+        if self._assembly_index() is None:
+            selected = {component.id for component in self._selected_components()}
+            if not selected:
+                nets = set(self._selected_net_ids())
+                selected = {c.id for c in self.bus.document.conductors if c.net_id in nets}
+        changed = view3d.show_selection(self._3d_owners, selected, self._3d_tinted)
+        if changed and self._3d_is_live():
+            self.vtk_widget.GetRenderWindow().Render()
 
     def _build_3d_toolbar(self) -> QToolBar:
         """What the 3D view does, on the 3D view, as the schematic panel carries its own
@@ -4476,13 +4577,32 @@ class MainWindow(QMainWindow):
     def _follow_step_in_guide(self) -> None:
         """The build guide's row for the step the 3D view is showing, so the panel beside
         it is at the same place in the build -- the other half of ``_on_guide_step_selected``,
-        which moves the slider when a row is picked. Only the row: picking it here would
-        select the step's parts on the board too, which nobody asked for by stepping.
+        which moves the slider when a row is picked."""
+        self._point_guide_at(self._assembly_index())
+
+    def _point_guide_at_part(self, component_id: str) -> None:
+        """The build guide's row for the step that fits this part, if it has one."""
+        steps = self._assembly_steps()
+        index = next(
+            (
+                number
+                for number, step in enumerate(steps)
+                if isinstance(step, PartStep) and step.component_id == component_id
+            ),
+            None,
+        )
+        if index is not None:
+            self._point_guide_at(index)
+
+    def _point_guide_at(self, index: int | None) -> None:
+        """Select the guide's row for step ``index`` -- or none, for the finished or the
+        bare board. Only the row: picking it would also select the step's parts on the
+        board and move the 3D view to that step, which nobody asked for by stepping or by
+        clicking a part.
         """
         tree = getattr(self, "guide_tree", None)
         if tree is None or self._guide_stale or self.dock_guide.isHidden():
             return
-        index = self._assembly_index()
         blocked = tree.blockSignals(True)
         try:
             tree.clearSelection()
@@ -4554,6 +4674,8 @@ class MainWindow(QMainWindow):
             # Nothing is picked out at the bare-board end: there is no step there yet.
             highlight = step_focus(steps[index]) if 0 <= index < len(steps) else None
 
+        self._3d_owners.clear()
+        self._3d_tinted.clear()
         view3d.populate_renderer(
             self._vtk_renderer,
             document,
@@ -4562,7 +4684,9 @@ class MainWindow(QMainWindow):
             highlight=highlight,
             pin_names=self._pin_names_shown(),
             board_notes=self._board_labels_shown(),
+            owners=self._3d_owners,
         )
+        self._show_selection_in_3d()
         self.vtk_widget.GetRenderWindow().Render()
         self._3d_stale = False
 
@@ -6395,6 +6519,8 @@ class MainWindow(QMainWindow):
             refs.add(self._schematic_ref)
         self.schematic_view.set_highlight(refs, self._selected_net_ids())
         self._refresh_schematic_actions()
+        # ...and in 3D, which is the third view of the same selection.
+        self._show_selection_in_3d()
 
     def _refresh_schematic_actions(self) -> None:
         if not hasattr(self, "act_sch_delete"):

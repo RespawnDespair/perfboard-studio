@@ -22,6 +22,14 @@ closed without a bump.
 
 ### Added
 
+- **A click in the 3D view selects what it lands on.** A part clicked there is selected on
+  the board, which scrolls to it, and on the schematic, and the Build Guide goes to the step
+  that fits it; a wire or a solder run clicked lights its net everywhere, as clicking a wire
+  on the schematic does; a click on the bare board puts the selection down. What is selected
+  anywhere -- on the board, on the schematic, in the Nets panel -- is tinted in 3D, so the
+  three views side by side show one selection. Dragging still turns the camera: only a
+  press and release in the same place counts as a click.
+
 - **The 3D view steps through the build one step at a time, as well as playing it.** Two
   arrows either side of Play go back and forward a step -- and so do the left and right arrow
   keys while the 3D view has the focus (only then, because on the board they nudge parts).
@@ -30,7 +38,6 @@ closed without a bump.
   board was the only way to ask for it. A step asked for stops the playing, and the Build
   Guide beside the view moves to the same step, as the view already followed a step picked
   in the guide.
-
 
 ### Changed
 

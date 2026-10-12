@@ -4351,6 +4351,83 @@ def test_stepping_the_3d_view_brings_the_guide_to_the_same_step() -> None:
     _close(window)
 
 
+def test_a_click_in_3d_goes_through_the_sheets_doors(monkeypatch) -> None:
+    """A part clicked in 3D is selected on the board and the guide goes to the step that
+    fits it; a conductor clicked lights its net; the board or the room puts the selection
+    down. What the click LANDED on is ``view3d.owner_at``'s question, measured with GL in
+    test_3d_picking -- here it is stood in for, and the window's half is what is asked."""
+    from perfboard_studio import persist
+    from perfboard_studio.guide import PartStep
+    from perfboard_studio.ui import view3d
+    from perfboard_studio.ui.main import ROLE_STEP_INDEX
+
+    # A real board, whose copper joins real pins -- with the nets the router wrote on its
+    # wires taken off, as copper laid by hand carries none: the net is then the one the
+    # copper wires up, read the way LVS reads it, and it must be the same answer.
+    root = pathlib.Path(__file__).resolve().parents[1]
+    routed = persist.deserialize_document(
+        (root / "examples" / "nano-relay.perf").read_text(encoding="utf-8")
+    ).document
+    assert routed is not None
+    written = {c.id: c.net_id for c in routed.conductors}
+    document = dataclasses.replace(
+        routed,
+        conductors=tuple(dataclasses.replace(c, net_id=None) for c in routed.conductors),
+    )
+    window = _window_on(document)
+    window.dock_guide.show()
+    window._refresh_guide_panel()
+    window._vtk_renderer = object()  # stands for the live renderer; owner_at is stubbed
+    landed: list = [None]
+    monkeypatch.setattr(view3d, "owner_at", lambda _ren, _owners, _x, _y: landed[0])
+
+    part = next(
+        step for step in window._assembly_steps() if isinstance(step, PartStep)
+    ).component_id
+    landed[0] = ("component", part)
+    window.pick_in_3d(10, 10)
+    assert window.scene.selected_component_ids() == (part,)
+    rows = window.guide_tree.selectedItems()
+    assert len(rows) == 1
+    step = window._assembly_steps()[rows[0].data(0, ROLE_STEP_INDEX)]
+    assert isinstance(step, PartStep) and step.component_id == part
+
+    wire = window.bus.document.conductors[0]
+    net = window._net_of_conductor(wire.id)
+    assert net is not None and net == written[wire.id]
+    window.scene.clearSelection()
+    landed[0] = ("conductor", wire.id)
+    window.pick_in_3d(10, 10)
+    assert tuple(window._selected_net_ids()) == (net,)
+
+    landed[0] = ("component", part)
+    window.pick_in_3d(10, 10)
+    landed[0] = None
+    window.pick_in_3d(10, 10)
+    assert window.scene.selected_component_ids() == ()
+    _close(window)
+
+
+def test_what_is_selected_on_the_board_is_tinted_in_3d() -> None:
+    """The 3D view is the third view of the same selection: a part selected on the board
+    is picked out in the actors already built, and given back when it is let go."""
+    vtk = pytest.importorskip("vtk")
+
+    window = _window_on(_load_dense())
+    part = window.bus.document.components[0]
+    chosen, other = vtk.vtkActor(), vtk.vtkActor()
+    window._3d_owners = {chosen: ("component", part.id), other: ("component", "someone-else")}
+    window.vtk_widget = object()  # built; not on screen, so no frame is asked for
+
+    window.go_to_component(part.id)
+    assert chosen in window._3d_tinted and other not in window._3d_tinted
+
+    window.scene.clearSelection()
+    assert window._3d_tinted == {}
+    window.vtk_widget = None
+    _close(window)
+
+
 def test_the_slider_counts_things_fitted_not_steps_done() -> None:
     """Value 1 is "one thing on the board", which is step 0 having just been done."""
     from perfboard_studio.ui.main import assembly_step_for

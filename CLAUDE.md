@@ -1575,6 +1575,22 @@ cannot disagree about which wire is on top.
 `ui/view3d.populate_renderer` refreshes actors in an existing renderer and deliberately
 leaves the camera alone; only `apply_default_camera` may move the viewpoint.
 
+**A click in 3D is a third door to the same selection.** `populate_renderer(owners=...)`
+records which part or conductor each solid belongs to; `MainWindow.pick_in_3d` sends a part
+through `go_to_component` and points the guide at its step, a conductor through `_select_net`
+(its net is the one it names, or else the one its copper joins pins of, read as LVS reads
+it — most copper names none), and the bare board or the room clears the selection. Two
+things here were got wrong first:
+
+- **`vtkCellPicker`, a ray cast, not `vtkPropPicker`.** The prop picker renders the scene
+  again into an id buffer through the hardware selector, and through this view's render
+  passes that fails outright ("Too many props") and picks nothing. `test_3d_picking` clicks
+  a part and a jumper through the real renderer, passes and all.
+- **The selection tint changes the actors already built** (`view3d.show_selection`) and
+  gives each one's colour back when it is let go. A selection is a click; rebuilding a few
+  thousand actors for one is what the debounce on an edit exists to avoid. Not while the
+  slider is on a step, which is picked out in the same colour already.
+
 **Appearance is a view setting, not a document field.** Solder-mask colour changes
 nothing about the circuit, and adding it to `Board` would reopen the byte-for-byte `.perf`
 format for a cosmetic preference — so `ui/boardcolors.py` owns it, it is chosen from the

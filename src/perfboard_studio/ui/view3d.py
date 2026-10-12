@@ -19,11 +19,11 @@ import math
 import os
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from functools import lru_cache
 from itertools import pairwise
-from typing import Any
+from typing import Any, Literal
 
 import vtk  # type: ignore[import-untyped]
 from vtkmodules.util import numpy_support
@@ -5269,6 +5269,7 @@ def populate_renderer(
     pin_names: bool = True,
     board_notes: bool = True,
     subject_actors: list[vtk.vtkActor] | None = None,
+    owners: dict[vtk.vtkActor, ActorOwner] | None = None,
 ) -> dict[str, int]:
     """Rebuild the board's actors in an EXISTING renderer, leaving the camera alone.
 
@@ -5278,7 +5279,9 @@ def populate_renderer(
     of the assembly sequence into an illustration of one step. ``subject_actors``, if
     given, is filled with the highlighted thing's own solids, which is what
     :func:`frame_step` frames on: where a part IS is what was just drawn, not a second
-    answer worked out from the footprint.
+    answer worked out from the footprint. ``owners``, if given, is filled with the part or
+    conductor each of their solids belongs to, which is how a click in the interactive
+    view finds what it landed on (:func:`owner_at`).
 
     The BOARD is never dimmed, only the other parts and the copper. A step card says which
     holes a part goes in, and a reader who cannot see the holes has been given a picture
@@ -5346,6 +5349,8 @@ def populate_renderer(
                 (_pick_out if subject else _dim)(actor)
             if subject and subject_actors is not None:
                 subject_actors.append(actor)
+            if owners is not None:
+                owners[actor] = ("component", comp.id)
             ren.AddActor(actor)
         if printed is not None:
             # A module's names are on its own board and rise with it; a part's names on
@@ -5357,6 +5362,8 @@ def populate_renderer(
                 _lift(actor, exploded_mm if on_module else 0.0)
                 if highlight is not None:
                     (_pick_out if subject else _dim)(actor)
+                if owners is not None:
+                    owners[actor] = ("component", comp.id)
                 ren.AddActor(actor)
     net_class_by_id, signal_index = net_colouring(doc)
     # How high each conductor has to sit to clear what it crosses -- from the engine, so
@@ -5376,10 +5383,67 @@ def populate_renderer(
                 (_pick_out if subject else _dim)(actor)
             if subject and subject_actors is not None:
                 subject_actors.append(actor)
+            if owners is not None:
+                owners[actor] = ("conductor", cond.id)
             ren.AddActor(actor)
 
     ren.ResetCameraClippingRange()
     return {"actors": ren.GetActors().GetNumberOfItems(), "pads": board.cols * board.rows}
+
+
+# ---------------------------------------------------------------------------
+# What a click lands on, and what is selected
+# ---------------------------------------------------------------------------
+#
+# THE 3D VIEW WAS ONLY EVER LOOKED AT. The board and the sheet cross-probe -- a symbol
+# clicked selects its part on the board, a wire lights its net -- and with the three views
+# side by side, a part found in 3D had to be found again in 2D by eye. A click here goes
+# through the same doors the sheet's does, and what is selected anywhere is tinted here.
+
+#: What a solid belongs to: a part or a conductor, by id.
+type ActorOwner = tuple[Literal["component", "conductor"], str]
+
+
+def owner_at(
+    ren: vtk.vtkRenderer, owners: dict[vtk.vtkActor, ActorOwner], x: int, y: int
+) -> ActorOwner | None:
+    """The part or conductor drawn at display position ``(x, y)`` -- VTK's, from the bottom
+    left -- or ``None`` for the board, the room or nothing at all."""
+    # A RAY CAST, not the hardware selector vtkPropPicker uses: that renders the scene
+    # again into an id buffer, and through this view's render passes it fails outright
+    # ("Too many props") and picks nothing.
+    picker = vtk.vtkCellPicker()
+    picker.SetTolerance(0.0005)
+    if not picker.Pick(x, y, 0, ren):
+        return None
+    return owners.get(picker.GetActor())
+
+
+def show_selection(
+    owners: dict[vtk.vtkActor, ActorOwner],
+    selected: Collection[str],
+    tinted: dict[vtk.vtkActor, tuple[tuple[float, float, float], float]],
+) -> bool:
+    """Tint the solids of whatever is selected and give the rest their own colour back,
+    in the actors already built -- a selection is a click, and rebuilding a few thousand
+    actors for one is what the debounce on an edit exists to avoid. ``tinted`` remembers
+    what each tinted solid looked like, and starts empty after every rebuild. Returns
+    whether anything changed, so the caller knows whether to draw a frame."""
+    changed = False
+    for actor, (_kind, ident) in owners.items():
+        wanted = ident in selected
+        if wanted and actor not in tinted:
+            prop = actor.GetProperty()
+            tinted[actor] = (prop.GetColor(), prop.GetRoughness())
+            _pick_out(actor)
+            changed = True
+        elif not wanted and actor in tinted:
+            colour, roughness = tinted.pop(actor)
+            prop = actor.GetProperty()
+            prop.SetColor(*colour)
+            prop.SetRoughness(roughness)
+            changed = True
+    return changed
 
 
 def apply_default_camera(
@@ -5592,6 +5656,7 @@ def build_renderer(
     highlight: str | None = None,
     pin_names: bool = True,
     board_notes: bool = True,
+    owners: dict[vtk.vtkActor, ActorOwner] | None = None,
 ) -> tuple[vtk.vtkRenderer, dict[str, int]]:
     """A renderer with the board in it, framed and lit. For a first build or a one-off
     offscreen render; an interactive view refreshes with :func:`populate_renderer`."""
@@ -5605,6 +5670,7 @@ def build_renderer(
         highlight=highlight,
         pin_names=pin_names,
         board_notes=board_notes,
+        owners=owners,
     )
     apply_default_camera(ren, flipped)
 
