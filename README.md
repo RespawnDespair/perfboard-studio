@@ -7,9 +7,9 @@
   </a>
 </p>
 
-<h1 align="center">Perfboard Studio</h1>
-
-<p align="center"><b>Perfboard circuit design and soldering guides</b></p>
+<p align="center">
+  <img alt="Perfboard Studio: perfboard circuit design and soldering guides. An NE555 astable is built in the order its guide gives: the parts go in shortest first, the board is turned over and the copper goes on, and its LED blinks." src="https://raw.githubusercontent.com/medinstech/perfboard-studio/main/docs/images/banner.svg">
+</p>
 
 <p align="center">
   A desktop app that takes a schematic netlist, lays it out on pad-per-hole<br>

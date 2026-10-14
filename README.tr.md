@@ -7,9 +7,9 @@
   </a>
 </p>
 
-<h1 align="center">Perfboard Studio</h1>
-
-<p align="center"><b>Delikli plaket üzerinde devre tasarımı ve lehimleme rehberi</b></p>
+<p align="center">
+  <img alt="Perfboard Studio: delikli plaket üzerinde devre tasarımı ve lehimleme rehberi. Bir NE555 astable, rehberinin verdiği sırayla kuruluyor: parçalar en kısadan başlayarak takılıyor, kart çevrilip bakır işleniyor ve LED'i yanıp sönüyor." src="./docs/images/banner.tr.svg">
+</p>
 
 <p align="center">
   Bir şema netlist'ini alan, onu delik-başına-pad plaket üzerine yerleştiren,<br>
