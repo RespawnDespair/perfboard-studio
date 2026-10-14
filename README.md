@@ -58,7 +58,8 @@
 - **Three rules only the third dimension can see.** A part too tall for the case,
   a jumper trapped under a body that gets soldered down on top of it, and a
   heat-sensitive part sitting too close to a hot one. The 3D view is a checking
-  tool, not a picture.
+  tool, not a picture — and the board leaves as a STEP model of the same bodies, to
+  draw its case round.
 - **Real parts, read out of a KiCad netlist.** A value names a catalog part — a
   BC547, a 7805, an Arduino Nano — and a KiCad footprint names a package. Where the
   schematic's symbol numbers the pins differently from the part in your hand, they are
@@ -117,6 +118,20 @@ be soldered down on top of it, and a heat-sensitive part sitting too close to a 
 
 ![The same board in 3D](https://raw.githubusercontent.com/medinstech/perfboard-studio/main/docs/images/board-3d.png)
 
+**It stands beside the board, and it answers a click.** Board, schematic and 3D open side
+by side, each taking its share of the window, and the toolbar's view buttons switch them on
+and off. A part clicked in 3D is selected on the board and on the sheet, and the build guide
+goes to its step; a wire clicked there lights its net everywhere; and whatever is selected
+anywhere is tinted in 3D, so the three views show one selection.
+
+**And it leaves as STEP.** *File ▸ Export 3D Model (STEP)…* writes the board as solids a
+mechanical CAD program can measure and cut a box round: the board with every hole and
+mounting bore through it, each part as the room it takes — the very outline and height
+DRC's overhang and too-tall rules measure — every lead down through its hole, and every wire
+as thick as the gauge the cut list prints, lifted over whatever it crosses. The application
+writes the file itself, so it needs no graphics driver and no extra dependency, and a project
+save puts one beside the other outputs.
+
 ## Real parts, by name
 
 ![An Arduino Nano relay driver: the catalog's parts, the Nano on its header strips, pin names and labels on the board](https://raw.githubusercontent.com/medinstech/perfboard-studio/main/docs/images/catalog-and-pin-names.png)
@@ -131,11 +146,14 @@ calls every lead and the symbol it is drawn as, each with the datasheet it came 
 devkit is wired by them. They are laid out for the whole board at once: a name stops at
 whatever is in its way, a part in one row prints its names on its clear side, a name short
 of room is narrowed, and one with none is left off and listed in the part's tooltip. A dev
-board is a **module** — its own board standing on its header strips — and **the board can
-be written on**: a label such as "12V IN" beside the terminal that takes it goes on either
-face and is printed on the 1:1 sheet and in the guide.
+board is a **module** — its own board standing on its header strips — drawn as what is on
+it, in both views, measured from the makers' drawings and KiCad's models: a Nano's chip
+turned on its corner, its USB socket and its reset button; an ESP32 devkit's radio can and
+antenna; a Pico in green. Which way round it goes is plain from the picture. And **the board
+can be written on**: a label such as "12V IN" beside the terminal that takes it goes on
+either face and is printed on the 1:1 sheet and in the guide.
 
-![The same board in 3D: the Nano on its header strips, the names beside the pins](https://raw.githubusercontent.com/medinstech/perfboard-studio/main/docs/images/module-3d.png)
+![The same board in 3D: the Nano drawn as what is on it, standing on its header strips, the names beside the pins](https://raw.githubusercontent.com/medinstech/perfboard-studio/main/docs/images/module-3d.png)
 
 **A KiCad netlist comes in as parts, not guesses.** The board above is
 [`examples/nano-relay.net`](https://github.com/medinstech/perfboard-studio/blob/main/examples/nano-relay.net) imported as it stands. Its values
@@ -148,10 +166,10 @@ its number, would wire the board for a part that does not exist.
 
 ## Draw the circuit first
 
-The board says where everything goes. The schematic panel (`Ctrl+2`) says *what you are
-building* — and it is where you say it: **Add Part**, **Wire** two pins, **Place on the
-Board**. The circuit comes first and the layout second, which is how every other EDA tool
-works and is the order this one could not do until now.
+The board says where everything goes. The schematic panel (`Ctrl+2`), which opens beside
+it, says *what you are building* — and it is where you say it: **Add Part**, **Wire** two
+pins, **Place on the Board**. The circuit comes first and the layout second, which is how
+every other EDA tool works and is the order this one could not do until now.
 
 ![The NE555 astable in the schematic panel](https://raw.githubusercontent.com/medinstech/perfboard-studio/main/docs/images/schematic.png)
 
@@ -188,7 +206,7 @@ part body is moved to the *first* phase, because by the time that part is down i
 late.
 
 The animation turns the board over halfway through for the same reason you would: a
-perfboard is opaque, and seventeen of this build's twenty-five steps happen on the face you
+perfboard is opaque, and fourteen of this build's twenty-two steps happen on the face you
 cannot see from above. It is generated by playing the guide back through the same function
 the 3D panel's assembly slider calls, so it cannot show an order the guide does not
 actually give you.
@@ -198,6 +216,16 @@ straight, with every mark measured from one tip. The guide ends with all of them
 size beside a 50 mm ruler — print at 100 %, cut each wire to its drawing, mark it, bend it.
 Tip to tip a drawing is exactly the length the cut list gives, because both come from the
 same numbers.
+
+![Board, 3D and the build guide side by side: eight steps ticked off, and the next one, the 7805, picked out in all three](https://raw.githubusercontent.com/medinstech/perfboard-studio/main/docs/images/guide-and-3d.png)
+
+**And it keeps your place at the bench.** The Build Guide panel (`Ctrl+4`) stands beside
+the board and the 3D view. Tick a step off and it stays ticked for that board — kept in the
+application's settings rather than in the file, so ticking is not an edit and joins no undo
+— and **Next Step to Do** picks the first step without a tick: its part selected on the
+board, picked out in 3D, and the 3D view showing the board as it stands at that moment of
+the build. The arrows either side of **Play** go one step at a time, which is how somebody
+with an iron in their hand wants to move through it.
 
 ## Running it
 
@@ -295,15 +323,17 @@ claude mcp add perfboard-studio -- uvx --from "perfboard-studio[mcp]" perfboard-
 Nothing has to be installed first — `uvx` fetches the package into its own cache. From a
 clone it is `pip install -e ".[mcp]"` and then `claude mcp add perfboard-studio -- perfboard-studio-mcp`.
 
-Fifty-three tools, every hole addressed the way people talk about perfboard (`A1`, `C7`,
-`AC12`) and never as raw coordinates. See [docs/MCP.md](https://github.com/medinstech/perfboard-studio/blob/main/docs/MCP.md) for the tool list,
+Fifty-four tools, every hole addressed the way people talk about perfboard (`A1`, `C7`,
+`AC12`) and never as raw coordinates — down to `export_step`, which hands the finished board
+to the CAD program its case is drawn in. See [docs/MCP.md](https://github.com/medinstech/perfboard-studio/blob/main/docs/MCP.md) for the tool list,
 the JSON config other clients want, and the rest of the setup.
 
 ### Headless
 
-Renders 2D/3D/PDF to files, runs DRC and LVS and prints timings, with no display. It is
-how the visual output is exercised in CI, and the fastest way to check that a rendering
-change did not crash:
+Renders the board in 2D and 3D and as the 1:1 PDF, writes the schematic as SVG, PDF and
+PNG, the STEP model and the build guide, runs DRC and LVS and prints timings, with no
+display. It is how the visual output is exercised in CI, and the fastest way to check that
+a rendering change did not crash:
 
 ```sh
 python -m perfboard_studio.ui.main --headless tools/diffcheck/golden/dense.perf
@@ -325,6 +355,10 @@ golden fixtures in `tools/diffcheck/`, down to the last IEEE-754 double.
 src/perfboard_studio/            the engine: document model, command bus, connectivity,
                            router, autorouter, placer, DRC, LVS, persistence
 src/perfboard_studio/guide.py    the soldering guide, and guide_export.py for HTML/CSV/JSON
+src/perfboard_studio/schematic.py  the sheet, drawn from the netlist until somebody draws it,
+                           and schematic_export.py for the SVG the PDF and PNG come from
+src/perfboard_studio/boardfit.py which stock board to buy, by building the design on each
+src/perfboard_studio/step_export.py  the board as STEP solids, the bodies DRC measured
 src/perfboard_studio/stripboard.py  the board whose copper arrives joined, and striproute.py
                            for the cuts-and-links planner that designs on one
 src/perfboard_studio/parsers/    KiCad netlist importer, and kicad_parts.py: which part each
@@ -334,7 +368,7 @@ src/perfboard_studio/ui/         Qt application: 2D editor, VTK 3D view, 1:1 PDF
 src/perfboard_studio/mcp/        the MCP server (docs/MCP.md)
 src/perfboard_studio/catalog.py  the real parts, by name, each with its datasheet
 examples/                  netlists to import, and the boards they become
-tests/                     ~3500 tests; the engine is mypy --strict clean
+tests/                     ~3950 tests; the engine is mypy --strict clean
 packages/                  the original TypeScript engine, kept as the reference the
                            Python port is proved against
 ```
@@ -362,13 +396,15 @@ install and nothing to go missing.
 ## Where it is going
 
 Done: the editor, the library, connectivity and LVS, DRC, the router and the placement
-optimiser, the build guide with rendered step images and assembly playback, the 1:1 PDF
-export, the board as a STEP model to draw its enclosure round, the schematic panel with T's and labels and the sheet export beside it, a
-catalog of real parts with their pin names printed on the board, modules on header strips,
-labels written on the board, KiCad netlists read part by part, parts described by their own
-measurements when the library does not have them, crash recovery, the MCP server, TR/EN
-localisation, the three-platform packaging that a `v*` tag
-runs, and the update check that tells you a release exists and fetches it (**Help ▸ Check
+optimiser, the stock board chosen by building the design on it, the build guide with
+rendered step images, 1:1 wire drawings, assembly playback and your place in it kept, the
+1:1 PDF export, the board as a STEP model to draw its enclosure round, the schematic panel
+with T's and labels and the sheet export beside it, board, schematic and 3D side by side
+with one selection between them, a catalog of real parts with their pin names printed on
+the board, modules on header strips drawn as what is on them, labels written on the board,
+KiCad netlists read part by part, parts described by their own measurements when the
+library does not have them, crash recovery, the MCP server, TR/EN localisation, the
+three-platform packaging that a `v*` tag runs, and the update check that tells you a release exists and fetches it (**Help ▸ Check
 for Updates**; it verifies the download against the release's `SHA256SUMS` and then hands
 it to you — running it stays your click).
 

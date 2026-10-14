@@ -57,7 +57,8 @@
   lehimlenmesi keyifli bir yerleşimi çıkaran şey bu.
 - **Yalnızca üçüncü boyutun görebildiği üç kural.** Kutuya sığmayan bir parça,
   üstüne parça lehimlenecek bir jumper, ve sıcak bir parçanın fazla yakınında
-  duran ısıya duyarlı bir parça. 3D görünüm bir resim değil, kontrol aracı.
+  duran ısıya duyarlı bir parça. 3D görünüm bir resim değil, kontrol aracı — ve kart,
+  aynı gövdelerden oluşan bir STEP modeli olarak da çıkar, kutusu etrafına çizilsin diye.
 - **KiCad netlist'inden gerçek parçalar.** Değer bir katalog parçasını adlandırır —
   BC547, 7805, Arduino Nano — KiCad footprint'i de bir kılıfı. Şemadaki sembol pinleri
   elinizdeki parçadan farklı numaralıyorsa pinler adlarıyla yeniden numaralanır; kart,
@@ -118,6 +119,20 @@ duran ısıya duyarlı bir parça.
 
 ![Aynı kart 3D'de](./docs/images/board-3d.png)
 
+**Kartın yanında durur, ve tıklamaya cevap verir.** Kart, şema ve 3D yan yana açılır, her
+biri pencereden payını alır; araç çubuğundaki görünüm düğmeleri onları açıp kapatır. 3D'de
+tıklanan bir parça kartta ve şemada seçilir, montaj rehberi de onun adımına gider; orada
+tıklanan bir tel netini her yerde vurgular; ve nerede seçilmiş olursa olsun seçili olan 3D'de
+renklenir — üç görünüm tek bir seçimi gösterir.
+
+**Ve STEP olarak çıkar.** *Dosya ▸ 3D Modeli Dışa Aktar (STEP)…* kartı, bir mekanik CAD
+programının ölçebileceği ve etrafına kutu kesebileceği katılar olarak yazar: bütün delikleri
+ve montaj delikleri içinden geçen kartın kendisi, her parça kapladığı yer olarak — DRC'nin
+taşma ve fazla-yükseklik kurallarının ölçtüğü dış hat ve yüksekliğin ta kendisi —, deliğinden
+aşağı inen her bacak, ve kesim listesinin yazdığı kalınlıkta, kesiştiği her şeyin üstünden
+geçen her tel. Dosyayı uygulama kendisi yazar; ne grafik sürücüsü ne ek bir bağımlılık
+gerekir, ve bir proje kaydı onu diğer çıktıların yanına koyar.
+
 ## Gerçek parçalar, adlarıyla
 
 ![Arduino Nano röle sürücü: katalogdan parçalar, pin başlıklarındaki Nano, kartta pin adları ve etiketler](./docs/images/catalog-and-pin-names.png)
@@ -133,11 +148,14 @@ birinin hangi veri sayfasından geldiği de yazılıdır.
 kartı onlara bakılarak kablolanır. Bütün kart için bir kerede yerleşirler: bir ad önüne
 çıkan ilk engelde durur, tek sıralı bir parça adlarını boş olan yanına basar, yeri biraz
 dar olan ad daraltılır, hiç yeri olmayan basılmaz ve parçanın araç ipucunda listelenir. Bir
-geliştirme kartı bir **modüldür** — pin başlıklarının üstünde duran kendi kartı — ve **kartın
-üstüne yazılabilir**: onu alan klemensin yanına "12V IN" gibi bir etiket iki yüzden birine
-konur, 1:1 çıktıda ve rehberde basılır.
+geliştirme kartı bir **modüldür** — pin başlıklarının üstünde duran kendi kartı — ve iki
+görünümde de üzerinde ne varsa o olarak çizilir, üreticilerin çizimlerinden ve KiCad'in
+modellerinden ölçülerek: bir Nano'nun köşesi üstüne dönmüş çipi, USB soketi ve reset düğmesi;
+bir ESP32 geliştirme kartının radyo kalkanı ve anteni; yeşil bir Pico. Hangi yönde
+takılacağı resimden belli olur. Ve **kartın üstüne yazılabilir**: onu alan klemensin yanına
+"12V IN" gibi bir etiket iki yüzden birine konur, 1:1 çıktıda ve rehberde basılır.
 
-![Aynı kart 3D'de: başlıklarının üstündeki Nano, pinlerin yanındaki adlar](./docs/images/module-3d.png)
+![Aynı kart 3D'de: üzerinde ne varsa o olarak çizilmiş, başlıklarının üstünde duran Nano, pinlerin yanındaki adlar](./docs/images/module-3d.png)
 
 **Bir KiCad netlist'i tahminlerle değil parçalarla gelir.** Yukarıdaki kart,
 [`examples/nano-relay.net`](./examples/nano-relay.net) dosyasının olduğu gibi içe
@@ -150,10 +168,10 @@ numarasıyla alındığında her biri kartı var olmayan bir parçaya göre kabl
 
 ## Önce devreyi çizin
 
-Kart neyin nereye gideceğini söyler. Şema paneli (`Ctrl+2`) *ne inşa ettiğinizi* söyler —
-ve onu söylediğiniz yer de burasıdır: **Parça Ekle**, iki pini **Bağla**, **Kart Üzerine
-Yerleştir**. Önce devre, sonra yerleşim; diğer her EDA aracının çalıştığı sıra ve bu aracın
-şimdiye kadar yapamadığı şey.
+Kart neyin nereye gideceğini söyler. Kartın yanında açılan şema paneli (`Ctrl+2`) *ne inşa
+ettiğinizi* söyler — ve onu söylediğiniz yer de burasıdır: **Parça Ekle**, iki pini
+**Bağla**, **Kart Üzerine Yerleştir**. Önce devre, sonra yerleşim; diğer her EDA aracının
+çalıştığı sıra ve bu aracın şimdiye kadar yapamadığı şey.
 
 ![Şema panelinde NE555 astable](./docs/images/schematic.png)
 
@@ -191,7 +209,7 @@ sıkışıp kalacak bir jumper **ilk** faza alınır, çünkü o parça yerine l
 çok geçtir.
 
 Animasyon kartı ortada ters çeviriyor, çünkü siz de öyle yaparsınız: perfboard saydam
-değildir ve bu montajın yirmi beş adımının on yedisi yukarıdan göremediğiniz yüzde
+değildir ve bu montajın yirmi iki adımının on dördü yukarıdan göremediğiniz yüzde
 gerçekleşir. Animasyon, 3D panelindeki montaj kaydırıcısının çağırdığı fonksiyonun aynısı
 oynatılarak üretiliyor — yani rehberin gerçekten vermediği bir sırayı gösteremez.
 
@@ -200,6 +218,16 @@ bir de düz hâliyle, her işareti bir uçtan ölçülmüş olarak. Rehber hepsi
 50 mm'lik bir cetvelin yanında vererek biter — %100 ölçekte yazdırın, her teli çizimine göre
 kesin, işaretleyin, bükün. Bir çizimin uçtan uca boyu kesim listesinin verdiği uzunluğun ta
 kendisidir, çünkü ikisi de aynı sayılardan gelir.
+
+![Kart, 3D ve montaj rehberi yan yana: sekiz adım işaretlenmiş, sıradaki — 7805 — üçünde de vurgulanmış](./docs/images/guide-and-3d.png)
+
+**Ve tezgâhta kaldığınız yeri tutar.** Montaj Rehberi paneli (`Ctrl+4`) kartın ve 3D
+görünümün yanında durur. Bir adımı işaretleyin, o kart için işaretli kalır — dosyada değil
+uygulamanın ayarlarında tutulur, yani işaretlemek bir düzenleme sayılmaz ve geri alma
+geçmişine girmez — ve **Sıradaki Adım** işaretsiz ilk adımı seçer: parçası kartta seçilir,
+3D'de vurgulanır, 3D görünüm de kartı montajın o anındaki hâliyle gösterir. **Oynat**'ın iki
+yanındaki oklar birer adım ilerler; elinde havya olan birinin montajda ilerlemek istediği
+yol da budur.
 
 ## Çalıştırmak
 
@@ -300,14 +328,15 @@ claude mcp add perfboard-studio -- uvx --from "perfboard-studio[mcp]" perfboard-
 çalışırken `pip install -e ".[mcp]"` ve ardından
 `claude mcp add perfboard-studio -- perfboard-studio-mcp`.
 
-Elli üç tool, ve her delik insanların perfboard'dan bahsederken kullandığı adresle
-(`A1`, `C7`, `AC12`) — hiçbir yerde ham koordinat yok. Tool listesi, diğer istemcilerin
+Elli dört tool, ve her delik insanların perfboard'dan bahsederken kullandığı adresle
+(`A1`, `C7`, `AC12`) — hiçbir yerde ham koordinat yok; bitmiş kartı kutusunun çizildiği CAD
+programına teslim eden `export_step` de dahil. Tool listesi, diğer istemcilerin
 istediği JSON yapılandırması ve kurulumun geri kalanı için [docs/MCP.md](./docs/MCP.md).
 
 ### Headless
 
-2D/3D/PDF'i dosyaya render eder, DRC ve LVS çalıştırır, süreleri yazdırır — ekran
-gerekmeden. Görsel çıktının CI'da sınandığı yol budur ve bir render değişikliğinin bir
+Kartı 2D, 3D ve 1:1 PDF olarak render eder; şemayı SVG, PDF ve PNG olarak, STEP modelini
+ve montaj rehberini yazar; DRC ve LVS çalıştırır, süreleri yazdırır — ekran gerekmeden. Görsel çıktının CI'da sınandığı yol budur ve bir render değişikliğinin bir
 şeyi kırmadığını doğrulamanın en hızlı yoludur:
 
 ```sh
@@ -331,6 +360,10 @@ değil, "yerine geçtiği implementasyonla bayt bayt aynı sonucu üretiyor" olm
 src/perfboard_studio/            motor: doküman modeli, komut veri yolu, bağlantısallık,
                            router, autorouter, yerleştirici, DRC, LVS, kalıcılık
 src/perfboard_studio/guide.py    lehimleme rehberi; HTML/CSV/JSON için guide_export.py
+src/perfboard_studio/schematic.py  şema sayfası, biri çizene kadar netlist'ten çizilir; PDF
+                           ve PNG'nin üretildiği SVG için schematic_export.py
+src/perfboard_studio/boardfit.py hangi hazır kartın alınacağı, tasarım her birinde kurularak
+src/perfboard_studio/step_export.py  STEP katıları olarak kart: DRC'nin ölçtüğü gövdeler
 src/perfboard_studio/stripboard.py  bakırı baştan bağlı gelen kart; striproute.py onun üstünde
                            tasarım yapan kes-ve-bağla planlayıcısı
 src/perfboard_studio/parsers/    KiCad netlist içe aktarıcı; kicad_parts.py: her bileşenin hangi
@@ -340,15 +373,23 @@ src/perfboard_studio/ui/         Qt uygulaması: 2D editör, VTK 3D görünüm, 
 src/perfboard_studio/mcp/        MCP sunucusu (docs/MCP.md)
 src/perfboard_studio/catalog.py  gerçek parçalar, adlarıyla ve veri sayfalarıyla
 examples/                  içe aktarılacak netlist'ler ve çıktıkları kartlar
-tests/                     ~3500 test; motor mypy --strict temiz
+tests/                     ~3950 test; motor mypy --strict temiz
 packages/                  Python portunun karşısında kanıtlandığı referans olarak
                            saklanan orijinal TypeScript motoru
 ```
 
 61 adet THT footprint **sayısal parametrelerden üretilir**, hazır varlık olarak
-gelmez — mesh kütüphanesi yok, devralınacak share-alike lisansı yok. Bir parçayı 2D'de
-çizen spec, 3D'de gövdesini extrude eden spec ile aynıdır; dolayısıyla ikisi birbiriyle
-çelişemez.
+gelmez. Bir parçayı 2D'de çizen spec, 3D'de gövdesini extrude eden spec ile aynıdır;
+dolayısıyla ikisi birbiriyle çelişemez, ve kimsenin modelini çizmediği bir parça da yine
+eksiksiz bir parçadır.
+
+**3D görünüm, KiCad'de modeli olan kılıfların gerçek şeklini ödünç alır** — tırnağı ve
+vida deliğiyle bir TO-220, bacakları ızgaraya açılmış bir TO-92, vidalarında yarıkları olan
+bir klemens — çünkü bir çaptan ve bir yükseklikten üretilen bir potansiyometre, üstüne çubuk
+takılmış bir diskten ibarettir. Yalnızca kartın üstünde kalan şekil ödünç alınır: deliklerden
+geçen bacaklar *sizin* kartınızın kalınlığına göre çizilir, gövde rengini bu projenin kendi
+tablosundan alır, ve modeli olmayan her parça eskisi gibi çizilir. **Bu mesh'ler, bu reponun
+Apache-2.0 olmayan tek parçasıdır** — bkz. [Lisans](#lisans).
 
 **61'in içinde olmayan bir parça kurulmaz, tarif edilir.** *Özel Parça…* bir pin ızgarası
 ve üç ölçü ister, karşılığında bunları kendi taşıyan bir kimlik verir:
@@ -360,13 +401,15 @@ parçayla açılır: kurulacak bir kütüphane ve kaybolacak bir dosya yoktur.
 ## Nereye gidiyor
 
 Biten: editör, kütüphane, bağlantısallık ve LVS, DRC, router ve yerleştirme
-optimizasyonu, render edilmiş adım görselleri ve montaj oynatması ile montaj rehberi,
-1:1 PDF çıktısı, kutusunu çizmek için kartın STEP modeli, T ve etiketleriyle şema paneli ve yanındaki sayfa dışa aktarımı,
-pin adları kartta basılan gerçek parça kataloğu, pin başlıklarındaki modüller, karta yazılan
-etiketler, parça parça okunan KiCad netlist'leri, kütüphanede olmayan parçaların kendi
-ölçüleriyle tarif edilmesi, çökme kurtarma, MCP sunucusu,
-TR/EN yerelleştirme, bir `v*` etiketiyle çalışan
-üç platformluk paketleme, ve yeni sürümü haber verip indiren güncelleme denetimi
+optimizasyonu, tasarım üzerinde kurularak seçilen hazır kart, render edilmiş adım
+görselleri, 1:1 tel çizimleri, montaj oynatması ve kaldığınız yeri tutmasıyla montaj
+rehberi, 1:1 PDF çıktısı, kutusunu çizmek için kartın STEP modeli, T ve etiketleriyle şema
+paneli ve yanındaki sayfa dışa aktarımı, aralarında tek bir seçimle yan yana kart, şema ve
+3D, pin adları kartta basılan gerçek parça kataloğu, üzerinde ne varsa o olarak çizilen pin
+başlıklarındaki modüller, karta yazılan etiketler, parça parça okunan KiCad netlist'leri,
+kütüphanede olmayan parçaların kendi ölçüleriyle tarif edilmesi, çökme kurtarma, MCP
+sunucusu, TR/EN yerelleştirme, bir `v*` etiketiyle çalışan üç platformluk paketleme, ve
+yeni sürümü haber verip indiren güncelleme denetimi
 (**Yardım ▸ Güncellemeleri Denetle**; indirdiğini sürümün `SHA256SUMS` dosyasıyla
 doğrulayıp size teslim eder — çalıştırmak sizin tıklamanız).
 
