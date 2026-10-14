@@ -2,6 +2,9 @@
 
     python tools/make_banner.py        # -> docs/images/banner.svg and banner.tr.svg
 
+``tools/make_social_preview.py`` draws the card a link to the repository unfurls into from
+the same code, as a still (``CARD``), so the two cannot drift apart.
+
 WHAT IT SHOWS. The NE555 astable -- the circuit ``examples/ne555-astable.net`` imports to --
 being built the way the build guide says to build it: the parts go in shortest first, the
 board is turned over and the copper goes on, it is turned back and checked, and the LED
@@ -24,6 +27,11 @@ supports. Every element runs on ONE clock of ``period`` seconds, with its own ti
 into its own @keyframes as percentages of that clock, so the loop cannot drift out of step
 with itself. A reader who has asked for reduced motion gets the finished board, lit.
 
+THE MEDINSTECH WORDMARK IS INSIDE IT, as a PNG in a data URI: an SVG shown through ``<img>``
+may not fetch another file, and the wordmark exists only as ``docs/images/wordmark-white.png``.
+It is scaled to twice the size it is drawn at, which is sharp on a high-density screen and a
+tenth of the bytes of the original.
+
 THE WORDS ARE TEXT, NOT OUTLINES. A font cannot be fetched from inside an ``<img>``, and the
 fonts that look right here are not ours to turn into outlines and ship. So the name and the
 tagline are set in whatever sans-serif the reader's system has, and ``textLength`` holds each
@@ -33,7 +41,9 @@ running the tagline into the board.
 
 from __future__ import annotations
 
+import base64
 import dataclasses
+import io
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -78,21 +88,16 @@ OUT_DIR = REPO_ROOT / "docs" / "images"
 #: half of it bare.
 BOARD_COLS, BOARD_ROWS = 14, 7
 
-# -- the canvas ---------------------------------------------------------------------------
-
-WIDTH, HEIGHT = 1280, 400
-#: Pixels per hole. Everything on the board is in millimetres scaled by PITCH_PX / pitch,
-#: so a 5 mm LED is as much bigger than a pad as it is in your hand.
-PITCH_PX = 36.0
-BOARD_X = WIDTH - 72 - BOARD_COLS * PITCH_PX
-BOARD_Y = 46.0
-TEXT_X = 72.0
+WORDMARK = REPO_ROOT / "docs" / "images" / "wordmark-white.png"
 
 COPPER = "#c8a06a"  # the social preview's second rule colour: the board's copper.
 FONT_STACK = (
     "'Segoe UI Variable Display','Segoe UI',-apple-system,BlinkMacSystemFont,"
     "'Helvetica Neue','Noto Sans','DejaVu Sans',Arial,sans-serif"
 )
+#: Set as an inline style where it is used: the stylesheet's `text` rule outranks a presentation
+#: attribute, and quietly set the IC's marking and the card's last line in the sans-serif.
+MONO_STACK = "Consolas,'DejaVu Sans Mono',Menlo,monospace"
 
 # -- the clock ------------------------------------------------------------------------------
 
@@ -106,6 +111,88 @@ COPPER_SPAN_S = 3.2
 FLIP_S = 0.7
 BLINKS, BLINK_PERIOD_S = 4, 1.0
 FADE_S = 0.6
+
+
+@dataclass(frozen=True)
+class Layout:
+    """Where everything goes on one picture, in that picture's own pixels."""
+
+    width: int
+    height: int
+    #: Pixels per hole. Everything on the board is millimetres scaled by this over the pitch,
+    #: so a 5 mm LED is as much bigger than a pad as it is in your hand.
+    pitch_px: float
+    board_x: float
+    board_y: float
+    text_x: float
+    logo_y: float
+    logo_h: float
+    title_y: float
+    title_size: float
+    rule_y: float
+    tagline_y: float
+    tagline_size: float
+    tagline_step: float
+    keywords_y: float
+    keywords_size: float
+    corner: float
+    #: Played, or shown finished and lit: the README's banner moves, a link's card is a still.
+    animated: bool
+    #: The card's last line, under a rule of its own: where to get it.
+    footer: str | None = None
+    footer_y: float = 0.0
+    footer_size: float = 0.0
+
+
+#: The README's: the board at the right, its top level with the wordmark's, and the bottom
+#: line of words on the caption's baseline.
+BANNER = Layout(
+    width=1280,
+    height=400,
+    pitch_px=36.0,
+    board_x=1280 - 72 - BOARD_COLS * 36.0,
+    board_y=46.0,
+    text_x=72.0,
+    logo_y=46.0,
+    logo_h=62.0,
+    title_y=194.0,
+    title_size=58,
+    rule_y=210.0,
+    tagline_y=256.0,
+    tagline_size=26,
+    tagline_step=34.0,
+    keywords_y=362.0,
+    keywords_size=15,
+    corner=22.0,
+    animated=True,
+)
+
+#: The card GitHub shows where the repository is linked: 1280 x 640, the size it asks for and
+#: the 2:1 every unfurl crops towards. Read small, so everything is bigger, and the board
+#: sits below the name rather than beside it to be bigger still.
+CARD = Layout(
+    width=1280,
+    height=640,
+    pitch_px=40.0,
+    board_x=1280 - 72 - BOARD_COLS * 40.0,
+    board_y=640 - 76 - BOARD_ROWS * 40.0,
+    text_x=72.0,
+    logo_y=64.0,
+    logo_h=78.0,
+    title_y=250.0,
+    title_size=86,
+    rule_y=274.0,
+    tagline_y=340.0,
+    tagline_size=34,
+    tagline_step=44.0,
+    keywords_y=478.0,
+    keywords_size=22,
+    corner=0.0,
+    animated=False,
+    footer="Get it from the releases page",
+    footer_y=548.0,
+    footer_size=22,
+)
 
 
 @dataclass(frozen=True)
@@ -218,28 +305,29 @@ class Canvas:
     on the bench -- so a hole's row is mirrored and its column is not.
     """
 
-    def __init__(self, document: PerfDocument) -> None:
+    def __init__(self, document: PerfDocument, layout: Layout) -> None:
         self.board = document.board
         self.pitch = document.board.pitch
-        self.scale = PITCH_PX / self.pitch
+        self.x, self.y, self.pitch_px = layout.board_x, layout.board_y, layout.pitch_px
+        self.scale = self.pitch_px / self.pitch
 
     def mm(self, x_mm: float, y_mm: float, back: bool = False) -> tuple[float, float]:
-        x = BOARD_X + PITCH_PX / 2 + x_mm * self.scale
+        x = self.x + self.pitch_px / 2 + x_mm * self.scale
         if back:
             y_mm = (self.board.rows - 1) * self.pitch - y_mm
-        return x, BOARD_Y + PITCH_PX / 2 + y_mm * self.scale
+        return x, self.y + self.pitch_px / 2 + y_mm * self.scale
 
     def hole(self, col: int, row: int, back: bool = False) -> tuple[float, float]:
         return self.mm(col * self.pitch, row * self.pitch, back)
 
     @property
     def size(self) -> tuple[float, float]:
-        return self.board.cols * PITCH_PX, self.board.rows * PITCH_PX
+        return self.board.cols * self.pitch_px, self.board.rows * self.pitch_px
 
     @property
     def centre(self) -> tuple[float, float]:
         width, height = self.size
-        return BOARD_X + width / 2, BOARD_Y + height / 2
+        return self.x + width / 2, self.y + height / 2
 
 
 @dataclass(frozen=True)
@@ -436,7 +524,7 @@ def draw_part(canvas: Canvas, step: PartStep, component: ComponentInstance, foot
         angle = 0 if body.axis == "x" else -90
         out.append(
             f'<text x="{num(body.x)}" y="{num(body.y)}" transform="rotate({angle} {num(body.x)} {num(body.y)})" '
-            f'font-family="Consolas,\'DejaVu Sans Mono\',Menlo,monospace" font-size="{num(0.95 * s)}" '
+            f'style="font-family:{MONO_STACK}" font-size="{num(0.95 * s)}" '
             f'fill="#8d93a0" text-anchor="middle" dominant-baseline="central" letter-spacing="1">'
             f"{escape(step.value)}</text>"
         )
@@ -505,9 +593,21 @@ def text_width(text: str, size: float, bold: bool) -> float:
     raise SystemExit("no Segoe UI or DejaVu Sans to measure the words with")
 
 
-def banner(document: PerfDocument, words: Words) -> str:
+def wordmark(height: float) -> tuple[float, str]:
+    """The Medinstech wordmark as a data URI at twice ``height``, and its width at ``height``."""
+    from PIL import Image
+
+    with Image.open(WORDMARK) as source:
+        width = height * source.width / source.height
+        small = source.resize((round(2 * width), round(2 * height)), Image.LANCZOS)
+    data = io.BytesIO()
+    small.save(data, format="PNG", optimize=True)
+    return width, "data:image/png;base64," + base64.b64encode(data.getvalue()).decode("ascii")
+
+
+def render(document: PerfDocument, words: Words, layout: Layout) -> str:
     lookup = footprint_lookup()
-    canvas = Canvas(document)
+    canvas = Canvas(document, layout)
     steps = all_steps(build_guide(document, lookup))
     components = {c.id: c for c in document.components}
     scheme = next(s for s in SCHEMES if s.key == "green")
@@ -651,7 +751,7 @@ def banner(document: PerfDocument, words: Words) -> str:
     for n, (caption, (start, end)) in enumerate(zip(words.captions, spans, strict=True)):
         ident = f"say{n}"
         captions.append(
-            f'<text class="a caption" id="{ident}" x="{num(cx)}" y="{num(BOARD_Y + board_h + 64)}" '
+            f'<text class="a caption" id="{ident}" x="{num(cx)}" y="{num(layout.board_y + board_h + 64)}" '
             f'text-anchor="middle">{escape(caption)}</text>'
         )
         clock.animate(
@@ -665,33 +765,78 @@ def banner(document: PerfDocument, words: Words) -> str:
             ],
         )
 
+    # -- the words ------------------------------------------------------------------------
+    x0 = layout.text_x
+    title_w = text_width("Perfboard Studio", layout.title_size, bold=True)
+    tag_ws = [text_width(line, layout.tagline_size, bold=False) for line in words.tagline]
+    key_w = text_width(words.keywords, layout.keywords_size, bold=False)
+    lines = [
+        (title_w, layout.title_y),
+        *((w, layout.tagline_y + n * layout.tagline_step) for n, w in enumerate(tag_ws)),
+        (key_w, layout.keywords_y),
+    ]
+    for line_w, baseline in lines:
+        # A line beside the board must stop short of it; one above it may run on.
+        if baseline > layout.board_y - 10 and x0 + line_w > layout.board_x - 40:
+            raise SystemExit(f"a line runs to {x0 + line_w:.0f} px; the board starts at {layout.board_x:.0f}")
+    logo_w, logo = wordmark(layout.logo_h)
+    rule_long, rule_short = layout.title_size * 1.34, layout.title_size * 0.9
+
+    words_svg = [
+        f'<a href="https://medinstech.com"><image x="{num(x0)}" y="{num(layout.logo_y)}" '
+        f'width="{num(logo_w)}" height="{num(layout.logo_h)}" href="{logo}"/></a>',
+        f'<text x="{num(x0)}" y="{num(layout.title_y)}" font-size="{num(layout.title_size)}" '
+        f'font-weight="700" fill="{theme.TEXT}" textLength="{num(title_w)}" '
+        f'lengthAdjust="spacing">Perfboard Studio</text>',
+        # The rule in the two colours the product is made of: the interface's accent and
+        # the board's copper.
+        f'<rect x="{num(x0 + 2)}" y="{num(layout.rule_y)}" width="{num(rule_long)}" height="5" '
+        f'rx="1" fill="{theme.ACCENT}"/>'
+        f'<rect x="{num(x0 + 10 + rule_long)}" y="{num(layout.rule_y)}" width="{num(rule_short)}" '
+        f'height="5" rx="1" fill="{COPPER}"/>',
+    ]
+    for n, (line, line_w) in enumerate(zip(words.tagline, tag_ws, strict=True)):
+        words_svg.append(
+            f'<text x="{num(x0)}" y="{num(layout.tagline_y + n * layout.tagline_step)}" '
+            f'font-size="{num(layout.tagline_size)}" fill="{theme.TEXT_DIM}" '
+            f'textLength="{num(line_w)}" lengthAdjust="spacing">{escape(line)}</text>'
+        )
+    words_svg.append(
+        f'<text x="{num(x0)}" y="{num(layout.keywords_y)}" font-size="{num(layout.keywords_size)}" '
+        f'fill="{theme.TEXT_DIM}" opacity=".75" textLength="{num(key_w)}" lengthAdjust="spacing">'
+        f"{escape(words.keywords)}</text>"
+    )
+    if layout.footer:
+        divider_y = layout.footer_y - layout.footer_size * 1.9
+        words_svg.append(
+            f'<rect x="{num(x0)}" y="{num(divider_y)}" width="{num(key_w * 0.8)}" height="2" '
+            f'fill="{theme.BORDER}"/>'
+            f'<text x="{num(x0)}" y="{num(layout.footer_y)}" font-size="{num(layout.footer_size)}" '
+            f'style="font-family:{MONO_STACK}" fill="{theme.ACCENT}">{escape(layout.footer)}</text>'
+        )
+
     led = next(
         body_of(canvas, components[st.component_id], lookup(components[st.component_id].footprint_id))  # type: ignore[arg-type]
         for st in steps
         if isinstance(st, PartStep) and st.archetype == "led-round"
     )
 
-    # -- the words ------------------------------------------------------------------------
-    title_size, tag_size, key_size = 58, 26, 15
-    title_w = text_width("Perfboard Studio", title_size, bold=True)
-    tag_ws = [text_width(line, tag_size, bold=False) for line in words.tagline]
-    key_w = text_width(words.keywords, key_size, bold=False)
-    widest = max(title_w, *tag_ws, key_w)
-    if TEXT_X + widest > BOARD_X - 40:
-        raise SystemExit(f"the words run to {TEXT_X + widest:.0f} px; the board starts at {BOARD_X:.0f}")
-
-    pad_r, hole_r = canvas.board.pad_diameter / 2 * canvas.scale, canvas.board.drill_diameter / 2 * canvas.scale
-    p = PITCH_PX
-    board_rect = f'x="{num(BOARD_X)}" y="{num(BOARD_Y)}" width="{num(board_w)}" height="{num(board_h)}" rx="7"'
+    # -- the picture --------------------------------------------------------------------
+    pad_r = canvas.board.pad_diameter / 2 * canvas.scale
+    hole_r = canvas.board.drill_diameter / 2 * canvas.scale
+    p = layout.pitch_px
+    bx, by = layout.board_x, layout.board_y
+    board_rect = f'x="{num(bx)}" y="{num(by)}" width="{num(board_w)}" height="{num(board_h)}" rx="7"'
+    width, height, corner = layout.width, layout.height, layout.corner
 
     def face_svg(ident: str, inner: str) -> str:
         return (
             f'<g class="a" id="{ident}">'
             # Its shadow and its edge turn over with it: left behind, the shadow is a dark
             # band where the board was.
-            f'<rect x="{num(BOARD_X + 10)}" y="{num(BOARD_Y + 22)}" width="{num(board_w - 20)}" '
+            f'<rect x="{num(bx + 10)}" y="{num(by + 22)}" width="{num(board_w - 20)}" '
             f'height="{num(board_h)}" rx="18" fill="#000" opacity=".55" filter="url(#soft)"/>'
-            f'<rect x="{num(BOARD_X)}" y="{num(BOARD_Y + 5)}" width="{num(board_w)}" height="{num(board_h)}" '
+            f'<rect x="{num(bx)}" y="{num(by + 5)}" width="{num(board_w)}" height="{num(board_h)}" '
             f'rx="7" fill="{scheme.edge}"/>'
             f'<rect {board_rect} fill="{scheme.fill}"/>'
             f'<rect {board_rect} fill="url(#pads)"/>'
@@ -699,36 +844,51 @@ def banner(document: PerfDocument, words: Words) -> str:
             f"{inner}</g>"
         )
 
-    css = f"""
+    if layout.animated:
+        motion = f"""
 .a{{animation-duration:{clock.period:.3f}s;animation-iteration-count:infinite;animation-timing-function:linear}}
 .part,.caption{{transform-box:fill-box;transform-origin:center}}
 #front,#back{{transform-box:view-box;transform-origin:{num(cx)}px {num(cy)}px}}
-#back{{opacity:0}}
 #progress{{transform-box:fill-box;transform-origin:left center}}
 #say0,#say1,#say2{{opacity:0}}
-path.a{{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1 1}}
-text{{font-family:{FONT_STACK}}}
 .caption{{font-size:15px;fill:{theme.TEXT_DIM};letter-spacing:.02em}}
 {"".join(clock.rules)}
-@media (prefers-reduced-motion:reduce){{.a{{animation:none!important}}}}
-"""
+@media (prefers-reduced-motion:reduce){{.a{{animation:none!important}}}}"""
+        # The build's progress, as the 3D view's assembly slider shows it, and what it is
+        # doing in words.
+        under = (
+            f'<rect x="{num(bx)}" y="{num(by + board_h + 30)}" width="{num(board_w)}" height="3" '
+            f'rx="1.5" fill="#2c303d"/>'
+            f'<rect class="a" id="progress" x="{num(bx)}" y="{num(by + board_h + 30)}" '
+            f'width="{num(board_w)}" height="3" rx="1.5" fill="{theme.ACCENT}"/>'
+        )
+        said = "".join(captions)
+    else:
+        # A still is the last frame -- what reduced motion shows: the board finished and lit.
+        motion, under, said = "", "", ""
 
-    tag_lines = "".join(
-        f'<text x="{num(TEXT_X)}" y="{num(222 + 34 * n)}" font-size="{tag_size}" fill="{theme.TEXT_DIM}" '
-        f'textLength="{num(w)}" lengthAdjust="spacing">{escape(line)}</text>'
-        for n, (line, w) in enumerate(zip(words.tagline, tag_ws, strict=True))
+    css = f"""
+#back{{opacity:0}}
+path.a{{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1 1}}
+text{{font-family:{FONT_STACK}}}{motion}
+"""
+    outline = (
+        f'<rect x=".5" y=".5" width="{width - 1}" height="{height - 1}" rx="{num(corner - 0.5)}" '
+        f'fill="none" stroke="#2c303d"/>'
+        if corner
+        else ""
     )
 
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH} {HEIGHT}" width="{WIDTH}" height="{HEIGHT}" role="img" aria-labelledby="t">
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}" role="img" aria-labelledby="t">
 <title id="t">{escape(words.title)}</title>
 <style>{css}</style>
 <defs>
 <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1e2029"/><stop offset="1" stop-color="#14161c"/></linearGradient>
-<radialGradient id="halo" cx="{num(cx)}" cy="{num(cy)}" r="420" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="{theme.ACCENT}" stop-opacity=".22"/><stop offset="1" stop-color="{theme.ACCENT}" stop-opacity="0"/></radialGradient>
-<radialGradient id="field" cx="{num(cx)}" cy="{num(cy)}" r="560" gradientUnits="userSpaceOnUse"><stop offset=".35" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
-<mask id="fade"><rect width="{WIDTH}" height="{HEIGHT}" fill="url(#field)"/></mask>
-<pattern id="dots" x="{num(BOARD_X)}" y="{num(BOARD_Y)}" width="{num(p)}" height="{num(p)}" patternUnits="userSpaceOnUse"><circle cx="{num(p / 2)}" cy="{num(p / 2)}" r="2.4" fill="#fff" opacity=".07"/></pattern>
-<pattern id="pads" x="{num(BOARD_X)}" y="{num(BOARD_Y)}" width="{num(p)}" height="{num(p)}" patternUnits="userSpaceOnUse"><circle cx="{num(p / 2)}" cy="{num(p / 2)}" r="{num(pad_r)}" fill="{scheme.pad}" stroke="{scheme.pad_ring}" stroke-width="1.2"/><path d="M{num(p / 2 - pad_r * 0.7)} {num(p / 2 - pad_r * 0.25)}a{num(pad_r * 0.75)} {num(pad_r * 0.75)} 0 0 1 {num(pad_r * 0.95)} {num(-pad_r * 0.5)}" stroke="{scheme.pad_sheen}" stroke-width="1.6" fill="none" stroke-linecap="round"/><circle cx="{num(p / 2)}" cy="{num(p / 2)}" r="{num(hole_r)}" fill="#0e1210"/></pattern>
+<radialGradient id="halo" cx="{num(cx)}" cy="{num(cy)}" r="{num(board_w * 0.83)}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="{theme.ACCENT}" stop-opacity=".22"/><stop offset="1" stop-color="{theme.ACCENT}" stop-opacity="0"/></radialGradient>
+<radialGradient id="field" cx="{num(cx)}" cy="{num(cy)}" r="{num(board_w * 1.1)}" gradientUnits="userSpaceOnUse"><stop offset=".35" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+<mask id="fade"><rect width="{width}" height="{height}" fill="url(#field)"/></mask>
+<pattern id="dots" x="{num(bx)}" y="{num(by)}" width="{num(p)}" height="{num(p)}" patternUnits="userSpaceOnUse"><circle cx="{num(p / 2)}" cy="{num(p / 2)}" r="2.4" fill="#fff" opacity=".07"/></pattern>
+<pattern id="pads" x="{num(bx)}" y="{num(by)}" width="{num(p)}" height="{num(p)}" patternUnits="userSpaceOnUse"><circle cx="{num(p / 2)}" cy="{num(p / 2)}" r="{num(pad_r)}" fill="{scheme.pad}" stroke="{scheme.pad_ring}" stroke-width="1.2"/><path d="M{num(p / 2 - pad_r * 0.7)} {num(p / 2 - pad_r * 0.25)}a{num(pad_r * 0.75)} {num(pad_r * 0.75)} 0 0 1 {num(pad_r * 0.95)} {num(-pad_r * 0.5)}" stroke="{scheme.pad_sheen}" stroke-width="1.6" fill="none" stroke-linecap="round"/><circle cx="{num(p / 2)}" cy="{num(p / 2)}" r="{num(hole_r)}" fill="#0e1210"/></pattern>
 <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".07"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".16"/></linearGradient>
 <linearGradient id="shade-x" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".38"/><stop offset=".45" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".32"/></linearGradient>
 <linearGradient id="shade-y" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity=".38"/><stop offset=".45" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".32"/></linearGradient>
@@ -740,23 +900,18 @@ text{{font-family:{FONT_STACK}}}
 <filter id="lift" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="2.5" stdDeviation="2.2" flood-color="#000" flood-opacity=".5"/></filter>
 <filter id="soft" x="-20%" y="-40%" width="140%" height="180%"><feGaussianBlur stdDeviation="14"/></filter>
 </defs>
-<rect width="{WIDTH}" height="{HEIGHT}" rx="22" fill="url(#bg)"/>
-<rect width="{WIDTH}" height="{HEIGHT}" rx="22" fill="url(#dots)" mask="url(#fade)"/>
-<rect width="{WIDTH}" height="{HEIGHT}" rx="22" fill="url(#halo)"/>
-<rect x=".5" y=".5" width="{WIDTH - 1}" height="{HEIGHT - 1}" rx="21.5" fill="none" stroke="#2c303d"/>
-<text x="{num(TEXT_X)}" y="158" font-size="{title_size}" font-weight="700" fill="{theme.TEXT}" textLength="{num(title_w)}" lengthAdjust="spacing">Perfboard Studio</text>
-<rect x="{num(TEXT_X + 2)}" y="176" width="78" height="5" rx="1" fill="{theme.ACCENT}"/>
-<rect x="{num(TEXT_X + 88)}" y="176" width="52" height="5" rx="1" fill="{COPPER}"/>
-{tag_lines}
-<text x="{num(TEXT_X)}" y="318" font-size="{key_size}" fill="{theme.TEXT_DIM}" opacity=".75" textLength="{num(key_w)}" lengthAdjust="spacing">{escape(words.keywords)}</text>
+<rect width="{width}" height="{height}" rx="{num(corner)}" fill="url(#bg)"/>
+<rect width="{width}" height="{height}" rx="{num(corner)}" fill="url(#dots)" mask="url(#fade)"/>
+<rect width="{width}" height="{height}" rx="{num(corner)}" fill="url(#halo)"/>
+{outline}
+{"".join(words_svg)}
 <g class="a" id="board">
 {face_svg("back", "".join(fillets) + "".join(copper_svg))}
 {face_svg("front", "".join(parts_front))}
 <circle class="a" id="glow" cx="{num(led.x)}" cy="{num(led.y)}" r="{num(led.w * 2.6)}" fill="url(#led-glow)" style="mix-blend-mode:screen"/>
-<rect x="{num(BOARD_X)}" y="{num(BOARD_Y + board_h + 30)}" width="{num(board_w)}" height="3" rx="1.5" fill="#2c303d"/>
-<rect class="a" id="progress" x="{num(BOARD_X)}" y="{num(BOARD_Y + board_h + 30)}" width="{num(board_w)}" height="3" rx="1.5" fill="{theme.ACCENT}"/>
+{under}
 </g>
-{"".join(captions)}
+{said}
 </svg>
 """
 
@@ -765,7 +920,7 @@ def main() -> int:
     document = build_board()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     for language, name in (("en", "banner.svg"), ("tr", "banner.tr.svg")):
-        svg = banner(document, WORDS[language])
+        svg = render(document, WORDS[language], BANNER)
         (OUT_DIR / name).write_text(svg, encoding="utf-8", newline="\n")
         print(f"{name:16} {len(svg.encode('utf-8')) // 1024:4} KB")
     return 0

@@ -1,14 +1,5 @@
 <p align="center">
-  <a href="https://medinstech.com">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/medinstech/perfboard-studio/main/docs/images/wordmark-white.png">
-      <img alt="Medinstech" src="https://raw.githubusercontent.com/medinstech/perfboard-studio/main/docs/images/wordmark-blue.png" height="96">
-    </picture>
-  </a>
-</p>
-
-<p align="center">
-  <img alt="Perfboard Studio: delikli plaket üzerinde devre tasarımı ve lehimleme rehberi. Bir NE555 astable, rehberinin verdiği sırayla kuruluyor: parçalar en kısadan başlayarak takılıyor, kart çevrilip bakır işleniyor ve LED'i yanıp sönüyor." src="./docs/images/banner.tr.svg">
+  <a href="https://medinstech.com"><img alt="Medinstech · Perfboard Studio: delikli plaket üzerinde devre tasarımı ve lehimleme rehberi. Bir NE555 astable, rehberinin verdiği sırayla kuruluyor: parçalar en kısadan başlayarak takılıyor, kart çevrilip bakır işleniyor ve LED'i yanıp sönüyor." src="./docs/images/banner.tr.svg"></a>
 </p>
 
 <p align="center">

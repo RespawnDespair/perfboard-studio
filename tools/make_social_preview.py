@@ -6,161 +6,96 @@ Writes `docs/images/social-preview.png` at 1280x640, which is the size GitHub as
 and the 2:1 ratio Slack, Discord, X and every other unfurl crop towards.
 
 WHY THIS IS A SCRIPT. The same argument `tools/make_assets.py` makes for the application
-icon. The card takes its colours from `ui/theme.py` and its picture from `docs/images/`,
-so a card drawn once by hand starts becoming a picture of an older version of the product
-the first time either changes.
+icon. A card drawn once by hand starts becoming a picture of an older version of the
+product the first time anything on it changes.
 
 GITHUB WILL NOT TAKE IT FROM A COMMIT. The social preview is repository metadata, not a
 file in the tree: there is no REST API for it, so the image is committed here and set by
 hand at Settings -> General -> Social preview. The file being in the repository is what
 makes "which image is up there?" answerable at all.
 
-The README does NOT use this card. Its header is the Medinstech wordmark and a centred
-title, which is the house style `cycloidgen` already had; this is only what a link to the
-repository unfurls into.
+IT IS THE README'S BANNER, STANDING STILL. `tools/make_banner.py` draws both: the Medinstech
+wordmark, the name and its rule, the tagline, and the NE555 board the engine placed and
+routed -- here at `make_banner.CARD`'s size, finished and lit, with where to get it at the
+bottom. A link and the page it opens are the same picture. The card used to be drawn here
+with Pillow beside a crop of the editor screenshot, which made it a second design of the
+same thing, cut at fixed pixel coordinates out of a screenshot whose size depended on the
+monitor it had been taken on.
 
-WHAT IS ON IT. The name, the sentence the README opens with, one line naming the four
-things this does that the alternatives do not, and the routed NE555 bleeding off the
-right edge. Cropped to the circuit rather than scaled down from the whole window, because
-the card is rendered small and a whole editor screenshot at that size is grey mush.
+THE SVG IS TURNED INTO PIXELS BY QT WEBENGINE: the Chromium that PySide6 already brings, so
+nothing new to install, and the engine most readers' browsers draw the banner with. It is
+shown off screen with Qt's scaling pinned to 1, so the PNG is 1280 x 640 whatever the
+monitor.
 """
 
 from __future__ import annotations
 
+import os
 import sys
+import time
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from perfboard_studio.ui import theme  # noqa: E402
+# Before Qt is imported, which is when it reads them: one CSS pixel is one pixel of the PNG.
+os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
+os.environ["QT_SCALE_FACTOR"] = "1"
 
-COPPER = "#c8a06a"  # ui/boardcolors.py's tinned pad, for the second half of the rule.
+import make_banner  # noqa: E402
 
-# One sentence, wrapped by each card to its own text column rather than broken by hand:
-# the two cards have different room, and a hand-broken line that fits the wide one runs
-# straight into the board on the narrow one.
-TAGLINE = (
-    "Design circuits on perfboard the way you would on a PCB — "
-    "then get a soldering guide you can actually build from."
-)
-
-# The screenshot's own coordinates: held inside the board's edges on all four sides so
-# the crop bleeds off the card rather than showing the editor's background as a border,
-# and shaped like the panel it fills so the board is never squashed.
-PREVIEW_CROP = (660, 170, 1243, 735)
-
-# Regular, semibold and a mono, in the order each platform is likely to have them.
-_FAMILIES = {
-    "bold": ("segoeuib.ttf", "DejaVuSans-Bold.ttf", "Helvetica.ttc", "Arial Bold.ttf"),
-    "text": ("segoeui.ttf", "DejaVuSans.ttf", "Helvetica.ttc", "Arial.ttf"),
-    "mono": ("consola.ttf", "DejaVuSansMono.ttf", "Menlo.ttc", "Courier New.ttf"),
-}
+OUT = REPO_ROOT / "docs" / "images" / "social-preview.png"
 
 
-def _wrap(
-    draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_w: float
-) -> list[str]:
-    """`text` broken into the longest lines that fit `max_w`, greedily."""
-    lines: list[str] = []
-    line = ""
-    for word in text.split():
-        trial = f"{line} {word}".strip()
-        if line and draw.textlength(trial, font=font) > max_w:
-            lines.append(line)
-            line = word
-        else:
-            line = trial
-    if line:
-        lines.append(line)
-    return lines
+def rasterize(svg: str, width: int, height: int, out: Path) -> None:
+    """Draw ``svg`` with Qt WebEngine and write what it drew as a PNG."""
+    from PIL import Image
+    from PySide6.QtCore import Qt
+    from PySide6.QtWebEngineWidgets import QWebEngineView
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance() or QApplication(sys.argv[:1])
+    view = QWebEngineView()
+    view.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+    view.resize(width, height)
+    loaded: list[bool] = []
+    view.loadFinished.connect(loaded.append)
+    view.setHtml(f"<!doctype html><html><body style='margin:0;overflow:hidden'>{svg}</body></html>")
+    view.show()
+
+    # Loaded is not drawn: the page is painted on later turns of the loop, so the loop is run
+    # for a moment after it says it has finished.
+    deadline = time.monotonic() + 30
+    while not loaded and time.monotonic() < deadline:
+        app.processEvents()
+        time.sleep(0.01)
+    if loaded != [True]:
+        raise SystemExit("Qt WebEngine did not load the card")
+    settled = time.monotonic() + 1.0
+    while time.monotonic() < settled:
+        app.processEvents()
+        time.sleep(0.01)
+
+    image = view.grab().toImage()
+    if (image.width(), image.height()) != (width, height):
+        raise SystemExit(f"drew {image.width()} x {image.height()}, not {width} x {height}")
+    raw = out.with_suffix(".raw.png")
+    image.save(str(raw))
+    # Through Pillow once more, for its optimiser and to drop the alpha channel the card
+    # does not have.
+    with Image.open(raw) as drawn:
+        drawn.convert("RGB").save(out, optimize=True)
+    raw.unlink()
 
 
-def _font(kind: str, size: int) -> ImageFont.FreeTypeFont:
-    for name in _FAMILIES[kind]:
-        try:
-            return ImageFont.truetype(name, size)
-        except OSError:
-            continue
-    raise SystemExit(f"no {kind} font found; install DejaVu or run this on Windows")
-
-
-def _card(
-    width: int,
-    height: int,
-    panel_w: int,
-    *,
-    crop: tuple[int, int, int, int],
-    fade_w: int,
-    margin: int,
-    name_size: int,
-    name_y: int,
-    tagline_size: int,
-    tagline_y: int,
-    footer: bool,
-) -> Image.Image:
-    card = Image.new("RGB", (width, height), theme.WINDOW)
-    draw = ImageDraw.Draw(card)
-
-    shot = Image.open(REPO_ROOT / "docs/images/editor-component-side.png").convert("RGB")
-    panel = shot.crop(crop).resize((panel_w, height), Image.LANCZOS)
-    card.paste(panel, (width - panel_w, 0))
-
-    # Fade the screenshot's left edge into the background, so the card reads as one
-    # object and not as two pictures butted together.
-    fade = Image.new("L", (fade_w, height))
-    fade_draw = ImageDraw.Draw(fade)
-    for x in range(fade_w):
-        fade_draw.line([(x, 0), (x, height)], fill=int(255 * (1 - x / fade_w) ** 1.15))
-    card.paste(Image.new("RGB", (fade_w, height), theme.WINDOW), (width - panel_w, 0), fade)
-
-    draw.text((margin, name_y), "Perfboard Studio", font=_font("bold", name_size), fill=theme.TEXT)
-
-    # A rule in the two colours the product is made of: the interface's accent, and the
-    # board's copper.
-    rule_y = name_y + round(name_size * 1.33)
-    unit = round(name_size * 1.14)
-    draw.rectangle([margin, rule_y, margin + unit, rule_y + 5], fill=theme.ACCENT)
-    draw.rectangle(
-        [margin + unit + 8, rule_y, margin + unit + 8 + round(unit * 0.67), rule_y + 5],
-        fill=COPPER,
-    )
-
-    tagline = _font("text", tagline_size)
-    step = round(tagline_size * 1.39)
-    # The text column stops where the board's panel starts. The fade is not room: text
-    # laid over it is text over a picture of a circuit board.
-    for i, line in enumerate(_wrap(draw, TAGLINE, tagline, width - panel_w - margin)):
-        draw.text((margin, tagline_y + i * step), line, font=tagline, fill=theme.TEXT_DIM)
-
-    if footer:
-        draw.text(
-            (margin, 500),
-            "Autorouter · perfboard DRC · LVS · MCP server",
-            font=_font("text", 23),
-            fill=theme.TEXT_DIM,
-        )
-        draw.rectangle([margin, 546, margin + 356, 548], fill=theme.BORDER)
-        draw.text(
-            (margin, 566),
-            "Get it from the releases page",
-            font=_font("mono", 22),
-            fill=theme.ACCENT,
-        )
-    return card
-
-
-def main() -> None:
-    card = _card(
-        1280, 640, 660, crop=PREVIEW_CROP, fade_w=210, margin=78,
-        name_size=84, name_y=150, tagline_size=31, tagline_y=306, footer=True,
-    )
-    out = REPO_ROOT / "docs/images/social-preview.png"
-    card.save(out, optimize=True)
-    print(f"wrote {out.relative_to(REPO_ROOT)} ({card.width}x{card.height})")
+def main() -> int:
+    document = make_banner.build_board()
+    layout = make_banner.CARD
+    svg = make_banner.render(document, make_banner.WORDS["en"], layout)
+    rasterize(svg, layout.width, layout.height, OUT)
+    print(f"wrote {OUT.relative_to(REPO_ROOT)} ({layout.width}x{layout.height}, {OUT.stat().st_size // 1024} KB)")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
