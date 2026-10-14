@@ -17,28 +17,46 @@ particular pictures is the application around the board: the nets panel, the too
 the DRC/LVS dock and the status bar all carry information that a bare board render does
 not, and a README's job is to show what the thing looks like to use.
 
-The 3D shot goes through ``view3d.render_offscreen`` instead of grabbing the 3D dock.
-Grabbing the dock does not work and quietly produces a black rectangle: the panel builds
-its widget from a visibility signal and VTK renders into it on some later trip through
-the event loop, so a grab taken from the same script always wins the race. Offscreen is
-also the path the build guide's step images take, so this picture is a real product of
-the shipping code rather than a special case.
+The 3D shots go through ``view3d.render_offscreen`` instead of grabbing the 3D dock.
+Grabbing the dock does not work and quietly produces a black rectangle: VTK draws into a
+native window of its own, which ``QWidget.grab`` cannot see. Offscreen is also the path
+the build guide's step images take, so this picture is a real product of the shipping
+code rather than a special case. The one shot of the 3D panel IN the window
+(``guide-and-3d.png``) grabs the window and then pastes in what the panel's own render
+window holds, read back from VTK -- see ``_grab_with_3d``.
 
 The window is shown briefly on a real display, which is unavoidable: Qt's offscreen
 plugin has no font database on Windows (see ``_default_headless_platform`` in
 ui/main.py), so an offscreen grab would come back with every label as a missing-glyph
-box.
+box -- and the 3D panel needs a real window to draw in.
+
+**The scale is pinned, not taken from the monitor.** Every editor shot is the window at
+``WINDOW_SIZE`` drawn at ``SCALE``, so 2000 x 1250 pixels on any machine. Taken from the
+monitor, the same script made 2000-pixel pictures on a 125 % laptop and 1600-pixel ones
+on a 100 % desktop, and ``tools/make_social_preview.py`` crops this set at fixed pixel
+coordinates. And the size is FIXED rather than resized to: Windows clips a window to the
+height of the screen it opens on, and at 125 % a 1080-line screen is 864 lines tall.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from PySide6.QtWidgets import QApplication  # noqa: E402
+#: The window's size in the units the interface is laid out in, and how many pixels each
+#: of those is drawn with. Set before Qt is imported, which is when it reads them: the
+#: platform's own scaling is switched off so the monitor cannot multiply into ``SCALE``.
+WINDOW_SIZE = (1600, 1000)
+SCALE = "1.25"
+os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
+os.environ["QT_SCALE_FACTOR"] = SCALE
+
+from PySide6.QtGui import QPixmap  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMainWindow  # noqa: E402
 
 from perfboard_studio import persist  # noqa: E402
 from perfboard_studio.footprints import footprint_lookup  # noqa: E402
@@ -103,6 +121,13 @@ def _fresh_settings() -> None:
     main_module.app_settings = lambda: store  # type: ignore[assignment]
 
 
+def _open(window: QMainWindow, app: QApplication) -> None:
+    """Show the window at exactly ``WINDOW_SIZE`` -- fixed, see this module's docstring."""
+    window.setFixedSize(*WINDOW_SIZE)
+    window.show()
+    _settle(app)
+
+
 def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -116,9 +141,7 @@ def main() -> int:
         return 1
 
     window = MainWindow(result.document, FIXTURE)
-    window.resize(1600, 1000)
-    window.show()
-    _settle(app)
+    _open(window, app)
 
     # Auto-place, then route -- the order the README documents, so the picture is of the
     # workflow it describes rather than of a fixture. The golden document's placement is
@@ -196,6 +219,10 @@ def main() -> int:
 
     if not _nano_relay_shots(app, shots):
         return 1
+    # Last, because it opens the 3D view and the guide, and every window after it would
+    # restore them from the settings it leaves behind.
+    if not _guide_and_3d_shot(app, shots):
+        return 1
 
     for name, what in shots:
         size = (OUT_DIR / name).stat().st_size
@@ -223,9 +250,7 @@ def _nano_relay_shots(app: QApplication, shots: list[tuple[str, str]]) -> bool:
     lookup = footprint_lookup()
 
     window = MainWindow(document, NANO_RELAY)
-    window.resize(1600, 1000)
-    window.show()
-    _settle(app)
+    _open(window, app)
     window.act_ratsnest.setChecked(False)
     _settle(app)
 
@@ -280,6 +305,95 @@ def _nano_relay_shots(app: QApplication, shots: list[tuple[str, str]]) -> bool:
     writer.Write()
     shots.append(("module-3d.png", "3D close-up: a module on its headers"))
     return True
+
+
+#: How many of nano-relay's steps are ticked off in the guide shot: every part in the first
+#: three phases, so Next Step to Do lands on the regulator, which stands out in 3D.
+STEPS_DONE = 8
+
+#: How far the 3D panel's camera is brought in from where it opens, as a scroll of the
+#: wheel would: the opening frame fits the whole board with room to turn it, which in a
+#: third of the window leaves the parts small.
+CAMERA_ZOOM = 1.3
+
+
+def _guide_and_3d_shot(app: QApplication, shots: list[tuple[str, str]]) -> bool:
+    """The board, the 3D view and the build guide side by side, part-way through a build:
+    some steps ticked off, and Next Step to Do showing the next one in all three."""
+    from PySide6.QtCore import Qt
+
+    result = persist.deserialize_document(NANO_RELAY.read_text(encoding="utf-8"))
+    if not result.ok:
+        print(f"LOAD FAILED [{result.code}] {result.message}")
+        return False
+
+    window = MainWindow(result.document, NANO_RELAY)
+    _open(window, app)
+    window.act_ratsnest.setChecked(False)
+    # The parts and nets panels closed, as somebody at the bench would: what this picture
+    # is about needs the width, and the editor shots show those two already.
+    window.dock_library.close()
+    window.dock_nets.close()
+    window.act_show_3d.trigger()
+    _settle(app, 30)
+    window.act_show_guide.trigger()
+    _settle(app, 30)
+
+    for leaf in window._guide_leaves()[:STEPS_DONE]:
+        leaf.setCheckState(0, Qt.CheckState.Checked)
+    window.on_next_step_to_do()
+    _settle(app, 30)
+    window.view.fit_board()
+    _settle(app, 30)
+
+    renderer = window._vtk_renderer
+    if renderer is None:
+        print("THE 3D VIEW DID NOT OPEN")
+        return False
+    renderer.GetActiveCamera().Zoom(CAMERA_ZOOM)
+    renderer.ResetCameraClippingRange()
+    _grab_with_3d(window).save(str(OUT_DIR / "guide-and-3d.png"))
+    shots.append(("guide-and-3d.png", "board, 3D and the guide, part-way through a build"))
+
+    window._mark_saved()
+    window.close()
+    _settle(app)
+    return True
+
+
+def _grab_with_3d(window: MainWindow) -> QPixmap:
+    """The window as ``grab`` sees it, with the 3D panel's picture put back in.
+
+    ``grab`` paints every widget into a pixmap and the 3D panel is not a widget it can
+    paint: VTK draws into a native window of its own, so the panel comes back empty. What
+    VTK last drew is still in its render window, and ``vtkWindowToImageFilter`` reads it
+    back -- drawn again first, so it is the frame with the camera as it is now.
+    """
+    import tempfile
+
+    from PySide6.QtCore import QPoint, QRect
+    from PySide6.QtGui import QImage, QPainter
+
+    pixmap = window.grab()
+    widget = window.vtk_widget
+    render_window = widget.GetRenderWindow()
+    render_window.Render()
+    readback = view3d.vtk.vtkWindowToImageFilter()
+    readback.SetInput(render_window)
+    readback.ReadFrontBufferOff()
+    readback.Update()
+    frame = Path(tempfile.mkdtemp()) / "3d.png"
+    writer = view3d.vtk.vtkPNGWriter()
+    writer.SetFileName(str(frame))
+    writer.SetInputConnection(readback.GetOutputPort())
+    writer.Write()
+
+    # The pixmap is painted in the window's units and the frame is in pixels, so the frame
+    # is drawn into the panel's rectangle in units and lands one pixel for one.
+    painter = QPainter(pixmap)
+    painter.drawImage(QRect(widget.mapTo(window, QPoint(0, 0)), widget.size()), QImage(str(frame)))
+    painter.end()
+    return pixmap
 
 
 if __name__ == "__main__":
