@@ -1815,6 +1815,35 @@ TURKISH: Mapping[str, str] = {
     "ESP8266 board, 16 pins, rows 22.86 mm apart": (
         "ESP8266 kartı, 16 pin, sıralar arası 22,86 mm"
     ),
+    "Stepper motor driver, 8-35 V, 1 A per coil (2 A with cooling), rows 12.7 mm apart": (
+        "Step motor sürücüsü, 8-35 V, bobin başına 1 A (soğutmayla 2 A), sıralar arası 12,7 mm"
+    ),
+    "Set the current limit with the trimmer before a motor is connected. The red and green "
+    "StepStick boards sold as A4988 have these pins and not this layout. The height of what "
+    "is on the board is an estimate, and so is its colour; the pins, the rows and the board "
+    "outline are measured.": (
+        "Motor bağlanmadan önce akım sınırını trimerle ayarlayın. A4988 adıyla satılan kırmızı "
+        "ve yeşil StepStick kartlarında bu pinler var, bu yerleşim yok. Kartın üstündekilerin "
+        "yüksekliği tahmindir, rengi de öyle; pinler, sıralar ve kart çevresi ölçülmüştür."
+    ),
+    "Humidity and temperature sensor, 20-90 %RH, 0-50 degrees C, single wire": (
+        "Nem ve sıcaklık sensörü, %20-90 bağıl nem, 0-50 derece, tek hat"
+    ),
+    "Humidity and temperature sensor, 0-100 %RH, -40 to 80 degrees C, single wire": (
+        "Nem ve sıcaklık sensörü, %0-100 bağıl nem, -40 ile 80 derece arası, tek hat"
+    ),
+    "Also sold on a small board with three pins, in more than one order: on one of those, "
+    "go by what the board itself has printed beside each pin.": (
+        "Üç pinli küçük bir kart üzerinde de satılır ve pin sırası birden fazladır: öyle "
+        "birindeyse her pinin yanında kartın kendi üstünde yazana göre bağlayın."
+    ),
+    "KiCad's AM2302 symbol calls pin 3 GND; Aosong's datasheet says it is not connected, "
+    "and so does this. Also sold on a small board with three pins: on one of those, go by "
+    "what the board itself has printed.": (
+        "KiCad'in AM2302 sembolü 3. pine GND der; Aosong'un veri sayfası bağlı olmadığını "
+        "söyler, burada da öyle. Üç pinli küçük bir kart üzerinde de satılır: öyle "
+        "birindeyse kartın kendi üstünde yazana göre bağlayın."
+    ),
     "The height of what is on the board is an estimate, and so is its colour; the "
     "pins, the rows and the board outline are measured.": (
         "Kartın üstündekilerin yüksekliği tahmindir, rengi de öyle; pinler, sıralar ve "

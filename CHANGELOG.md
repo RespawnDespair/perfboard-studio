@@ -71,6 +71,13 @@ closed without a bump.
   smaller package: an LM358 in a SOIC-8 is the catalog's LM358. A footprint with an exposed
   pad, a SOT-23 or a QFN is still refused, because no DIP adapter brings it out pin for pin.
 
+- **Three more parts in the catalog**: the DHT11 and DHT22 humidity and temperature
+  sensors, pinned from Aosong's datasheets, and Pololu's A4988 stepper motor driver carrier.
+  The carrier is drawn as what is on it in both views -- the chip, the sense resistors, the
+  capacitor and the current-limit trimmer, from Pololu's own photograph -- but only for a
+  part named Pololu: the StepStick boards sold as "A4988" share its pins and not its parts,
+  and keep the plain block.
+
 - **The build guide has the chips soldered onto their adapters first**, in phase 0 while the
   bench is clear and the legs can still be reached, and then fits each adapter as the DIP it
   stands in for: a socket in phase 2 if there is one, the adapter with the other ICs at the

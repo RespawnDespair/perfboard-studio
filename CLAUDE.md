@@ -919,8 +919,8 @@ blue slab with a dark brick on it, and a vertical terminal was a green box. A mo
 carries its board, its pins and its tallest part's height and nothing about what the parts
 are, so `ui/moduleart.py` (pure, no VTK) draws them for the modules it RECOGNISES — by the
 part's VALUE, as `resistor_bands` reads a colour code, so the picture cannot disagree with
-the parts list. Those two, and the catalog's five modules (DevKitC, C3-DevKitM-1, Nano,
-Pico, D1 mini), whose art keys are their catalog ids. Five rules hold it, each pinned in
+the parts list. Those two, and the catalog's six modules (DevKitC, C3-DevKitM-1, Nano,
+Pico, D1 mini, Pololu A4988), whose art keys are their catalog ids. Five rules hold it, each pinned in
 `tests/test_module_art.py` for every turn and flip:
 
 - **Only on the board the layout was drawn for.** Same pin count, the right frame (a
@@ -949,7 +949,11 @@ Pico, D1 mini), whose art keys are their catalog ids. Five rules hold it, each p
   regulator on the right.
 - **Measured, not eyeballed.** Every layout's `source` names the drawing or model its
   positions come from — Espressif's and Arduino's dimension drawings, KiCad's models of the
-  Pico, the D1 mini and the radio modules.
+  Pico, the D1 mini and the radio modules, Pololu's own top-view photograph of its A4988.
+- **A layout is one maker's board, and named so.** The A4988 layout answers only to "Pololu
+  A4988": the StepStick clones sold as "A4988" have the pins and not the parts, and stay the
+  block. Pololu's DRV8825 is not in the catalog for the rule above: its 10 mm TSSOP spans
+  both rows of names, and no layout of the real board leaves them room to be read.
 
 A new module is an entry in `MODULE_ARTS` with datasheet sizes, drawn from the kinds
 `view3d._ART_BUILDERS` knows (`test_every_kind_of_part_has_a_builder`);

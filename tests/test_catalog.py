@@ -81,6 +81,7 @@ def test_a_module_is_a_module_and_its_rows_are_where_its_source_measured_them() 
         "arduino-nano": 15.24,
         "raspberry-pi-pico": 17.78,
         "wemos-d1-mini": 22.86,
+        "pololu-a4988": 12.7,
     }
     modules = [part for part in CATALOG if part.category == "module"]
     assert {part.id for part in modules} == set(expected_rows_mm)

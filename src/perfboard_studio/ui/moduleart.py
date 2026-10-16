@@ -87,6 +87,9 @@ ArtKind = Literal[
     "sot223",
     "sot23",
     "trimpot",
+    # A single-turn SMD trimmer: a square plastic base and the round metal rotor on it, slot
+    # and all -- not the blue multi-turn block a buck module has.
+    "trimmer",
     "soic8",
     "qfn",
     "tqfp32",
@@ -130,6 +133,8 @@ ART_COLOURS: dict[str, str] = {
     "lens": "#e7e1cc",
     "package": "#efede6",
     "ceramic": "#d8cfb8",
+    "trimmer-base": "#ece8dc",
+    "rotor": "#b9bcc0",
 }
 
 #: How far a module's board may be from the reference a layout was drawn on, either way, as a
@@ -475,6 +480,37 @@ D1_MINI_MODULE = ModuleArt(
     ),
 )
 
+#: Pololu's A4988 carrier (item 1182) as its own top-view photograph has it: the chip left of
+#: middle, the two R068 sense resistors down the motor side, the motor supply's capacitor
+#: across the top and the current-limit trimmer at the bottom. Positions measured on that
+#: photograph at 59 px/mm against the 0.6 x 0.8 inch outline of its dimension diagram;
+#: sizes are the packages' own. The real board crowds its pins closer than its names can be
+#: read beside them, so three parts are drawn moved in: the chip 1.0 mm towards the motor
+#: side, the sense resistors 0.9 mm and the capacitor 1.2 mm away from it.
+#:
+#: Only "Pololu" names it. The red and green StepStick boards sold as "A4988" share the pins
+#: and not the layout, so they keep the block rather than wear Pololu's parts.
+POLOLU_A4988_MODULE = ModuleArt(
+    key="pololu-a4988",
+    board_colour=PICO_MODULE.board_colour,
+    names=("pololu a4988",),
+    board=(20.32, 15.24),
+    pins=16,
+    frame="columns",
+    landmark=("VMOT", -1, 1),
+    parts=(
+        ArtPart("chip-c", -8.31, 1.38, 4.2, 1.8, 1.25, along_v=True),
+        ArtPart("chip-r", -5.2, 2.83, 3.2, 1.6, 0.55),
+        ArtPart("qfn", -1.11, -0.78, 5.0, 5.0, 0.9, along_v=True, text="4988"),
+        ArtPart("chip-r", 3.68, 2.83, 3.2, 1.6, 0.55),
+        ArtPart("trimmer", 7.43, 1.23, 4.2, 3.1, 1.9, along_v=True),
+    ),
+    source=(
+        "Pololu item 1182: the top-view photograph (positions) and the dimension diagram "
+        "(the 0.6 x 0.8 inch board); Allegro A4988 ET package (the 5 x 5 mm QFN)"
+    ),
+)
+
 #: Every module there is a layout for, in the order they are tried.
 MODULE_ARTS: tuple[ModuleArt, ...] = (
     LM2596_MODULE,
@@ -484,6 +520,7 @@ MODULE_ARTS: tuple[ModuleArt, ...] = (
     NANO_MODULE,
     PICO_MODULE,
     D1_MINI_MODULE,
+    POLOLU_A4988_MODULE,
 )
 
 

@@ -95,6 +95,7 @@ def _footprint(footprint_id: str):
         ("NANO V3.0 CH340", "arduino-nano"),
         ("Raspberry Pi Pico H", "raspberry-pi-pico"),
         ("D1 mini", "wemos-d1-mini"),
+        ("Pololu A4988", "pololu-a4988"),
     ],
 )
 def test_a_module_is_recognised_by_its_value(value: str, key: str) -> None:
@@ -117,6 +118,9 @@ def test_a_module_is_recognised_by_its_value(value: str, key: str) -> None:
         "ESP32-S3-DevKitC-1",
         "ESP32-DevKitC-VE",
         "LOLIN D1 mini Pro",
+        # Same pins, another board: the StepStick clones are not Pololu's layout.
+        "A4988",
+        "A4988 StepStick",
     ],
 )
 def test_a_value_nobody_wrote_a_layout_for_is_not_guessed(value: str) -> None:
@@ -495,6 +499,7 @@ def test_a_module_board_is_the_colour_its_maker_makes_it() -> None:
         "arduino-nano": None,
         "raspberry-pi-pico": PICO_MODULE.board_colour,
         "wemos-d1-mini": None,
+        "pololu-a4988": PICO_MODULE.board_colour,
     }
     # A Pico named on a board the layout was not drawn for is not coloured as one.
     square = "mod-2x20-p7-r1-30x30x3.5-s8.5"

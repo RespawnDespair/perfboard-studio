@@ -2406,6 +2406,12 @@ def _paint_art_part(painter: QPainter, part: PlacedArt, length: float, width: fl
     elif kind == "sma":
         _art_box(painter, -half_l, half_l, half_w, _art_colour("epoxy"))
         _art_box(painter, half_l - 1.1, half_l - 0.4, half_w, _art_colour("band"))
+    elif kind == "trimmer":
+        _art_box(painter, -half_l, half_l, half_w, _art_colour("trimmer-base"))
+        radius = min(length, width) * 0.4
+        painter.setBrush(QBrush(_art_colour("rotor")))
+        painter.drawEllipse(QPointF(0.0, 0.0), radius, radius)
+        _art_box(painter, -radius * 0.7, radius * 0.7, radius * 0.14, _art_colour("slot"))
     elif kind in ("chip-r", "chip-c"):
         cap = min(0.4, length * 0.2)
         _art_box(painter, -half_l, half_l, half_w, LEAD)

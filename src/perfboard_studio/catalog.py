@@ -186,6 +186,12 @@ _C3_DEVKITM_RIGHT = (
     "IO4", "GND", "IO18", "IO19", "GND",
 )  # fmt: skip
 
+# Pololu's own top view: the logic pins down the left, the motor and supply pins down the
+# right with VMOT at the top -- KiCad's Pololu_Breakout footprint is the same board turned
+# half round. Names are KiCad's Driver_Motor:Pololu_Breakout_A4988, overbars dropped.
+_POLOLU_A4988_LEFT = ("ENABLE", "MS1", "MS2", "MS3", "RESET", "SLEEP", "STEP", "DIR")
+_POLOLU_A4988_RIGHT = ("VMOT", "GND", "2B", "2A", "1A", "1B", "VDD", "GND")
+
 _SWITCH_LEGS = (
     "The two legs on one side are the switched pair; the two straight across are one "
     "strip. A meter on continuity says which: across reads shut before the button is "
@@ -334,6 +340,33 @@ CATALOG: tuple[CatalogPart, ...] = (
                 "Temperature sensor, 1-Wire, needs a 4.7k pull-up on DQ",
                 _legs("GND", "DQ", "VDD"), ref_prefix="U",
                 source=f"Analog Devices DS18B20 datasheet; {_TO92_ORDER}", check=_CHECK_LEGS),
+    # The bare sensors, four legs in a row on 2.54 mm and the body standing on them: a box
+    # with the legs along its width, as wide and as thick as the sensor and as tall.
+    CatalogPart("dht11", "DHT11", "sensor", "box-4x1-p1-r1-12x5.5x15.5",
+                "Humidity and temperature sensor, 20-90 %RH, 0-50 degrees C, single wire",
+                _legs("VDD", "DATA", "NC", "GND"), ref_prefix="U",
+                source=(
+                    "Aosong DHT11 datasheet (pins 1-4 left to right, grille towards you; a 5k "
+                    "pull-up on DATA); body 15.5 x 12 x 5.5 mm, Adafruit 386; the legs "
+                    "centred in its thickness, KiCad Sensor:Aosong_DHT11_5.5x12.0_P2.54mm"
+                ),
+                check=(
+                    "Also sold on a small board with three pins, in more than one order: on "
+                    "one of those, go by what the board itself has printed beside each pin."
+                )),
+    CatalogPart("dht22", "DHT22 (AM2302)", "sensor", "box-4x1-p1-r1-15.1x7.7x25.1-o0x1.4",
+                "Humidity and temperature sensor, 0-100 %RH, -40 to 80 degrees C, single wire",
+                _legs("VDD", "DATA", "NC", "GND"), value="DHT22", ref_prefix="U",
+                source=(
+                    "Aosong DHT22 datasheet: body 15.1 x 25.1 x 7.7 mm, pins 1-4 left to "
+                    "right; how far the legs stand from its front, KiCad "
+                    "Sensor:ASAIR_AM2302_P2.54mm_Vertical"
+                ),
+                check=(
+                    "KiCad's AM2302 symbol calls pin 3 GND; Aosong's datasheet says it is not "
+                    "connected, and so does this. Also sold on a small board with three pins: "
+                    "on one of those, go by what the board itself has printed."
+                )),
     # -- integrated circuits ------------------------------------------------------------
     CatalogPart("ne555", "NE555", "ic", "dip-8", "Timer",
                 _legs("GND", "TRIG", "OUT", "RESET", "CTRL", "THR", "DIS", "VCC"),
@@ -437,6 +470,21 @@ CATALOG: tuple[CatalogPart, ...] = (
                     "Raspberry Pi Pico datasheet pinout"
                 ),
                 check=_MODULE_TOP),
+    CatalogPart("pololu-a4988", "Pololu A4988 carrier", "module",
+                "mod-2x8-p5-r1-15.24x20.32x2-s8.5",
+                "Stepper motor driver, 8-35 V, 1 A per coil (2 A with cooling), rows 12.7 mm apart",
+                _two_columns(_POLOLU_A4988_LEFT, _POLOLU_A4988_RIGHT), ref_prefix="U",
+                value="Pololu A4988",
+                source=(
+                    "Pololu item 1182: 0.6 x 0.8 inch board and its pinout from the dimension "
+                    "diagram, voltages and currents from its specifications; pin positions "
+                    "KiCad Module:Pololu_Breakout-16_15.2x20.3mm"
+                ),
+                check=(
+                    "Set the current limit with the trimmer before a motor is connected. The "
+                    "red and green StepStick boards sold as A4988 have these pins and not "
+                    "this layout. " + _MODULE_TOP
+                )),
     CatalogPart("wemos-d1-mini", "WEMOS D1 mini", "module",
                 "mod-2x8-p9-r1-25.6x34.2x3.5-s8.5",
                 "ESP8266 board, 16 pins, rows 22.86 mm apart",

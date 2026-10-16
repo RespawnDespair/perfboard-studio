@@ -3989,6 +3989,39 @@ def _art_trimpot(s: _ArtSolid) -> list[_Piece]:
     ]
 
 
+_ART_TRIMMER_BASE_RGB = _hex_rgb(ART_COLOURS["trimmer-base"], BODY_RGB)
+_ART_ROTOR_RGB = _hex_rgb(ART_COLOURS["rotor"], LEAD_RGB)
+
+
+def _art_trimmer(s: _ArtSolid) -> list[_Piece]:
+    """A single-turn SMD trimmer: its square base, the round metal rotor on it, and the
+    slot a screwdriver turns it by -- the rotor's top is the part's height."""
+    radius = min(s.length, s.width) * 0.4
+    base = s.height * 0.45
+    rotor = s.height - base
+    return [
+        _Piece(
+            source=s.box(s.length, s.width, base, moulded=True),
+            rgb=_ART_TRIMMER_BASE_RGB,
+            position=s.at(0.0, 0.0, base / 2),
+            material=MOULDED,
+        ),
+        _Piece(
+            source=_cylinder(radius, rotor, resolution=24),
+            rgb=_ART_ROTOR_RGB,
+            position=s.at(0.0, 0.0, base + rotor / 2),
+            orientation=_ALONG_Z,
+            material=PLATED,
+        ),
+        _Piece(
+            source=s.box(radius * 1.4, 0.3, 0.2),
+            rgb=_ART_SLOT_RGB,
+            position=s.at(0.0, 0.0, s.height - 0.1),
+            material=MOULDED,
+        ),
+    ]
+
+
 #: An SO-8's legs: how far they reach out from the body each side, and where along it.
 _SOIC_REACH_MM = 1.05
 _SOIC_LEGS_MM = (-1.905, -0.635, 0.635, 1.905)
@@ -4637,6 +4670,7 @@ _ART_BUILDERS: dict[str, Callable[[_ArtSolid], list[_Piece]]] = {
     "sot223": _art_sot223,
     "sot23": _art_sot23,
     "trimpot": _art_trimpot,
+    "trimmer": _art_trimmer,
     "soic8": _art_soic8,
     "qfn": _art_qfn,
     "tqfp32": _art_tqfp32,
