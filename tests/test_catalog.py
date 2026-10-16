@@ -82,6 +82,8 @@ def test_a_module_is_a_module_and_its_rows_are_where_its_source_measured_them() 
         "raspberry-pi-pico": 17.78,
         "wemos-d1-mini": 22.86,
         "pololu-a4988": 12.7,
+        "pololu-drv8825": 12.7,
+        "seeed-xiao-esp32c3": 15.24,
     }
     modules = [part for part in CATALOG if part.category == "module"]
     assert {part.id for part in modules} == set(expected_rows_mm)
@@ -119,7 +121,9 @@ def test_the_nano_right_column_runs_from_vin_to_d13() -> None:
 
 def test_search_matches_the_name_the_summary_and_the_kind() -> None:
     assert [part.id for part in search_catalog("bc547")] == ["bc547"]
-    assert {part.id for part in search_catalog("esp32")} == {"esp32-devkitc", "esp32-c3-devkitm-1"}
+    assert {part.id for part in search_catalog("esp32")} == {
+        "esp32-devkitc", "esp32-c3-devkitm-1", "seeed-xiao-esp32c3"
+    }
     assert all(part.symbol == "pmos" for part in search_catalog("p-channel"))
     assert {part.category for part in search_catalog(category="regulator")} == {"regulator"}
     assert catalog_part("  BC547 ") is catalog_part("bc547")

@@ -919,8 +919,9 @@ blue slab with a dark brick on it, and a vertical terminal was a green box. A mo
 carries its board, its pins and its tallest part's height and nothing about what the parts
 are, so `ui/moduleart.py` (pure, no VTK) draws them for the modules it RECOGNISES — by the
 part's VALUE, as `resistor_bands` reads a colour code, so the picture cannot disagree with
-the parts list. Those two, and the catalog's six modules (DevKitC, C3-DevKitM-1, Nano,
-Pico, D1 mini, Pololu A4988), whose art keys are their catalog ids. Five rules hold it, each pinned in
+the parts list. Those two, and the catalog's eight modules (DevKitC, C3-DevKitM-1, Nano,
+Pico, D1 mini, Pololu A4988 and DRV8825, XIAO ESP32C3), whose art keys are their catalog
+ids. Five rules hold it, each pinned in
 `tests/test_module_art.py` for every turn and flip:
 
 - **Only on the board the layout was drawn for.** Same pin count, the right frame (a
@@ -942,6 +943,14 @@ Pico, D1 mini, Pololu A4988), whose art keys are their catalog ids. Five rules h
   `NAME_ROOM_ENOUGH_MM`; where the real board crowds its pins closer, the part is drawn moved
   in and the layout's comment says by how much. The LM2596 and SN65HVD230 layouts were drawn
   round the old strip and print every name exactly as the block does, which is pinned.
+- **Unless the real board's parts ARE where the names go.** A shield can over most of a
+  XIAO, a DRV8825 across both rows of a Pololu carrier: moving those in would draw a board
+  nobody makes, and their makers print the names on the back. Such a layout says
+  `names_over_parts`, and its names are printed at full length OVER the parts, each on the
+  dark tag the names on this board wear (`PinLabel.backed`; in 3D lifted to the module's
+  `top`). The tag was chosen against a board-coloured and a translucent one, rendered side
+  by side. `test_names_go_over_the_parts_only_where_the_real_board_leaves_them_no_room`
+  holds both halves: every name backed on such a layout, none on any other.
 - **Oriented by pin NAMES, not by pin numbers.** A `"power"` layout puts the pins called
   IN at `-u` and the `+` ones at `-v`; a `"header"` layout lies on the board's side of its
   row; a `"columns"` layout is turned end for end or side for side until its `landmark` pin
@@ -949,11 +958,12 @@ Pico, D1 mini, Pololu A4988), whose art keys are their catalog ids. Five rules h
   regulator on the right.
 - **Measured, not eyeballed.** Every layout's `source` names the drawing or model its
   positions come from — Espressif's and Arduino's dimension drawings, KiCad's models of the
-  Pico, the D1 mini and the radio modules, Pololu's own top-view photograph of its A4988.
-- **A layout is one maker's board, and named so.** The A4988 layout answers only to "Pololu
-  A4988": the StepStick clones sold as "A4988" have the pins and not the parts, and stay the
-  block. Pololu's DRV8825 is not in the catalog for the rule above: its 10 mm TSSOP spans
-  both rows of names, and no layout of the real board leaves them room to be read.
+  Pico, the D1 mini and the radio modules, Pololu's own top-view photographs of its two
+  carriers, and Seeed's own KiCad board for the XIAO ESP32C3.
+- **A layout is one maker's board, and named so.** The A4988 and DRV8825 layouts answer only
+  to "Pololu A4988" and "Pololu DRV8825": the StepStick clones sold under the chip's name
+  have the pins and not the parts, and stay the block. The XIAO ESP32C3's answers only to its
+  own name; the other XIAO boards share its footprint and not its parts.
 
 A new module is an entry in `MODULE_ARTS` with datasheet sizes, drawn from the kinds
 `view3d._ART_BUILDERS` knows (`test_every_kind_of_part_has_a_builder`);

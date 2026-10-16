@@ -167,6 +167,9 @@ from .moduleart import (
     TQFP32_LEG_MM,
     TQFP32_LEGS_PER_SIDE,
     TQFP32_PITCH_MM,
+    TSSOP28_LEGS_PER_SIDE,
+    TSSOP28_PITCH_MM,
+    TSSOP28_REACH_MM,
     PlacedArt,
     board_colour_for,
     fit_module_art,
@@ -1986,7 +1989,12 @@ def _paint_pin_names(
         if comp.mirrored:
             # The frame is reflected for a mirrored part; ink is not.
             painter.scale(-1.0, 1.0)
-        if not label.on_module:
+        # A name over a module's parts wears the tag the names on this board wear: chosen on
+        # 2026-10-16 over one in the module's own board colour and a translucent one, side by
+        # side on the XIAO and the two Pololu carriers -- it reads the same over a can, a
+        # chip or bare board.
+        tagged = not label.on_module or label.backed
+        if tagged:
             painter.save()
             painter.rotate(rotation)
             painter.setPen(Qt.PenStyle.NoPen)
@@ -1997,7 +2005,7 @@ def _paint_pin_names(
                 QRectF(-width / 2 - pad, -tag_h / 2, width + 2 * pad, tag_h), 0.3, 0.3
             )
             painter.restore()
-        painter.setPen(QPen(QColor(module_ink if label.on_module else PIN_NAME_INK)))
+        painter.setPen(QPen(QColor(PIN_NAME_INK if tagged else module_ink)))
         draw_physical_label(
             painter,
             QPointF(0.0, 0.0),
@@ -2323,6 +2331,31 @@ def _paint_art_part(painter: QPainter, part: PlacedArt, length: float, width: fl
         _art_box(painter, -half_l, half_l, body_half, _art_colour("epoxy"))
         painter.setBrush(QBrush(_art_colour("dot")))
         painter.drawEllipse(QPointF(half_l - 0.75, -(body_half - 0.7)), 0.32, 0.32)
+    elif kind == "tssop28":
+        body_half = half_w - TSSOP28_REACH_MM
+        painter.setBrush(QBrush(LEAD))
+        for index in range(TSSOP28_LEGS_PER_SIDE):
+            along = (index - (TSSOP28_LEGS_PER_SIDE - 1) / 2) * TSSOP28_PITCH_MM
+            for side in (-1.0, 1.0):
+                painter.drawRect(
+                    QRectF(along - 0.15, min(side * body_half, side * half_w), 0.3, TSSOP28_REACH_MM)
+                )
+        _art_box(painter, -half_l, half_l, body_half, _art_colour("epoxy"))
+        painter.setBrush(QBrush(_art_colour("dot")))
+        painter.drawEllipse(QPointF(half_l - 0.75, -(body_half - 0.6)), 0.3, 0.3)
+    elif kind == "shield":
+        _art_box(painter, -half_l, half_l, half_w, _art_colour("shield"))
+        rim = min(0.35, min(length, width) * 0.05)
+        _art_box(painter, -half_l + rim, half_l - rim, half_w - rim, _art_colour("shield").darker(106))
+    elif kind == "ufl":
+        _art_box(painter, -half_l, half_l, half_w, _art_colour("package"))
+        ring = min(length, width) * 0.38
+        painter.setBrush(QBrush(_art_colour("brass")))
+        painter.drawEllipse(QPointF(0.0, 0.0), ring, ring)
+        painter.setBrush(QBrush(_art_colour("mouth")))
+        painter.drawEllipse(QPointF(0.0, 0.0), ring * 0.6, ring * 0.6)
+        painter.setBrush(QBrush(_art_colour("brass")))
+        painter.drawEllipse(QPointF(0.0, 0.0), ring * 0.22, ring * 0.22)
     elif kind == "qfn":
         dot = min(0.35, min(length, width) * 0.1)
         _art_box(painter, -half_l, half_l, half_w, _art_colour("epoxy"))

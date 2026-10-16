@@ -91,9 +91,16 @@ ArtKind = Literal[
     # and all -- not the blue multi-turn block a buck module has.
     "trimmer",
     "soic8",
+    # A 28-leg TSSOP (HTSSOP's outline, 9.7 x 4.4 mm, legs 0.65 mm apart): the DRV8825's.
+    "tssop28",
     "qfn",
     "tqfp32",
     "rf-module",
+    # A plain metal can soldered straight onto the module's board, over what it shields --
+    # not a radio module's own board under its can.
+    "shield",
+    # A U.FL antenna socket: a small square base and the gold ring a lead clicks onto.
+    "ufl",
     "usb",
     "button",
     "side-button",
@@ -110,6 +117,12 @@ ArtKind = Literal[
 #: table, so a trimmer is the same blue in 2D as in 3D and a WROOM's can the same steel.
 #: Picked as sRGB hex, like ``bodies.BODY_STYLES``; an electrolytic takes that table's own
 #: colours instead, so a can on a buck module is the colour of the one beside it.
+#: A TSSOP-28's legs: how many down each side, how far apart, and how far each reaches
+#: past the moulding (the 6.4 mm span less the 4.4 mm body, halved) -- TI's PWP outline.
+TSSOP28_LEGS_PER_SIDE = 14
+TSSOP28_PITCH_MM = 0.65
+TSSOP28_REACH_MM = 1.0
+
 ART_COLOURS: dict[str, str] = {
     "ferrite": "#2a2b2f",
     "ferrite-top": "#3a3b40",
@@ -226,6 +239,11 @@ class ModuleArt:
     #: so a module described from its other end is still drawn with its USB socket at the
     #: socket's end. A module whose pins carry no such name is drawn as the art has it.
     landmark: tuple[str, int, int] | None = None
+    #: The real board's parts stand where its pin names would go -- a shield can, a chip
+    #: across both rows -- and its maker prints the names on the back. Moving the parts in
+    #: until the names fit would draw a board nobody makes, so its names are printed OVER
+    #: the parts instead, each on its own tag (``bodies.PinLabel.backed``), at full length.
+    names_over_parts: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -484,9 +502,9 @@ D1_MINI_MODULE = ModuleArt(
 #: middle, the two R068 sense resistors down the motor side, the motor supply's capacitor
 #: across the top and the current-limit trimmer at the bottom. Positions measured on that
 #: photograph at 59 px/mm against the 0.6 x 0.8 inch outline of its dimension diagram;
-#: sizes are the packages' own. The real board crowds its pins closer than its names can be
-#: read beside them, so three parts are drawn moved in: the chip 1.0 mm towards the motor
-#: side, the sense resistors 0.9 mm and the capacitor 1.2 mm away from it.
+#: sizes are the packages' own. The chip and the sense resistors stand where the names
+#: beside the pins would go -- Pololu prints them on the back -- so they are printed over
+#: the parts (``names_over_parts``) and every part is where the photograph has it.
 #:
 #: Only "Pololu" names it. The red and green StepStick boards sold as "A4988" share the pins
 #: and not the layout, so they keep the block rather than wear Pololu's parts.
@@ -498,16 +516,81 @@ POLOLU_A4988_MODULE = ModuleArt(
     pins=16,
     frame="columns",
     landmark=("VMOT", -1, 1),
+    names_over_parts=True,
     parts=(
-        ArtPart("chip-c", -8.31, 1.38, 4.2, 1.8, 1.25, along_v=True),
-        ArtPart("chip-r", -5.2, 2.83, 3.2, 1.6, 0.55),
-        ArtPart("qfn", -1.11, -0.78, 5.0, 5.0, 0.9, along_v=True, text="4988"),
-        ArtPart("chip-r", 3.68, 2.83, 3.2, 1.6, 0.55),
+        ArtPart("chip-c", -8.31, 2.58, 4.2, 1.8, 1.25, along_v=True),
+        ArtPart("chip-r", -5.2, 3.73, 3.2, 1.6, 0.55),
+        ArtPart("qfn", -1.11, -1.78, 5.0, 5.0, 0.9, along_v=True, text="4988"),
+        ArtPart("chip-r", 3.68, 3.73, 3.2, 1.6, 0.55),
         ArtPart("trimmer", 7.43, 1.23, 4.2, 3.1, 1.9, along_v=True),
     ),
     source=(
         "Pololu item 1182: the top-view photograph (positions) and the dimension diagram "
         "(the 0.6 x 0.8 inch board); Allegro A4988 ET package (the 5 x 5 mm QFN)"
+    ),
+)
+
+#: Pololu's DRV8825 carrier (item 2133) as its own top-view photograph has it: the TSSOP
+#: across the lower half, the current-limit trimmer, the two R100 sense resistors and the
+#: motor supply's capacitor along the top, small capacitors either side. Positions measured
+#: on that photograph at 46.7 px/mm against the 0.6 x 0.8 inch outline; sizes are the
+#: packages' own (TI's PWP outline for the chip). The chip spans both rows of names, which
+#: Pololu prints on the back, so they are printed over it.
+POLOLU_DRV8825_MODULE = ModuleArt(
+    key="pololu-drv8825",
+    board_colour="#5f288c",
+    names=("pololu drv8825",),
+    board=(20.32, 15.24),
+    pins=16,
+    frame="columns",
+    landmark=("VMOT", -1, 1),
+    names_over_parts=True,
+    parts=(
+        ArtPart("trimmer", -7.66, -3.6, 3.8, 3.0, 1.9),
+        ArtPart("chip-r", -7.47, -0.64, 3.2, 1.6, 0.55),
+        ArtPart("chip-r", -7.47, 1.56, 3.2, 1.6, 0.55),
+        ArtPart("chip-c", -7.69, 3.75, 3.2, 1.6, 1.25),
+        ArtPart("chip-c", -4.05, -3.64, 2.0, 1.25, 0.85, along_v=True),
+        ArtPart("chip-c", -2.66, -3.64, 2.0, 1.25, 0.85, along_v=True),
+        ArtPart("chip-c", -3.08, 2.57, 2.0, 1.25, 0.85),
+        ArtPart("chip-c", -3.08, 4.18, 2.0, 1.25, 0.85),
+        ArtPart("tssop28", 3.13, -0.05, 9.7, 6.4, 1.2, along_v=True),
+        ArtPart("chip-c", 9.01, -3.64, 2.0, 1.25, 0.85, along_v=True),
+        ArtPart("chip-r", 9.01, -0.43, 1.6, 0.8, 0.45, along_v=True),
+        ArtPart("chip-r", 9.01, 3.21, 1.6, 0.8, 0.45, along_v=True),
+    ),
+    source=(
+        "Pololu item 2133: the top-view photograph (positions) and the dimension diagram "
+        "(the 0.6 x 0.8 inch board); TI DRV8825 PWP package (the chip)"
+    ),
+)
+
+#: The Seeed XIAO ESP32C3, USB-C at the top: the socket, the shield can over the chip, the
+#: BOOT and RESET buttons and the U.FL antenna socket along the far end, the charge LED in
+#: the corner. Every position from Seeed's own KiCad board (XIAO ESP32C3 v1.3) except the
+#: can's, which the board does not carry and is measured on Seeed's photograph. The socket
+#: stands 1.8 mm past the end of the board; only what is over the board is drawn. The can
+#: covers the board where the names would go, and Seeed prints them on the back.
+XIAO_ESP32C3_MODULE = ModuleArt(
+    key="seeed-xiao-esp32c3",
+    board_colour=ESPRESSIF_BLACK,
+    names=("xiao esp32c3", "xiao esp32-c3", "xiao-esp32c3", "xiao_esp32c3"),
+    board=(21.0, 17.78),
+    pins=14,
+    frame="columns",
+    landmark=("5V", -1, 1),
+    names_over_parts=True,
+    parts=(
+        ArtPart("usb", -7.7, 0.0, 5.6, 8.94, 3.2, facing=-1),
+        ArtPart("led", -9.86, 5.72, 1.0, 0.5, 0.35, along_v=True, colour="#e0402f"),
+        ArtPart("shield", 1.35, -0.09, 10.7, 12.5, 1.8, text="XIAO ESP32C3"),
+        ArtPart("button", 8.95, -4.45, 3.6, 2.0, 1.0, along_v=True),
+        ArtPart("ufl", 9.08, 0.0, 2.6, 2.6, 1.25),
+        ArtPart("button", 8.95, 4.45, 3.6, 2.0, 1.0, along_v=True),
+    ),
+    source=(
+        "Seeed XIAO ESP32C3 v1.3 KiCad board (every part's place); Seeed's photograph of "
+        "the board (the shield can, and how far the socket overhangs)"
     ),
 )
 
@@ -521,6 +604,8 @@ MODULE_ARTS: tuple[ModuleArt, ...] = (
     PICO_MODULE,
     D1_MINI_MODULE,
     POLOLU_A4988_MODULE,
+    POLOLU_DRV8825_MODULE,
+    XIAO_ESP32C3_MODULE,
 )
 
 
@@ -675,6 +760,13 @@ def fit_module_art(
             )
         )
     return tuple(placed)
+
+
+def prints_names_over_parts(component: ComponentInstance) -> bool:
+    """Whether the layout this part's value names prints its pin names over its parts
+    (``ModuleArt.names_over_parts``). Asked only once ``fit_module_art`` has said it fits."""
+    art = recognise_module(component.value)
+    return art is not None and art.names_over_parts
 
 
 def board_colour_for(

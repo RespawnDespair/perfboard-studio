@@ -588,6 +588,9 @@ class PinLabel:
     #: its body is as far away on both sides, and it has no mouth to keep clear. What
     #: ``lay_out_pin_names`` turns round when this side is taken.
     either_side: bool = False
+    #: Printed on a tag over whatever stands under it, because the module's own parts cover
+    #: the board where its names would go (``moduleart.ModuleArt.names_over_parts``).
+    backed: bool = False
 
 
 def pin_labels(
@@ -618,11 +621,13 @@ def pin_labels(
     block = module_block_size(placement.size_x, placement.size_y)
     block_half = (block[1] if across_y else block[0]) / 2
     art = None
+    over_parts = False
     if module:
         # Here rather than at the top: ``moduleart`` builds on this module's placement.
-        from .moduleart import fit_module_art, name_room
+        from .moduleart import fit_module_art, name_room, prints_names_over_parts
 
         art = fit_module_art(footprint, component, pitch)
+        over_parts = art is not None and prints_names_over_parts(component)
     labels: list[PinLabel] = []
     for pin in footprint.pins:
         name = (
@@ -648,12 +653,14 @@ def pin_labels(
             room = PIN_NAME_MAX_MM
             either_side = behind is None and abs(toward) <= 1e-6
         dx, dy = (0.0, sign) if across_y else (sign, 0.0)
-        if art is not None:
+        if art is not None and not over_parts:
             # A module drawn as what is on it: the parts stand where they stand on the real
             # board, and a name stops short of the first one in its way.
             room = min(room, name_room(art, x, y, dx, dy, start))
         labels.append(
-            PinLabel(pin.number, name, x, y, dx, dy, start, room, module, either_side)
+            PinLabel(
+                pin.number, name, x, y, dx, dy, start, room, module, either_side, over_parts
+            )
         )
     return tuple(labels)
 

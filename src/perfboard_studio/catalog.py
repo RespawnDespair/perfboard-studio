@@ -191,6 +191,13 @@ _C3_DEVKITM_RIGHT = (
 # half round. Names are KiCad's Driver_Motor:Pololu_Breakout_A4988, overbars dropped.
 _POLOLU_A4988_LEFT = ("ENABLE", "MS1", "MS2", "MS3", "RESET", "SLEEP", "STEP", "DIR")
 _POLOLU_A4988_RIGHT = ("VMOT", "GND", "2B", "2A", "1A", "1B", "VDD", "GND")
+# The same board with the DRV8825 on it, named from Driver_Motor:Pololu_Breakout_DRV8825.
+_POLOLU_DRV8825_LEFT = ("EN", "M0", "M1", "M2", "RST", "SLP", "STEP", "DIR")
+_POLOLU_DRV8825_RIGHT = ("VMOT", "GND", "B2", "B1", "A1", "A2", "FLT", "GND")
+# The USB-C end at the top, as Seeed's own pinout draws it; read off the nets of the two
+# header rows on Seeed's KiCad board, functions from its pin map.
+_XIAO_LEFT = ("D0", "D1", "D2", "D3", "D4/SDA", "D5/SCL", "D6/TX")
+_XIAO_RIGHT = ("5V", "GND", "3V3", "D10/MOSI", "D9/MISO", "D8/SCK", "D7/RX")
 
 _SWITCH_LEGS = (
     "The two legs on one side are the switched pair; the two straight across are one "
@@ -485,6 +492,29 @@ CATALOG: tuple[CatalogPart, ...] = (
                     "red and green StepStick boards sold as A4988 have these pins and not "
                     "this layout. " + _MODULE_TOP
                 )),
+    CatalogPart("pololu-drv8825", "Pololu DRV8825 carrier", "module",
+                "mod-2x8-p5-r1-15.24x20.32x2-s8.5",
+                "Stepper motor driver, 8.2-45 V, 1.5 A per coil (2.2 A with cooling), rows "
+                "12.7 mm apart",
+                _two_columns(_POLOLU_DRV8825_LEFT, _POLOLU_DRV8825_RIGHT), ref_prefix="U",
+                value="Pololu DRV8825",
+                source=(
+                    "Pololu item 2133: 0.6 x 0.8 inch board and its pinout from the dimension "
+                    "diagram, voltages and currents from its specifications; pin positions "
+                    "KiCad Module:Pololu_Breakout-16_15.2x20.3mm"
+                ),
+                check="Set the current limit with the trimmer before a motor is connected. "
+                + _MODULE_TOP),
+    CatalogPart("seeed-xiao-esp32c3", "Seeed XIAO ESP32C3", "module",
+                "mod-2x7-p6-r1-17.78x21x3.2-s8.5",
+                "ESP32-C3 board, 14 pins, rows 15.24 mm apart",
+                _two_columns(_XIAO_LEFT, _XIAO_RIGHT), ref_prefix="U", value="XIAO ESP32C3",
+                source=(
+                    "Seeed XIAO ESP32C3 v1.3 KiCad board: the 21 x 17.78 mm outline, the "
+                    "header rows and their nets; pin functions from Seeed's pin map"
+                ),
+                check="The USB-C socket stands about 1.8 mm past the end of the board. "
+                + _MODULE_TOP),
     CatalogPart("wemos-d1-mini", "WEMOS D1 mini", "module",
                 "mod-2x8-p9-r1-25.6x34.2x3.5-s8.5",
                 "ESP8266 board, 16 pins, rows 22.86 mm apart",

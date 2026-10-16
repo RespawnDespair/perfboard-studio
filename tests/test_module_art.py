@@ -11,6 +11,7 @@ value or a board the layout was not drawn for keeps the plain block.
 
 from __future__ import annotations
 
+import dataclasses
 import math
 
 import pytest
@@ -96,6 +97,9 @@ def _footprint(footprint_id: str):
         ("Raspberry Pi Pico H", "raspberry-pi-pico"),
         ("D1 mini", "wemos-d1-mini"),
         ("Pololu A4988", "pololu-a4988"),
+        ("Pololu DRV8825", "pololu-drv8825"),
+        ("Seeed XIAO ESP32C3", "seeed-xiao-esp32c3"),
+        ("XIAO-ESP32C3", "seeed-xiao-esp32c3"),
     ],
 )
 def test_a_module_is_recognised_by_its_value(value: str, key: str) -> None:
@@ -121,6 +125,10 @@ def test_a_module_is_recognised_by_its_value(value: str, key: str) -> None:
         # Same pins, another board: the StepStick clones are not Pololu's layout.
         "A4988",
         "A4988 StepStick",
+        "DRV8825",
+        # The other XIAO boards share the footprint and not the parts.
+        "XIAO ESP32S3",
+        "XIAO RP2040",
     ],
 )
 def test_a_value_nobody_wrote_a_layout_for_is_not_guessed(value: str) -> None:
@@ -296,6 +304,10 @@ def test_the_layout_leaves_the_pin_names_clear(
     labels = pin_labels(footprint, component, PITCH)
     assert labels and all(label.on_module for label in labels)
     for label in labels:
+        if label.backed:
+            # Printed over the parts on its own tag, by the layout's own say-so: the next
+            # test holds that to the layouts that ask for it.
+            continue
         strip = _strip(label)
         for part in placed:
             if part.kind == "silk":
@@ -330,6 +342,33 @@ def test_a_layout_drawn_round_the_names_leaves_them_as_they_were() -> None:
         drawn = pin_labels(footprint, _part(footprint_id, value, names), PITCH)
         plain = pin_labels(footprint, _part(footprint_id, "a module", names), PITCH)
         assert drawn == plain
+
+
+@pytest.mark.parametrize(("art", "footprint_id", "names"), list(_layouts()), ids=_case_id)
+def test_names_go_over_the_parts_only_where_the_real_board_leaves_them_no_room(
+    art, footprint_id: str, names
+) -> None:
+    """A layout that says its real parts stand where the names go has every name printed
+    over them on a tag, at the length a plain block would give it -- and no other layout has
+    one name so, because elsewhere a name stops at the first part in its way."""
+    footprint = _footprint(footprint_id)
+    drawn = pin_labels(footprint, _part(footprint_id, art.names[0], names), PITCH)
+    assert {label.backed for label in drawn} == {art.names_over_parts}
+    if art.names_over_parts:
+        plain = pin_labels(footprint, _part(footprint_id, "a module", names), PITCH)
+        assert [dataclasses.replace(label, backed=False) for label in drawn] == list(plain)
+
+
+def test_a_name_over_the_parts_is_only_ever_on_a_module() -> None:
+    """The tag is for a module whose parts cover its names: a part on this board prints its
+    names beside it, on the tag it always had, and nothing about that is a backed name."""
+    from perfboard_studio.catalog import catalog_part
+
+    dht = catalog_part("dht22")
+    assert dht is not None
+    footprint = _footprint(dht.footprint_id)
+    labels = pin_labels(footprint, _part(dht.footprint_id, dht.placed_value, dht.pin_names), PITCH)
+    assert labels and not any(label.backed or label.on_module for label in labels)
 
 
 def test_the_regulator_is_at_the_end_the_input_pins_are() -> None:
@@ -485,7 +524,12 @@ def test_the_2d_view_draws_what_is_on_a_recognised_module() -> None:
 def test_a_module_board_is_the_colour_its_maker_makes_it() -> None:
     """A Pico is green and an Espressif devkit black; the rest keep the module style's blue.
     Only where the layout is drawn: a board coloured as a Pico is a board drawn as one."""
-    from perfboard_studio.ui.moduleart import ESPRESSIF_BLACK, PICO_MODULE, board_colour_for
+    from perfboard_studio.ui.moduleart import (
+        ESPRESSIF_BLACK,
+        PICO_MODULE,
+        POLOLU_DRV8825_MODULE,
+        board_colour_for,
+    )
 
     colours = {
         part.id: board_colour_for(
@@ -500,6 +544,8 @@ def test_a_module_board_is_the_colour_its_maker_makes_it() -> None:
         "raspberry-pi-pico": PICO_MODULE.board_colour,
         "wemos-d1-mini": None,
         "pololu-a4988": PICO_MODULE.board_colour,
+        "pololu-drv8825": POLOLU_DRV8825_MODULE.board_colour,
+        "seeed-xiao-esp32c3": ESPRESSIF_BLACK,
     }
     # A Pico named on a board the layout was not drawn for is not coloured as one.
     square = "mod-2x20-p7-r1-30x30x3.5-s8.5"

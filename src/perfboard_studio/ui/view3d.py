@@ -104,6 +104,9 @@ from .moduleart import (
     TQFP32_LEG_MM,
     TQFP32_LEGS_PER_SIDE,
     TQFP32_PITCH_MM,
+    TSSOP28_LEGS_PER_SIDE,
+    TSSOP28_PITCH_MM,
+    TSSOP28_REACH_MM,
     PlacedArt,
     board_colour_for,
     fit_module_art,
@@ -4022,6 +4025,106 @@ def _art_trimmer(s: _ArtSolid) -> list[_Piece]:
     ]
 
 
+def _art_tssop28(s: _ArtSolid) -> list[_Piece]:
+    """A 28-leg TSSOP: the body on its stand-off, fourteen gull-wing legs down each long
+    side as ``_art_soic8`` draws an SO-8's, and the pin-1 dot."""
+    body_w = s.width - 2 * TSSOP28_REACH_MM
+    standoff = 0.1
+    body_h = s.height - standoff
+    pieces = [
+        _Piece(
+            source=s.box(s.length, body_w, body_h, moulded=True),
+            rgb=_ART_EPOXY_RGB,
+            position=s.at(0.0, 0.0, standoff + body_h / 2),
+            material=MOULDED,
+        )
+    ]
+    legs = [
+        (index - (TSSOP28_LEGS_PER_SIDE - 1) / 2) * TSSOP28_PITCH_MM
+        for index in range(TSSOP28_LEGS_PER_SIDE)
+    ]
+    shoulder_z = standoff + body_h * 0.45
+    reach = TSSOP28_REACH_MM
+    for run, across, z, height in (
+        (reach * 0.5, body_w / 2 + reach * 0.2, shoulder_z, 0.15),
+        (reach * 0.2, body_w / 2 + reach * 0.45, (shoulder_z + 0.08) / 2, shoulder_z),
+        (reach * 0.6, body_w / 2 + reach * 0.7, 0.08, 0.15),
+    ):
+        pieces.append(
+            _Piece(
+                source=s.box(0.3, run, height),
+                rgb=LEAD_RGB,
+                position=(0.0, 0.0, 0.0),
+                material=TINNED,
+                instances=tuple(s.at(along, side * across, z) for side in (-1.0, 1.0) for along in legs),
+            )
+        )
+    pieces.append(
+        _Piece(
+            source=_cylinder(0.3, 0.05, resolution=16),
+            rgb=_ART_DOT_RGB,
+            position=s.at(s.facing * (s.length / 2 - 0.75), -(body_w / 2 - 0.6), s.height - 0.025),
+            orientation=_ALONG_Z,
+            material=MOULDED,
+        )
+    )
+    return pieces
+
+
+def _art_shield(s: _ArtSolid) -> list[_Piece]:
+    """A metal can soldered onto the module's board, with what its maker etches on it."""
+    pieces = [
+        _Piece(
+            source=s.box(s.length, s.width, s.height),
+            rgb=_ART_SHIELD_RGB,
+            position=s.at(0.0, 0.0, s.height / 2),
+            material=STEEL,
+        )
+    ]
+    if s.text:
+        glyphs, orientation = s.printed(s.text, min(1.3, s.width * 0.09), s.width * 0.85, across=True)
+        if glyphs is not None:
+            pieces.append(
+                _Piece(
+                    source=glyphs,
+                    rgb=_ART_ETCH_RGB,
+                    position=s.at(0.0, 0.0, s.height + 0.02),
+                    orientation=orientation,
+                    material=INK,
+                )
+            )
+    return pieces
+
+
+def _art_ufl(s: _ArtSolid) -> list[_Piece]:
+    """A U.FL socket: its square base and the gold ring standing on it, a pin in the middle."""
+    base = min(0.3, s.height * 0.3)
+    ring = min(s.length, s.width) * 0.38
+    rise = s.height - base
+    return [
+        _Piece(
+            source=s.box(s.length, s.width, base),
+            rgb=_ART_PACKAGE_RGB,
+            position=s.at(0.0, 0.0, base / 2),
+            material=MOULDED,
+        ),
+        _Piece(
+            source=_cylinder(ring, rise, resolution=24),
+            rgb=_ART_BRASS_RGB,
+            position=s.at(0.0, 0.0, base + rise / 2),
+            orientation=_ALONG_Z,
+            material=PLATED,
+        ),
+        _Piece(
+            source=_cylinder(ring * 0.6, 0.06, resolution=20),
+            rgb=_ART_MOUTH_RGB,
+            position=s.at(0.0, 0.0, s.height - 0.03),
+            orientation=_ALONG_Z,
+            material=MOULDED,
+        ),
+    ]
+
+
 #: An SO-8's legs: how far they reach out from the body each side, and where along it.
 _SOIC_REACH_MM = 1.05
 _SOIC_LEGS_MM = (-1.905, -0.635, 0.635, 1.905)
@@ -4672,9 +4775,12 @@ _ART_BUILDERS: dict[str, Callable[[_ArtSolid], list[_Piece]]] = {
     "trimpot": _art_trimpot,
     "trimmer": _art_trimmer,
     "soic8": _art_soic8,
+    "tssop28": _art_tssop28,
     "qfn": _art_qfn,
     "tqfp32": _art_tqfp32,
     "rf-module": _art_rf_module,
+    "shield": _art_shield,
+    "ufl": _art_ufl,
     "usb": _art_usb,
     "button": _art_button,
     "side-button": _art_side_button,
@@ -4894,7 +5000,14 @@ def build_pin_names(
         return []
     where = {pin.number: xy for pin, xy in zip(footprint.pins, body.pins, strict=False)}
     on_module = labels[0].on_module
-    if on_module:
+    backed = labels[0].backed
+    if backed:
+        # Over the parts: on the tallest of them, which is the module's ``top``, on a tag.
+        seat = float(footprint.body.dims.get("seat", MODULE_SEAT_SOCKETED_MM))
+        top = float(footprint.body.dims.get("top", 0.0))
+        lift = seat + MODULE_PCB_MM + top + _DECAL_PROUD_MM
+        ink = LEGEND_RGB
+    elif on_module:
         seat = float(footprint.body.dims.get("seat", MODULE_SEAT_SOCKETED_MM))
         lift = seat + MODULE_PCB_MM + _DECAL_PROUD_MM
         ink = _rgb(body.style.accent)
@@ -4912,14 +5025,14 @@ def build_pin_names(
             ink=ink,
             # A module's names are printed on its own board, which needs no tag; names on
             # THIS board need one, as in the 2D view: white ink over white pad rings is
-            # unreadable.
-            ground=None if on_module else PIN_NAME_TAG_RGB,
+            # unreadable -- and so do names printed over a module's parts.
+            ground=None if on_module and not backed else PIN_NAME_TAG_RGB,
             bold=False,
             pad_mm=pad,
             tag_height_mm=PIN_NAME_TAG_HEIGHT_MM,
         )
         if decal is None:
-            return _vector_pin_names(labels, where, comp, on_module, lift, ink)
+            return _vector_pin_names(labels, where, comp, on_module and not backed, lift, ink)
         texture, width, height = decal
         # Narrowed to the room it was given, the tag with it.
         shown = min(max(width - 2 * pad, 1e-6), label.room)

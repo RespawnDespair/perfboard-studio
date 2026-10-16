@@ -78,6 +78,13 @@ closed without a bump.
   part named Pololu: the StepStick boards sold as "A4988" share its pins and not its parts,
   and keep the plain block.
 
+- **Pololu's DRV8825 carrier and the Seeed XIAO ESP32C3 in the catalog**, each drawn as what
+  is on it: the DRV8825's chip across the lower half of its purple board, the XIAO's USB-C
+  socket, shield can, buttons and antenna socket -- placed from Seeed's own board file. On
+  these two, and on the A4988, the real parts stand where the names beside the pins would
+  go (their makers print the names on the back), so the names are printed over the parts on
+  the same dark tag the names on the board wear, and every part is where it really is.
+
 - **The build guide has the chips soldered onto their adapters first**, in phase 0 while the
   bench is clear and the legs can still be reached, and then fits each adapter as the DIP it
   stands in for: a socket in phase 2 if there is one, the adapter with the other ICs at the
