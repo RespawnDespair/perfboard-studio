@@ -20,6 +20,51 @@ closed without a bump.
 
 ## [Unreleased]
 
+### Added
+
+- **A part on the panel is wired to the board, not placed on it.** A pot, a jack, a
+  footswitch, a DC socket or a bezel LED that lives in the enclosure is taken off the board
+  with **Mount on the Panel**, on its right-click menu on the board or on the schematic. On
+  the board it becomes the row of pads its wires land in -- where its pins were when they
+  stood in a row, so the copper already laid still reaches them -- and it keeps everything its
+  package used to say: an LED its A and K, a pot its symbol on the sheet. One undo step takes
+  it back. Such a part can also be asked for directly as `wire-<n>`, with `-p<step>` for pads
+  further apart and `-l<mm>` for how long each wire is cut, or from **Custom Part**; KiCad's
+  `SolderWire` and `SolderWirePad` footprints import as one, and a KiCad potentiometer
+  symbol on one stays a potentiometer.
+
+- **The build guide wires it in with the long wires** (phase 7): which pad goes to which lug
+  of the part, named as the part names it, and over which edge of the board the wires leave.
+  Every wire is on the cut list, in its net's colour and gauge, cut to the length the part
+  gives or marked "cut to fit"; the bench list counts them with the hookup wire. A continuity
+  check on a net that reaches the part waits until its wires are in, rather than failing
+  before they are.
+
+- **Both views draw the wires leaving, and the same wires.** Each runs from its pad over the
+  nearest edge in its net's colour, dressed like an insulated wire on the board, with its
+  tinned end showing at the pad; in 2D it fades out past the edge on its way to the panel, and
+  in 3D it rises out of the pad and drops away past the edge. A row of pads pointing at its
+  edge is laid in lanes side by side, rather than every wire on top of the one in front.
+
+- **Every such wire says where it goes.** It carries a marker just past the edge, as a
+  harness wire does -- "RV1·2", or "J1·T" once the jack's leads are named -- in both views:
+  printed on the wire in 2D, on a white sleeve in 3D. The part's tooltip lists each wire with
+  its pad, the lead at the other end, its net and its colour, and the guide's step says the
+  same of each one: "H24 to RV1 pin 1 — GND, black wire". A part off the board no longer
+  prints its pin names beside its pads, where they lay on top of its own wires, and other
+  parts' names stop short of those wires.
+
+- **Two more symbols a part can declare**: a potentiometer, and an LED once its leads are
+  named A and K. In the part's properties, and as `potentiometer` and `led` for an agent.
+
+### Changed
+
+- **The phenolic board is a quieter orange.** Still the hue of the boards in the photographs
+  it was measured from, at less saturation: a whole board of flat orange was the loudest thing
+  in the window, and an orange film capacitor all but disappeared into it.
+- **`update_part` takes `off_board`**, which is Mount on the Panel for an agent, on the board
+  or in the design. Any other new footprint for a part already on the board is still refused.
+
 ## [0.17.0] - 2026-10-12
 
 ### Added

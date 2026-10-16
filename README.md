@@ -155,6 +155,13 @@ part: KiCad numbers a Nano down one side and up the other, its LED cathode first
 generic transistor symbol with "BC547" typed on it emitter first — each of which, taken at
 its number, would wire the board for a part that does not exist.
 
+**A part on the panel is wired, not placed.** A pot, a jack or a footswitch that lives in
+the enclosure goes onto the panel from its right-click menu: on the board it becomes the row
+of pads its wires land in, where its pins were, so the copper still reaches them, and on the
+sheet and in the parts list it is still a pot. The guide wires it in with the long wires,
+says which pad goes to which lug and over which edge the wires leave, puts every wire on the
+cut list in its net's colour, and checks its nets only once its wires are in.
+
 ## Draw the circuit first
 
 The board says where everything goes. The schematic panel (`Ctrl+2`), which opens beside
@@ -394,7 +401,7 @@ with T's and labels and the sheet export beside it, board, schematic and 3D side
 with one selection between them, a catalog of real parts with their pin names printed on
 the board, modules on header strips drawn as what is on them, labels written on the board,
 KiCad netlists read part by part, parts described by their own measurements when the
-library does not have them, crash recovery, the MCP server, TR/EN localisation, the
+library does not have them, parts on the panel wired to the board, crash recovery, the MCP server, TR/EN localisation, the
 three-platform packaging that a `v*` tag runs, and the update check that tells you a release exists and fetches it (**Help ▸ Check
 for Updates**; it verifies the download against the release's `SHA256SUMS` and then hands
 it to you — running it stays your click).

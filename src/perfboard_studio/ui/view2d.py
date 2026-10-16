@@ -22,6 +22,7 @@ consistently everywhere, not a family of ad hoc sign flips that can drift apart.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import replace
 from typing import Any, cast
@@ -35,6 +36,8 @@ from PySide6.QtGui import (
     QDragLeaveEvent,
     QDragMoveEvent,
     QDropEvent,
+    QFontMetricsF,
+    QLinearGradient,
     QPainter,
     QPainterPath,
     QPainterPathStroker,
@@ -71,6 +74,7 @@ from perfboard_studio.connectivity import FootprintLookup, PhysicalNet, extract_
 from perfboard_studio.drc import DrcViolation
 from perfboard_studio.footprints import wire_entry
 from perfboard_studio.geometry import (
+    FLYING_LEAD_MARKER_MM,
     all_pin_holes,
     board_edge_margin_mm,
     board_note_anchor,
@@ -79,6 +83,7 @@ from perfboard_studio.geometry import (
     column_label,
     consumed_holes,
     edge_finger_rect,
+    flying_lead_routes,
     format_hole,
     hole_key,
     hole_span_mm,
@@ -100,7 +105,13 @@ from perfboard_studio.geometry import (
 
 # The one place the wire-colour convention is defined, so the editor and the cut list a
 # person actually works from cannot disagree about which wire is which.
-from perfboard_studio.guide import COLOR_BY_NET_CLASS, SIGNAL_COLORS
+from perfboard_studio.guide import (
+    COLOR_BY_NET_CLASS,
+    SIGNAL_COLORS,
+    lead_end,
+    lead_marker,
+    net_colours,
+)
 from perfboard_studio.model import (
     Board,
     BoardLabels,
@@ -123,8 +134,10 @@ from perfboard_studio.model import (
     Rotation,
     TrackCut,
     contacts_every_path_hole,
+    pin_name_of,
 )
 from perfboard_studio.occupancy import stacking_layers
+from perfboard_studio.phrasebook import guide_language, phrasebook
 from perfboard_studio.ratsnest import RatsnestLink, all_links, ratsnest
 from perfboard_studio.stripboard import cut_holes, is_stripboard, segments
 
@@ -146,6 +159,7 @@ from .bodies import (
     style_for,
     surface_for,
 )
+from .i18n import language as current_language
 from .i18n import t
 from .moduleart import (
     ART_COLOURS,
@@ -161,6 +175,7 @@ from .partnames import footprint_label
 from .scenetext import (
     draw_label,
     draw_physical_label,
+    label_font,
     physical_label_width_mm,
     pin_name_width_mm,
 )
@@ -190,6 +205,23 @@ BODY_LINE = QColor("#31313a")
 LEAD = QColor("#c2c8d0")
 PIN_MARKER = QColor("#8d949e")
 PIN_ONE = QColor("#f0f3f8")
+#: A part off the board's wires: how thick the jacket is drawn, how much tinned wire shows
+#: between the pad and where the jacket starts, and how far past the edge each one is drawn,
+#: fading out, before it goes off to the panel. Inside the scene's own 4 mm margin, so a
+#: fitted view shows the wires leaving rather than cutting them off at the frame.
+FLYING_LEAD_JACKET_MM = 1.0
+FLYING_LEAD_BARE_MM = 0.9
+FLYING_LEAD_PAST_EDGE_MM = 3.5
+#: The marker each of those wires carries ("RV1·2"): a white sleeve with the text on it, held
+#: at a screen size like every annotation, and drawn only once the board is close enough for
+#: one to fit between two wires -- zoomed out, a row of them is a white smear.
+FLYING_LEAD_MARKER_PX = 11
+FLYING_LEAD_MARKER_MIN_SCALE = 6.5
+#: How many times a marker may step out along its wire to clear one beside it.
+FLYING_LEAD_MARKER_STEPS = 2
+FLYING_LEAD_MARKER_FILL = QColor("#eceae4")
+FLYING_LEAD_MARKER_EDGE = QColor("#2a2c31")
+FLYING_LEAD_MARKER_INK = QColor("#15151a")
 LABEL = QColor("#15151a")
 REF_LABEL = QColor("#eef1f8")
 #: The plate behind a reference: dark enough to carry light text over tinned pads, clear
@@ -1085,6 +1117,8 @@ REF_PREFIXES: dict[str, str] = {
     "box-header": "J",
     "screw-terminal-vertical": "TB",
     "module-board": "U",
+    # Whatever it is on the panel; "J" until it is given its own letter, as a jack would be.
+    "flying-leads": "J",
 }
 
 
@@ -2419,12 +2453,17 @@ class ComponentItem(QGraphicsItem):
         show_pin_names: bool = True,
         pin_names: tuple[PinLabel, ...] = (),
         names_left_off: tuple[tuple[str, str], ...] = (),
+        lead_colours: dict[str, QColor] | None = None,
+        lead_wires: dict[str, tuple[str, str]] | None = None,
     ) -> None:
         super().__init__()
         self.comp = comp
         self.fp = fp
         self.board = board
         self.side = side
+        #: Pin number -> the colour of the wire leaving that pad, for a part off the board:
+        #: its net's, by the cut list's convention (``insulation_color``).
+        self.lead_colours = lead_colours or {}
         #: Print the part's pin names beside its pins (View > Show Pin Names).
         self.show_pin_names = show_pin_names
         #: Print the part's reference above it. Off only in a board PICTURE
@@ -2454,6 +2493,8 @@ class ComponentItem(QGraphicsItem):
             # Printed nowhere on the board for want of room, so said here instead.
             pins = ", ".join(f"{number} {name}" for number, name in names_left_off)
             tip += f"\n{t('No room to print:')} {pins}"
+        if fp.body.archetype == "flying-leads":
+            tip += "".join(f"\n{line}" for line in self._wire_lines(lead_wires or {}))
         self.setToolTip(tip)
         #: What stands on a module ``moduleart`` recognises, laid out once: the part is a
         #: frozen snapshot and the item is rebuilt with the document.
@@ -2461,6 +2502,7 @@ class ComponentItem(QGraphicsItem):
         #: Its own board's colour, when that is not the module style's (a Pico is green).
         self.board_colour = board_colour_for(fp, comp, board.pitch)
         self._names_rect = self._pin_names_rect()
+        self._leads_rect = self._flying_leads_rect()
         self._sync_position()
 
     def _sync_position(self) -> None:
@@ -2509,12 +2551,181 @@ class ComponentItem(QGraphicsItem):
                 rect = rect.united(QRectF(x - half, y - half, 2 * half, 2 * half))
         return rect
 
+    def _flying_lead_routes(self) -> list[tuple[str, list[QPointF]]]:
+        """Each wire of a part off the board, pad to past the edge, in item coordinates.
+
+        ``geometry.flying_lead_routes`` is the one answer to where they run -- the edge the
+        guide's step names, the lanes a row pointing at that edge is fanned into -- and the
+        3D view draws the same routes. The direction is the BOARD's, not the part's: a row
+        of pads turned end for end sends its wires to the same edge. Only on the component
+        face, which is where the wires are.
+        """
+        if self.fp.body.archetype != "flying-leads" or self.side != "top":
+            return []
+        origin = hole_to_screen(self.comp.anchor, self.board, self.side)
+        return [
+            (number, [QPointF(p.x - origin.x(), p.y - origin.y()) for p in points])
+            for number, points in flying_lead_routes(
+                self.comp, self.fp, self.board, FLYING_LEAD_PAST_EDGE_MM
+            )
+        ]
+
+    def _wire_lines(self, wires: dict[str, tuple[str, str]]) -> list[str]:
+        """One line per wire of a part off the board, for its tooltip: which pad, which lead
+        of the part at the other end, its net and its colour -- in the words and the order the
+        guide's step uses, so hovering over the board and reading the step say one thing."""
+        say = phrasebook(guide_language(current_language()))
+        lines = []
+        for pin, at in all_pin_holes(self.comp, self.fp):
+            far_end = lead_end(self.comp.ref, pin.number, pin_name_of(self.comp, pin), say)
+            line = f"{format_hole(at)} → {far_end}"
+            wire = wires.get(pin.number)
+            if wire is not None:
+                line += f" · {wire[0]} · {say(wire[1])}"
+            lines.append(line)
+        return lines
+
+    def _lead_markers(self) -> list[tuple[str, QPointF, bool, QPointF]]:
+        """Each wire's marker: its text, where it is centred in item coordinates -- the same
+        ``FLYING_LEAD_MARKER_MM`` past the edge the 3D view puts it -- whether the wire runs
+        across the screen there (so the text does) or up and down it, and the unit direction
+        it runs off the board in."""
+        names = {pin.number: pin_name_of(self.comp, pin) for pin in self.fp.pins}
+        markers = []
+        for number, points in self._flying_lead_routes():
+            edge, end = points[-2], points[-1]
+            dx, dy = end.x() - edge.x(), end.y() - edge.y()
+            run = math.hypot(dx, dy) or 1.0
+            centre = QPointF(
+                edge.x() + dx / run * FLYING_LEAD_MARKER_MM,
+                edge.y() + dy / run * FLYING_LEAD_MARKER_MM,
+            )
+            text = lead_marker(self.comp.ref, number, names.get(number))
+            markers.append((text, centre, abs(dx) >= abs(dy), QPointF(dx / run, dy / run)))
+        return markers
+
+    def _flying_leads_rect(self) -> QRectF:
+        rect = QRectF()
+        half = FLYING_LEAD_JACKET_MM
+        for _number, points in self._flying_lead_routes():
+            for point in points:
+                rect = rect.united(QRectF(point.x() - half, point.y() - half, 2 * half, 2 * half))
+        # The markers are held at a screen size, so they are largest in millimetres at the
+        # furthest zoom they are drawn at.
+        metrics = QFontMetricsF(label_font(FLYING_LEAD_MARKER_PX))
+        for text, centre, _across, _direction in self._lead_markers():
+            # Half the marker, and as many whole markers as it may step out by.
+            length = (metrics.horizontalAdvance(text) + 10) / FLYING_LEAD_MARKER_MIN_SCALE
+            reach = length * (FLYING_LEAD_MARKER_STEPS + 0.5)
+            rect = rect.united(
+                QRectF(centre.x() - reach, centre.y() - reach, 2 * reach, 2 * reach)
+            )
+        return rect
+
+    def _paint_lead_markers(self, painter: QPainter) -> None:
+        """A sleeve on each wire with where it goes written on it, as a harness is labelled.
+
+        Turned to run along its wire, so a row of wires a pitch apart has room for one each.
+        Held at a screen size like the references, and left off a board picture, where a
+        label the size of a word is most of a thumbnail.
+
+        Wires laid in lanes are closer than a pitch, and a marker held at a screen size is
+        wider than the gap at an ordinary zoom: one that would land on the marker beside it
+        steps out along its own wire instead, a marker's length at a time, so each is still
+        on the wire it names.
+        """
+        scale = abs(painter.transform().m11())
+        if not self.show_reference or scale < FLYING_LEAD_MARKER_MIN_SCALE:
+            return
+        font = label_font(FLYING_LEAD_MARKER_PX)
+        metrics = QFontMetricsF(font)
+        transform = painter.transform()
+        placed: list[QRectF] = []
+        for text, centre, across, direction in self._lead_markers():
+            device = transform.map(centre)
+            heading = transform.map(centre + direction) - device
+            run = math.hypot(heading.x(), heading.y()) or 1.0
+            heading = QPointF(heading.x() / run, heading.y() / run)
+            width = metrics.horizontalAdvance(text) + 8
+            height = metrics.height() + 1
+            box_w, box_h = (width, height) if across else (height, width)
+            for _step in range(FLYING_LEAD_MARKER_STEPS):
+                box = QRectF(device.x() - box_w / 2, device.y() - box_h / 2, box_w, box_h)
+                if not any(box.intersects(other) for other in placed):
+                    break
+                device += heading * (width + 2)
+            placed.append(QRectF(device.x() - box_w / 2, device.y() - box_h / 2, box_w, box_h))
+            painter.save()
+            painter.resetTransform()
+            painter.translate(device)
+            if not across:
+                painter.rotate(-90.0)
+            sleeve = QRectF(-width / 2, -height / 2, width, height)
+            painter.setPen(QPen(FLYING_LEAD_MARKER_EDGE, 1.0))
+            painter.setBrush(QBrush(FLYING_LEAD_MARKER_FILL))
+            painter.drawRoundedRect(sleeve, 2.0, 2.0)
+            painter.setPen(FLYING_LEAD_MARKER_INK)
+            painter.setFont(font)
+            painter.drawText(sleeve, int(Qt.AlignmentFlag.AlignCenter), text)
+            painter.restore()
+
+    def _paint_flying_leads(self, painter: QPainter) -> None:
+        """The wires leaving a part off the board, drawn as the insulated wire they are.
+
+        In the same dress as an insulated wire on the board (``ConductorItem``): a dark
+        casing under the net's colour, so a sleeve reads as a sleeve. Between the pad and the
+        jacket is the tinned end that went into the hole, and past the edge the wire fades
+        out -- it carries on to the panel, and a wire that simply stopped there would say it
+        ended there.
+        """
+        for number, points in self._flying_lead_routes():
+            colour = self.lead_colours.get(number, CONDUCTOR_STYLE["insulated-wire"][0])
+            pad, first = points[0], points[1]
+            run = math.hypot(first.x() - pad.x(), first.y() - pad.y()) or 1.0
+            jacket_start = QPointF(
+                pad.x() + (first.x() - pad.x()) * FLYING_LEAD_BARE_MM / run,
+                pad.y() + (first.y() - pad.y()) * FLYING_LEAD_BARE_MM / run,
+            )
+            on_board = QPainterPath(jacket_start)
+            for point in points[1:-1]:
+                on_board.lineTo(point)
+            edge, end = points[-2], points[-1]
+
+            core = QPen(LEAD, 0.45)
+            core.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(core)
+            painter.drawLine(pad, jacket_start)
+
+            for pen_colour, width in (
+                (QColor(0, 0, 0, 150), FLYING_LEAD_JACKET_MM + 0.22),
+                (colour, FLYING_LEAD_JACKET_MM),
+            ):
+                pen = QPen(pen_colour, width)
+                pen.setCapStyle(Qt.PenCapStyle.FlatCap)
+                pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+                painter.setPen(pen)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawPath(on_board)
+                # Off the board: the same wire, fading towards the panel it is going to.
+                fade = QLinearGradient(edge, end)
+                fade.setColorAt(0.0, pen_colour)
+                clear = QColor(pen_colour)
+                clear.setAlpha(0)
+                fade.setColorAt(1.0, clear)
+                tail = QPen(QBrush(fade), width)
+                tail.setCapStyle(Qt.PenCapStyle.FlatCap)
+                painter.setPen(tail)
+                painter.drawLine(edge, end)
+        self._paint_lead_markers(painter)
+
     def boundingRect(self) -> QRectF:
         # The top margin has to hold a fixed-pixel-size ref label, which occupies more scene
         # space the further out the view is zoomed (see scenetext.label_extent_mm). Sized for
         # the lowest zoom at which the label is still drawn.
         top = 1.5 + REF_LABEL_PX / 3.0
         body = self._local_outline().boundingRect().adjusted(-1.5, -top, 1.5, 3.0)
+        if not self._leads_rect.isNull():
+            body = body.united(self._leads_rect)
         return body.united(self._names_rect) if not self._names_rect.isNull() else body
 
     def shape(self) -> QPainterPath:
@@ -2571,7 +2782,8 @@ class ComponentItem(QGraphicsItem):
         # questions. So the footprint is hatched rather than drawn: the area is marked as
         # occupied, with none of the component-side detail -- no cathode band, no pin-1
         # notch, no tab -- that would make it read as a part you are looking at.
-        if self.side == "bottom":
+        off_board = self.fp.body.archetype == "flying-leads"
+        if self.side == "bottom" and not off_board:
             painter.save()
             self._apply_local_transform(painter)
             _paint_body_shadow(painter, self.fp, placement, self.isSelected())
@@ -2590,21 +2802,25 @@ class ComponentItem(QGraphicsItem):
                     end = _local_offset_mm(lead.to_x, lead.to_y, self.comp, self.side)
                     painter.drawLine(QPointF(*start), QPointF(*end))
 
+            # A part off the board has no body here to draw -- only its wires, leaving.
+            if off_board:
+                self._paint_flying_leads(painter)
             painter.save()
             self._apply_local_transform(painter)
-            _paint_body(
-                painter,
-                self.fp,
-                placement,
-                style,
-                keyed,
-                self.isSelected(),
-                self.board.pitch,
-                # From the document's own value, so the bands cannot disagree with the
-                # netlist. None for anything that is not a resistor with a readable value.
-                bands=resistor_bands(self.fp, self.comp.value),
-                art=self.art,
-            )
+            if not off_board:
+                _paint_body(
+                    painter,
+                    self.fp,
+                    placement,
+                    style,
+                    keyed,
+                    self.isSelected(),
+                    self.board.pitch,
+                    # From the document's own value, so the bands cannot disagree with the
+                    # netlist. None for anything that is not a resistor with a readable value.
+                    bands=resistor_bands(self.fp, self.comp.value),
+                    art=self.art,
+                )
             if self.show_pin_names:
                 _paint_pin_names(painter, self.pin_names, self.comp, style.accent)
             painter.restore()
@@ -3115,10 +3331,27 @@ class BoardScene(QGraphicsScene):
         names = lay_out_pin_names(self.document, self.lookup, pin_name_width_mm)
         self.reference_layer = ReferenceLayerItem(self)
         self.addItem(self.reference_layer)
+        net_by_pin = {
+            (node.component_ref, node.pin): net for net in self.document.nets for node in net.nodes
+        }
+        colour_names = net_colours(self.document)
         for comp in self.document.components:
             fp = self.lookup(comp.footprint_id)
             if fp is None:
                 continue
+            lead_colours: dict[str, QColor] = {}
+            lead_wires: dict[str, tuple[str, str]] = {}
+            if fp.body.archetype == "flying-leads":
+                for pin in fp.pins:
+                    net = net_by_pin.get((comp.ref, pin.number))
+                    if net is not None:
+                        # By NAME, from the guide's own assignment: the colour a wire is
+                        # drawn in and the colour its tooltip calls it are the cut list's.
+                        name = colour_names.get(net.id, "grey")
+                        lead_colours[pin.number] = _INSULATION_SCREEN.get(
+                            name, CONDUCTOR_STYLE["insulated-wire"][0]
+                        )
+                        lead_wires[pin.number] = (net.name, name)
             item = ComponentItem(
                 comp,
                 fp,
@@ -3127,6 +3360,8 @@ class BoardScene(QGraphicsScene):
                 self.show_pin_names,
                 pin_names=names.labels.get(comp.id, ()),
                 names_left_off=names.left_off.get(comp.id, ()),
+                lead_colours=lead_colours,
+                lead_wires=lead_wires,
             )
             item.show_reference = self.show_references
             self.addItem(item)

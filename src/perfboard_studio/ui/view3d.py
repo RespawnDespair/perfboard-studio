@@ -37,12 +37,14 @@ from perfboard_studio.footprints import (
     wire_entry,
 )
 from perfboard_studio.geometry import (
+    FLYING_LEAD_MARKER_MM,
     all_pin_holes,
     board_edge_margin_mm,
     board_note_centre_mm,
     board_size_mm,
     column_label,
     edge_finger_rect,
+    flying_lead_routes,
     hole_key,
     holes_without_grid_pad,
     legend_strip_mm,
@@ -54,7 +56,13 @@ from perfboard_studio.geometry import (
     transform_offset,
     undrilled_holes,
 )
-from perfboard_studio.guide import Guide, all_steps, document_at_step, step_focus
+from perfboard_studio.guide import (
+    Guide,
+    all_steps,
+    document_at_step,
+    lead_marker,
+    step_focus,
+)
 from perfboard_studio.model import (
     Board,
     BoardSide,
@@ -65,6 +73,7 @@ from perfboard_studio.model import (
     PerfDocument,
     Point2,
     contacts_every_path_hole,
+    pin_name_of,
 )
 from perfboard_studio.occupancy import stacking_layers
 from perfboard_studio.stripboard import cut_holes, segments
@@ -2992,6 +3001,10 @@ _BUILDERS: dict[str, Any] = {
     # Drawn by ``_module_pieces`` from ``_pieces_for``, because its pin names are the
     # PART's and a builder here sees only the body. The box is the fallback's fallback.
     "module-board": _box_pieces,
+    # Drawn by ``_flying_lead_pieces`` from ``build_component``, because its wires leave for
+    # the BOARD's edge and are their nets' colours, and a builder here sees only the body.
+    # Its leads alone, should anything ask for it here.
+    "flying-leads": lambda body: _through_hole_pieces(body, 0.15, radius=WIRE_CORE_RADIUS_MM),
 }
 
 
@@ -3174,21 +3187,194 @@ def _terminal_block_pieces(
     ]
 
 
-def build_component(lookup: FootprintLookup, comp: Any, board: Board) -> list[vtk.vtkActor]:
+def build_component(
+    lookup: FootprintLookup,
+    comp: Any,
+    board: Board,
+    lead_rgbs: dict[str, tuple[float, float, float]] | None = None,
+) -> list[vtk.vtkActor]:
     """Every solid making up one placed component.
 
     A list rather than a single actor because real parts are not one colour: a TO-220 is
     black plastic with a bright metal tab, a pin header is black moulding with gold pins, and
     an electrolytic has a printed stripe. Collapsing those into one actor is what made the
     3D view look like a board full of identical blocks.
+
+    ``lead_rgbs`` colours the wires of a part off the board, pin by pin -- its nets' colours,
+    which only the caller holding the document knows.
     """
     body = _world_body(lookup, comp, board)
     if body is None:
         return []
     footprint = lookup(comp.footprint_id)
     assert footprint is not None  # _world_body already returned None otherwise.
+    if footprint.body.archetype == "flying-leads":
+        pieces = _flying_lead_pieces(body, footprint, comp, board, lead_rgbs or {})
+        actors = [_actor_for(piece) for piece in pieces]
+        return actors + _flying_lead_markers(body, footprint, comp, board)
     pieces = _pieces_for(body, footprint, comp, board)
     return [_actor_for(piece) for piece in pieces]
+
+
+#: How high a part off the board's wires rise before turning for the edge, and how far past
+#: the edge they are drawn, drooping, before the picture lets them go.
+FLYING_LEAD_RISE_MM = 2.5
+FLYING_LEAD_OUT_MM = 12.0
+FLYING_LEAD_DROOP_MM = 4.0
+#: The stripped end standing clear of the pad before the jacket starts -- the tinned wire the
+#: 2D view shows between the pad and the sleeve, so the two views show one wire.
+FLYING_LEAD_BARE_MM = 1.0
+#: How far a wire runs on flat past the edge before it drops away -- long enough to carry
+#: its marker (``FLYING_LEAD_MARKER_MM`` out, as in 2D) on a straight piece of wire.
+FLYING_LEAD_FLAT_MM = 4.5
+#: The marker sleeve: a white heat-shrink band a little fatter than the jacket, with where
+#: the wire goes printed on its top.
+FLYING_LEAD_MARKER_RGB = (0.92, 0.91, 0.88)
+FLYING_LEAD_MARKER_INK_RGB = (0.07, 0.08, 0.09)
+FLYING_LEAD_MARKER_TEXT_MM = 0.75
+
+
+def _flying_lead_paths(
+    body: _WorldBody, footprint: Footprint, comp: Any, board: Board
+) -> list[tuple[str, list[tuple[float, float, float]]]]:
+    """Each wire's centreline, pin by pin: up out of its pad, along the route
+    ``geometry.flying_lead_routes`` gives the 2D view as well -- to the edge, in lanes where
+    a row points at it -- and down off the board past the edge.
+
+    ``body`` is not read: the routes come from the part and the board, which is what keeps
+    this and the 2D wire one wire.
+    """
+    del body
+    rise = FLYING_LEAD_RISE_MM
+    paths: list[tuple[str, list[tuple[float, float, float]]]] = []
+    for number, points in flying_lead_routes(comp, footprint, board, FLYING_LEAD_OUT_MM):
+        # The world counts rows up-negative; the routes are in the board's own frame.
+        world = [(point.x, -point.y) for point in points]
+        (edge_x, edge_y), (end_x, end_y) = world[-2], world[-1]
+        run = math.hypot(end_x - edge_x, end_y - edge_y) or 1.0
+        dx, dy = (end_x - edge_x) / run, (end_y - edge_y) / run
+        path = [(world[0][0], world[0][1], FLYING_LEAD_BARE_MM)]
+        path += [(x, y, rise) for x, y in world[:-1]]
+        # On flat for the marker, then away.
+        path.append((edge_x + dx * FLYING_LEAD_FLAT_MM, edge_y + dy * FLYING_LEAD_FLAT_MM, rise))
+        path.append((end_x, end_y, rise - FLYING_LEAD_DROOP_MM))
+        paths.append((number, path))
+    return paths
+
+
+def _flying_lead_markers(
+    body: _WorldBody, footprint: Footprint, comp: Any, board: Board
+) -> list[vtk.vtkActor]:
+    """The marker on each wire, where the 2D view puts it: a sleeve ``FLYING_LEAD_MARKER_MM``
+    past the edge, with ``guide.lead_marker``'s text -- "RV1·2" -- printed along its top.
+
+    The sleeves are solids and are always drawn. The print is a Qt decal, so a bare engine
+    test with no Qt application gets the sleeves alone, as it gets pin names as glyphs.
+    """
+    names = {pin.number: pin_name_of(comp, pin) for pin in footprint.pins}
+    rise = FLYING_LEAD_RISE_MM
+    actors: list[vtk.vtkActor] = []
+    for number, path in _flying_lead_paths(body, footprint, comp, board):
+        (edge_x, edge_y, _z), (flat_x, flat_y, _z2) = path[-3], path[-2]
+        run = math.hypot(flat_x - edge_x, flat_y - edge_y) or 1.0
+        dx, dy = (flat_x - edge_x) / run, (flat_y - edge_y) / run
+        x = edge_x + dx * FLYING_LEAD_MARKER_MM
+        y = edge_y + dy * FLYING_LEAD_MARKER_MM
+        along_x = abs(dx) >= abs(dy)
+        text = lead_marker(comp.ref, number, names.get(number))
+        decal = _label_decal(
+            text,
+            FLYING_LEAD_MARKER_TEXT_MM,
+            ink=FLYING_LEAD_MARKER_INK_RGB,
+            ground=None,
+            bold=True,
+        )
+        text_mm = decal[1] if decal is not None else 2.5
+        radius = INSULATED_RADIUS_MM + 0.2
+        sleeve = _Piece(
+            source=_cylinder(radius, text_mm + 0.8, 24),
+            rgb=FLYING_LEAD_MARKER_RGB,
+            position=(x, y, rise),
+            orientation=_ALONG_X if along_x else _ALONG_Y,
+            material=SLEEVE,
+        )
+        actors.append(_actor_for(sleeve))
+        if decal is None:
+            continue
+        texture, width, height = decal
+        plane = vtk.vtkPlaneSource()
+        plane.SetOrigin(-width / 2, -height / 2, 0.0)
+        plane.SetPoint1(width / 2, -height / 2, 0.0)
+        plane.SetPoint2(-width / 2, height / 2, 0.0)
+        frame = vtk.vtkTransform()
+        frame.Translate(x, y, rise + radius + _DECAL_PROUD_MM)
+        if not along_x:
+            frame.RotateZ(90.0)
+        placed = vtk.vtkTransformPolyDataFilter()
+        placed.SetTransform(frame)
+        placed.SetInputConnection(plane.GetOutputPort())
+        placed.Update()
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputData(placed.GetOutput())
+        actor = vtk.vtkActor()
+        actor.SetMapper(mapper)
+        actor.SetTexture(texture)
+        actor.GetProperty().LightingOff()
+        actors.append(actor)
+    return actors
+
+
+def _flying_lead_pieces(
+    body: _WorldBody,
+    footprint: Footprint,
+    comp: Any,
+    board: Board,
+    lead_rgbs: dict[str, tuple[float, float, float]],
+) -> list[_Piece]:
+    """The wires to a part that is not on the board, along ``_flying_lead_paths``.
+
+    There is no body: the part is on the panel, and the board's half of it is the tinned
+    end in each hole and the jacket leaving. Each wire is its net's colour, as the cut list
+    and the 2D view give it.
+    """
+    pieces: list[_Piece] = [
+        _Piece(
+            source=_tube_source(_rounded(path, WIRE_BEND_RADIUS_MM * 2), INSULATED_RADIUS_MM),
+            rgb=lead_rgbs.get(number, _insulation_rgb(None, 0)),
+            position=(0.0, 0.0, 0.0),
+            material=INSULATION,
+        )
+        for number, path in _flying_lead_paths(body, footprint, comp, board)
+    ]
+    # The stripped, tinned end of each wire: out of the jacket, down its hole and trimmed on
+    # the solder side.
+    pieces.extend(
+        _through_hole_pieces(body, FLYING_LEAD_BARE_MM + 0.1, radius=WIRE_CORE_RADIUS_MM)
+    )
+    return pieces
+
+
+def _tube_source(centreline: list[tuple[float, float, float]], radius: float) -> Any:
+    """A capped tube along ``centreline``, as a filter the piece holds -- not a connection to
+    a local that dies here (see ``_upright_cylinder``)."""
+    points = vtk.vtkPoints()
+    line = vtk.vtkPolyLine()
+    line.GetPointIds().SetNumberOfIds(len(centreline))
+    for i, (x, y, z) in enumerate(centreline):
+        points.InsertNextPoint(x, y, z)
+        line.GetPointIds().SetId(i, i)
+    cells = vtk.vtkCellArray()
+    cells.InsertNextCell(line)
+    poly = vtk.vtkPolyData()
+    poly.SetPoints(points)
+    poly.SetLines(cells)
+    tube = vtk.vtkTubeFilter()
+    tube.SetInputData(poly)
+    tube.SetRadius(radius)
+    tube.SetNumberOfSides(TUBE_SIDES)
+    tube.CappingOn()
+    tube.Update()
+    return tube
 
 
 def _barrel_of(model: PartModel) -> tuple[float, float, float] | None:
@@ -5124,6 +5310,28 @@ def wire_rgb(
     return BARE_RGB
 
 
+def _flying_lead_colours(
+    doc: PerfDocument, lookup: FootprintLookup
+) -> dict[str, dict[str, tuple[float, float, float]]]:
+    """Component id -> pin -> the colour of the wire to it, for every part off the board:
+    its net's sleeve colour, the convention the cut list and the 2D view use."""
+    net_class_by_id, signal_index = net_colouring(doc)
+    net_by_pin = {(node.component_ref, node.pin): net for net in doc.nets for node in net.nodes}
+    colours: dict[str, dict[str, tuple[float, float, float]]] = {}
+    for comp in doc.components:
+        footprint = lookup(comp.footprint_id)
+        if footprint is None or footprint.body.archetype != "flying-leads":
+            continue
+        colours[comp.id] = {
+            pin.number: _insulation_rgb(
+                net_class_by_id.get(net.id), signal_index.get(net.id, 0)
+            )
+            for pin in footprint.pins
+            if (net := net_by_pin.get((comp.ref, pin.number))) is not None
+        }
+    return colours
+
+
 def net_colouring(doc: PerfDocument) -> tuple[dict[str, NetClass], dict[str, int]]:
     """Each net's class, and each signal net's place in the colour cycle -- what
     :func:`wire_rgb` needs to know about the net a wire is on, worked out once a board."""
@@ -5345,9 +5553,10 @@ def populate_renderer(
         from .scenetext import pin_name_width_mm
 
         printed = lay_out_pin_names(doc, lookup, pin_name_width_mm)
+    lead_colours = _flying_lead_colours(doc, lookup)
     for comp in doc.components:
         subject = highlight is not None and comp.id == highlight
-        for actor in build_component(lookup, comp, board):
+        for actor in build_component(lookup, comp, board, lead_colours.get(comp.id)):
             _lift(actor, exploded_mm)
             if highlight is not None:
                 (_pick_out if subject else _dim)(actor)

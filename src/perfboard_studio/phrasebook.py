@@ -137,6 +137,10 @@ NAME_TEMPLATES: tuple[str, ...] = (
     "Custom part, {0} pins, {1} mm, body offset {2} mm",
     "Custom part, {0} pins, {1} mm",
     "Module, {0} pins, {1} mm, seated {2} mm up",
+    "Flying leads, {0} wires to a part off the board, {1} mm",
+    "Flying leads, {0} wires to a part off the board",
+    "Flying leads, 1 wire to a part off the board, {0} mm",
+    "Flying leads, 1 wire to a part off the board",
 )
 
 #: What a field may hold: a number, a size like "15x10x8" or "5 x 3", an offset pair
@@ -215,6 +219,11 @@ TURKISH: dict[str, str] = {
     ),
     "Insulated wire, which may cross anything already on the solder side.": (
         "Lehim yüzünde zaten olan her şeyin üzerinden geçebilen izoleli tel."
+    ),
+    "Then the wires to the parts off the board: into their pads here first, then to the "
+    "parts themselves once they are mounted.": (
+        "Ardından kart dışındaki parçaların telleri: önce buradaki pedlerine, sonra parçalar "
+        "yerine takılınca parçaların kendisine."
     ),
     "Fit the ICs, run the final checks, and power up under current limit.": (
         "Entegreleri tak, son kontrolleri yap ve akım sınırı altında enerji ver."
@@ -302,6 +311,27 @@ TURKISH: dict[str, str] = {
         "Kablolar YUKARIDAN girer: bu kısım başlıktır, vidalı fiş bunun içine aşağı doğru "
         "itilir. Üstünü fiş ve tornavida için boş bırak."
     ),
+    "{ref} is not on this board: it is mounted off it, on the panel or in the enclosure, "
+    "and these pads are where its wires land. Solder a wire into each pad from the "
+    "component side and lead them all out over the {side} edge.": (
+        "{ref} bu kartın üzerinde değil: kartın dışında, panelde ya da kutunun içinde duruyor; "
+        "bu pedler tellerinin geldiği yer. Her pede komponent yüzünden bir tel lehimle ve "
+        "hepsini {side} kenardan dışarı çıkar."
+    ),
+    "{hole} to {lead}": "{hole} → {lead}",
+    "{hole} to {lead} — {net}, {colour} wire": "{hole} → {lead} — {net}, {colour} tel",
+    "Wire by wire: {pairs}.": "Tel tel: {pairs}.",
+    "Cut each wire {length:g} mm and strip {strip:g} mm at both ends.": (
+        "Her teli {length:g} mm kes ve iki ucundan {strip:g} mm soy."
+    ),
+    "Cut each wire long enough to reach {ref} where it is mounted, with enough slack to "
+    "open the enclosure, and strip {strip:g} mm at both ends.": (
+        "Her teli {ref} parçasının takıldığı yere uzanacak, kutuyu açmaya yetecek kadar pay "
+        "bırakarak kes ve iki ucundan {strip:g} mm soy."
+    ),
+    "{lead}: the wire in {hole}": "{lead}: {hole} deliğindeki tel",
+    "{hole}, 1 wire": "{hole}, 1 tel",
+    "{start} → {end}, {count} wires": "{start} → {end}, {count} tel",
     "Solder the female header strips here, not the module: it plugs in last, after the "
     "power-up checks, and can come out again. Seat each strip square on the board before "
     "soldering its end pins.": (
@@ -514,6 +544,11 @@ TURKISH: dict[str, str] = {
     "Hookup wire, AWG {gauges} in {colours} — about {metres:.2f} m in total": (
         "Bağlantı teli, AWG {gauges}, renkler: {colours} — toplam yaklaşık {metres:.2f} m"
     ),
+    "Hookup wire, AWG {gauges} in {colours} — about {metres:.2f} m, plus the wires to the "
+    "parts off the board, cut to fit": (
+        "Bağlantı teli, AWG {gauges}, renkler: {colours} — yaklaşık {metres:.2f} m, artı "
+        "kart dışındaki parçaların telleri, ölçüye göre kesilir"
+    ),
     "Bare tinned copper wire, AWG {gauges} — about {metres:.2f} m in total": (
         "Çıplak kalaylı bakır tel, AWG {gauges} — toplam yaklaşık {metres:.2f} m"
     ),
@@ -661,6 +696,9 @@ TURKISH: dict[str, str] = {
     "AWG": "AWG",
     "Colour": "Renk",
     "trace spine": "yol omurgası",
+    "wire off the board": "kart dışı tel",
+    "{count} wire(s) to parts off the board": "kart dışı parçalara {count} tel",
+    "cut to fit": "ölçüye göre kes",
     "bare wire": "çıplak tel",
     "insulated wire": "izoleli tel",
     "{gauge:g} mm, laid along {pads} pads": "{gauge:g} mm, {pads} ped boyunca",
@@ -748,7 +786,16 @@ TURKISH: dict[str, str] = {
     "box-header": "IDC başlık",
     "screw-terminal-vertical": "dik klemens",
     "module-board": "modül",
+    "flying-leads": "kart dışı parça",
     # -- footprint names (NAME_TEMPLATES) -------------------------------------------------
+    "Flying leads, {0} wires to a part off the board, {1} mm": (
+        "Kart dışındaki bir parçaya {0} tel, {1} mm"
+    ),
+    "Flying leads, {0} wires to a part off the board": "Kart dışındaki bir parçaya {0} tel",
+    "Flying leads, 1 wire to a part off the board, {0} mm": (
+        "Kart dışındaki bir parçaya 1 tel, {0} mm"
+    ),
+    "Flying leads, 1 wire to a part off the board": "Kart dışındaki bir parçaya 1 tel",
     "Resistor (axial, {0}-hole span)": "Direnç (eksenel, {0} delik açıklık)",
     "Axial ({0}-hole span, {1} mm body)": "Eksenel ({0} delik açıklık, {1} mm gövde)",
     "Diode, {0}": "Diyot, {0}",

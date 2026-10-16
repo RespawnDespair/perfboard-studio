@@ -310,6 +310,12 @@ BodyArchetype: TypeAlias = Literal[  # noqa: UP040
     # straight in on its own pins. The pins are the only part of it on this board's grid;
     # everything else is the module's board, lifted clear by its seat.
     "module-board",
+    # A part that is NOT on this board -- a pot or a jack on the panel, a footswitch, a DC
+    # socket, a speaker -- and the row of pads its wires are soldered into. Those pads are
+    # all of it this board ever sees, so they are its footprint: every module that reads
+    # pins (connectivity, LVS, the router, the placer, DRC) takes it as it takes any part.
+    # What it IS lives on the part, in its value, its pin names and its declared symbol.
+    "flying-leads",
 ]
 
 #: Archetypes that get hot enough to matter to a neighbour.
@@ -389,6 +395,11 @@ type ComponentId = str
 #: signal diode and a PTC fuse is a disc, so the package draws them as a diode and as a
 #: capacitor; the declaration is the only thing that can say otherwise.
 #:
+#: The last two are the same shape of claim for a part that is not on the board at all. A
+#: pot on the panel is three ``flying-leads`` pads here, which draw as a box; the part
+#: declaring itself a potentiometer -- or an LED, once its leads are named A and K -- is
+#: what keeps its symbol on the sheet.
+#:
 #: Spelled with ``TypeAlias`` because persist and the MCP server read it at run time with
 #: ``get_args`` -- the trap this file documents above ``BodyArchetype``.
 PartSymbol: TypeAlias = Literal[  # noqa: UP040
@@ -398,6 +409,8 @@ PartSymbol: TypeAlias = Literal[  # noqa: UP040
     "pmos",
     "zener",
     "fuse",
+    "potentiometer",
+    "led",
 ]
 
 #: Pin number -> the name the part's datasheet gives that lead, in pin order.

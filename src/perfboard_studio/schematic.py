@@ -1373,7 +1373,18 @@ DECLARED_SYMBOL_PINS: dict[PartSymbol, frozenset[str]] = {
     "pmos": frozenset({"G", "D", "S"}),
     "zener": frozenset(),
     "fuse": frozenset(),
+    # Three lugs, the middle one the wiper, as ``_potentiometer_body`` already assumes of
+    # every pot -- the declaration only says it IS one.
+    "potentiometer": frozenset(),
+    # Which leg is the anode is the one thing an LED symbol says, so it has to be named.
+    "led": frozenset({"A", "K"}),
 }
+
+#: How many leads a declared symbol with no names to check must have.
+_DECLARED_LEADS: dict[PartSymbol, int] = {"potentiometer": 3}
+
+
+_LEAD_COUNT_WORDS: dict[int, str] = {2: "two", 3: "three"}
 
 
 def declared_symbol_kind(
@@ -1396,8 +1407,9 @@ def declared_symbol_kind(
                 f"named {wanted}"
             )
         return symbol, None
-    if len(pins) != 2:
-        return None, f"declared {symbol}, but a {symbol} has two leads"
+    leads = _DECLARED_LEADS.get(symbol, 2)
+    if len(pins) != leads:
+        return None, f"declared {symbol}, but a {symbol} has {_LEAD_COUNT_WORDS[leads]} leads"
     if symbol == "zener":
         polarised = footprint.polarized if footprint is not None else False
         if _cathode_pin_number(pins, polarised) is None:
@@ -1699,6 +1711,10 @@ _KIND_BY_ARCHETYPE: dict[BodyArchetype, SymbolKind] = {
     "screw-terminal-vertical": "connector",
     # A box whose pins carry the module's own names, when the part declares them.
     "module-board": "box",
+    # A part off the board, drawn as what it IS when it says (``PartSymbol``) and as a box
+    # with its lugs named otherwise: the pads are not the part, and a connector symbol would
+    # draw a jack and a footswitch as the same row of pins.
+    "flying-leads": "box",
 }
 
 _TWO_TERMINAL_KINDS: frozenset[SymbolKind] = frozenset(

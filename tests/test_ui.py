@@ -791,6 +791,125 @@ def _one_part_board(footprint_id: str, ref: str = "U1", col: int = 4, row: int =
     return bus.document
 
 
+def test_a_part_off_the_board_is_drawn_as_its_wires_leaving_over_the_nearest_edge() -> None:
+    """No body -- the part is on the panel -- and both views draw the same wires:
+    ``geometry.flying_lead_routes``, from the pads over the nearest edge and past it. In 2D
+    the item's bounds must hold the wires too, or a drag leaves them smeared behind it."""
+    from perfboard_studio.geometry import flying_lead_routes, substrate_edges_mm
+    from perfboard_studio.ui import view3d
+    from perfboard_studio.ui.view2d import FLYING_LEAD_PAST_EDGE_MM, ComponentItem
+
+    document = _one_part_board("wire-3", ref="RV1", col=10, row=0)
+    component = document.components[0]
+    footprint = footprint_lookup()("wire-3")
+    assert footprint is not None
+    top_edge = substrate_edges_mm(document.board).min_y
+
+    item = ComponentItem(component, footprint, document.board, "top")
+    routes = item._flying_lead_routes()
+    assert len(routes) == 3
+    origin = item.pos()
+    for _number, points in routes:
+        # Straight up and past the top edge, by as much as the scene's margin can show.
+        assert all(point.x() == pytest.approx(points[0].x()) for point in points)
+        assert points[-1].y() + origin.y() == pytest.approx(top_edge - FLYING_LEAD_PAST_EDGE_MM)
+        assert all(item.boundingRect().contains(point) for point in points)
+    # The solder side shows the pads and nothing leaving them: the wires are on the far face.
+    assert ComponentItem(component, footprint, document.board, "bottom")._flying_lead_routes() == []
+
+    # 3D lays the same wire: its plan is the 2D route, only longer past the edge.
+    body = view3d._world_body(footprint_lookup(), component, document.board)
+    assert body is not None
+    plan = dict(flying_lead_routes(component, footprint, document.board, 0.0))
+    for number, path in view3d._flying_lead_paths(body, footprint, component, document.board):
+        assert (path[2][0], -path[2][1]) == pytest.approx((plan[number][-1].x, plan[number][-1].y))
+
+    black = (0.1, 0.1, 0.1)
+    actors = view3d.build_component(
+        footprint_lookup(), component, document.board, {"1": black}
+    )
+    assert max(actor.GetBounds()[3] for actor in actors) > -top_edge + 5
+    # The colour reaches the shader as albedo, not as the sRGB it was picked in.
+    wanted = tuple(view3d._to_linear(c) for c in black)
+    assert any(actor.GetProperty().GetColor() == pytest.approx(wanted) for actor in actors)
+
+
+def test_a_wire_to_a_part_off_the_board_says_where_it_goes() -> None:
+    """In both views each wire carries its marker -- "RV1·2" -- at the same place past the
+    edge, and the 2D tooltip lists every wire as the guide's step does: pad, the lead at the
+    other end, its net and the colour it is cut in."""
+    from PySide6.QtCore import QPointF
+
+    from perfboard_studio.command import CommandBus, CommandContext
+    from perfboard_studio.commands import (
+        AddNetPayload,
+        create_document_id_generator,
+        create_standard_registry,
+    )
+    from perfboard_studio.geometry import FLYING_LEAD_MARKER_MM, substrate_edges_mm
+    from perfboard_studio.model import NetNode
+    from perfboard_studio.ui import view3d
+    from perfboard_studio.ui.view2d import BoardScene
+
+    document = _one_part_board("wire-3", ref="RV1", col=10, row=0)
+    component = document.components[0]
+    bus = CommandBus(
+        document,
+        create_standard_registry(),
+        CommandContext(next_id=create_document_id_generator(document)),
+    )
+    assert bus.dispatch(
+        "net.add",
+        AddNetPayload(
+            name="GND", net_class="ground", nodes=(NetNode(component_ref="RV1", pin="1"),)
+        ),
+    ).ok
+    document = bus.document
+
+    scene = BoardScene(document, footprint_lookup(), side="top")
+    item = scene.component_items[component.id]
+    markers = item._lead_markers()
+    assert [marker[0] for marker in markers] == ["RV1·1", "RV1·2", "RV1·3"]
+    top = substrate_edges_mm(document.board).min_y
+    for _text, centre, across, _direction in markers:
+        assert not across  # the wires run up the screen, so the text does too
+        assert (centre + item.pos()).y() == pytest.approx(top - FLYING_LEAD_MARKER_MM)
+    tip = item.toolTip()
+    assert "K1 → RV1 pin 1 · GND · black" in tip
+    assert "L1 → RV1 pin 2" in tip
+    assert isinstance(markers[0][1], QPointF)
+
+    # 3D: a sleeve per wire and, with Qt to draw it, its print on top.
+    actors = view3d.build_component(footprint_lookup(), component, document.board)
+    sleeves = [
+        actor
+        for actor in actors
+        if actor.GetProperty().GetColor()
+        == pytest.approx(tuple(view3d._to_linear(c) for c in view3d.FLYING_LEAD_MARKER_RGB))
+    ]
+    printed = [actor for actor in actors if actor.GetTexture() is not None]
+    assert len(sleeves) == 3 and len(printed) == 3
+
+
+def test_wires_in_line_with_their_edge_are_laid_side_by_side() -> None:
+    """A row of pads pointing at the edge it leaves over: seen from above, every wire would
+    lie on the ones nearer the edge. Each steps into its own lane instead, more than a
+    jacket's width from the next, in 2D and 3D alike."""
+    from perfboard_studio.ui import view3d
+
+    document = _one_part_board("wire-3", ref="J1", col=0, row=10)
+    component = document.components[0]
+    footprint = footprint_lookup()("wire-3")
+    assert footprint is not None
+    body = view3d._world_body(footprint_lookup(), component, document.board)
+    assert body is not None
+    paths = dict(view3d._flying_lead_paths(body, footprint, component, document.board))
+    # Leaving over the left edge, each wire's run along the board is at its own height on
+    # the board -- its lane -- and the lanes are further apart than two jackets are wide.
+    lanes = sorted(paths[number][-2][1] for number in ("1", "2", "3"))
+    assert all(b - a > 2 * view3d.INSULATED_RADIUS_MM for a, b in itertools.pairwise(lanes))
+
+
 def test_a_package_with_a_model_is_drawn_from_it_and_one_without_is_generated() -> None:
     """The fallback is the whole reason borrowing is safe: a footprint nobody mapped, or a
     part asked for by a generated id, draws exactly as it did before."""
@@ -8546,8 +8665,28 @@ def test_a_right_click_on_a_symbol_offers_the_part() -> None:
         "&Properties…",
         "Re&name…",
         "D&uplicate",
+        "&Mount on the Panel",
         "&Remove from the Design",
     ]
+    _close(window)
+
+
+def test_mounting_a_symbol_on_the_panel_is_one_step_that_keeps_what_it_is() -> None:
+    """The sheet's door to taking a part off the board: an LED becomes two pads that still
+    know which is the anode and a symbol that is still an LED, in one undo step -- and a part
+    already off the board is not offered it again."""
+    window = _blank_window()
+    _add(window, "LED1", "led-5mm", "red")
+    steps = len(window.bus.history())
+
+    assert window.mount_off_board("LED1")
+    part = next(p for p in window.bus.document.parts if p.ref == "LED1")
+    assert part.footprint_id == "wire-2"
+    assert part.pin_names == (("1", "A"), ("2", "K"))
+    assert part.symbol == "led"
+    assert len(window.bus.history()) == steps + 1
+    window._refresh_schematic_panel()
+    assert "&Mount on the Panel" not in _labels(window.sheet_menu(_over(window, "LED1")))
     _close(window)
 
 

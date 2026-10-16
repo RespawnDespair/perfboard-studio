@@ -58,10 +58,16 @@ from .model import (
     STANDARD_PITCH_MM,
     BodyArchetype,
     BodySpec,
+    ComponentInstance,
     Footprint,
     FootprintPin,
     Mm,
+    PartSymbol,
+    PinNames,
     Point2,
+    SchematicPart,
+    normalized_pin_names,
+    pin_name_of,
 )
 
 # ---------------------------------------------------------------------------
@@ -781,6 +787,165 @@ def vertical_screw_terminal_footprint(
 
 
 # ---------------------------------------------------------------------------
+# Flying leads: a part that is not on this board
+# ---------------------------------------------------------------------------
+#
+# A pot on the panel, a jack, a footswitch, a DC socket, a speaker: none of them sits on the
+# perfboard, and every one of them is wired to it. What the BOARD has of such a part is a row
+# of pads with a wire soldered into each, so that row is the part's footprint -- exactly as
+# KiCad assigns a ``Connector_Wire:SolderWire`` footprint to a panel pot's symbol. Nothing
+# downstream needed to learn anything: the pads are pins, so connectivity, LVS, the router,
+# the placer and DRC treat the part as they treat any other, and its nets are checked all
+# the way to the pads its wires land in.
+#
+# What the part IS -- a 100k log pot, a 6.35 mm jack -- is on the part (its value, its pin
+# names, its declared symbol), because the package here cannot say; that is
+# ``model.PartSymbol``'s whole reason to exist.
+
+#: How tall the wires stand where they leave the pads: a jacketed wire soldered in from the
+#: component side and bent over towards the edge. An estimate, and only ever compared with a
+#: height limit and with the heights of the other parts in phase 7.
+FLYING_LEADS_HEIGHT_MM: Mm = 3.0
+#: The tinned end of a 22-24 AWG stranded wire, which is what goes through the hole.
+FLYING_LEAD_DIAMETER_MM: Mm = 0.6
+#: The shortest and longest wire an id may ask for, in whole millimetres.
+FLYING_LEAD_MIN_MM = 10
+FLYING_LEAD_MAX_MM = 3000
+
+
+def flying_leads_footprint(
+    *,
+    wires: int,
+    step: int = 1,
+    length_mm: int | None = None,
+    id: str | None = None,
+    name: str | None = None,
+) -> Footprint:
+    """The pads a part off the board is wired into: ``wires`` in a row, ``step`` holes apart.
+
+    Pin N is the pad the wire from the part's lead N lands in, so the netlist's numbers are
+    the part's own and nothing is renumbered. ``length_mm`` is how long each wire is cut, when
+    somebody knows -- it is a fact about the enclosure, not the board, and ``None`` makes the
+    guide say "cut to fit" rather than invent a number.
+    """
+    if not isinstance(wires, int) or wires < 1:
+        raise ValueError(f"flying_leads_footprint: wires must be an integer >= 1 (got {wires}).")
+    if not isinstance(step, int) or not 1 <= step <= _MAX_STEP_HOLES:
+        raise ValueError(f"flying_leads_footprint: step must be 1..{_MAX_STEP_HOLES} (got {step}).")
+    if length_mm is not None and not FLYING_LEAD_MIN_MM <= length_mm <= FLYING_LEAD_MAX_MM:
+        raise ValueError(
+            f"flying_leads_footprint: length must be {FLYING_LEAD_MIN_MM}.."
+            f"{FLYING_LEAD_MAX_MM} mm (got {length_mm})."
+        )
+    pins = tuple(_make_pin(str(i + 1), i * step, 0) for i in range(wires))
+    outline = _rect_outline(_to_mm(pins), 0, 0, COURTYARD_MARGIN_MM)
+    span_mm = (wires - 1) * step * STANDARD_PITCH_MM
+    fp_id = id if id is not None else (
+        f"wire-{wires}"
+        + (f"-p{step}" if step != 1 else "")
+        + (f"-l{length_mm}" if length_mm is not None else "")
+    )
+    if name is None:
+        name = f"Flying leads, {wires} {'wire' if wires == 1 else 'wires'} to a part off the board"
+        if length_mm is not None:
+            name += f", {length_mm} mm"
+    return Footprint(
+        id=fp_id,
+        name=name,
+        pins=pins,
+        body_outline=outline,
+        body_height=FLYING_LEADS_HEIGHT_MM,
+        body=BodySpec(
+            archetype="flying-leads",
+            dims={
+                "length": span_mm + STANDARD_PITCH_MM,
+                "width": STANDARD_PITCH_MM,
+                "height": FLYING_LEADS_HEIGHT_MM,
+                # Only when known, so a footprint without one carries no key saying zero.
+                **({"wireLength": float(length_mm)} if length_mm is not None else {}),
+            },
+        ),
+        lead_diameter=FLYING_LEAD_DIAMETER_MM,
+        polarized=False,
+    )
+
+
+def flying_lead_length_mm(footprint: Footprint) -> Mm | None:
+    """How long a flying-leads footprint's wires are cut, or ``None`` when it does not say."""
+    if footprint.body.archetype != "flying-leads":
+        return None
+    return footprint.body.dims.get("wireLength")
+
+
+#: The symbol a package draws a part as, for the packages whose symbol a declaration can keep
+#: drawing once the part is off the board. Anything else was a box or a connector there too.
+_SYMBOL_KEPT_OFF_BOARD: dict[BodyArchetype, PartSymbol] = {
+    "potentiometer": "potentiometer",
+    "led-round": "led",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class OffBoardMount:
+    """What a part becomes when it is taken off the board and wired to it instead."""
+
+    footprint_id: str
+    pin_names: PinNames
+    symbol: PartSymbol | None
+
+
+def off_board_mount(
+    part: ComponentInstance | SchematicPart, footprint: Footprint
+) -> OffBoardMount:
+    """The same part, off the board: its pads, and everything its package used to say.
+
+    A package knows things the pads do not -- an LED's ``A`` and ``K``, an electrolytic's
+    ``+`` -- and a pot's package is what drew it as a pot. Swapping the footprint alone would
+    throw all of that away and leave a part whose polarity nobody can read any more, so the
+    names the package gave the leads become the part's own (its declared ones still win),
+    and the symbol the package drew becomes a declared one where ``PartSymbol`` has it.
+
+    Where the package's pins already stand in one row, evenly spaced and in number order --
+    a pot, a resistor, an LED, a header -- the pads keep their spacing, so on a placed part
+    every pad lands in the hole its pin was in and the copper on the board still reaches it.
+
+    Raises ``ValueError`` for a part whose pins are not numbered 1 to N: pad N carries the
+    wire from lead N, and a relay numbered 1, 2, 3, 5, 6 has no row of pads that says so.
+    """
+    numbers = [pin.number for pin in footprint.pins]
+    if numbers != [str(n) for n in range(1, len(numbers) + 1)]:
+        raise ValueError(
+            f"{part.ref}'s pins are not numbered 1 to {len(numbers)}, so there is no row of "
+            "pads that keeps each wire on its own number."
+        )
+    if footprint.body.archetype == "flying-leads":
+        return OffBoardMount(footprint.id, part.pin_names, part.symbol)
+    names = {pin.number: name for pin in footprint.pins if (name := pin_name_of(part, pin))}
+    symbol = part.symbol
+    if symbol is None:
+        symbol = _SYMBOL_KEPT_OFF_BOARD.get(footprint.body.archetype)
+    return OffBoardMount(
+        footprint_id=flying_leads_footprint(
+            wires=len(numbers), step=_row_step(footprint.pins)
+        ).id,
+        pin_names=normalized_pin_names(names),
+        symbol=symbol,
+    )
+
+
+def _row_step(pins: tuple[FootprintPin, ...]) -> int:
+    """The spacing of pins that run along row 0 from the anchor, evenly; 1 for anything else."""
+    if len(pins) < 2 or any(pin.d_row != 0 for pin in pins):
+        return 1
+    step = pins[1].d_col
+    if not 1 <= step <= _MAX_STEP_HOLES:
+        return 1
+    if all(pin.d_col == index * step for index, pin in enumerate(pins)):
+        return step
+    return 1
+
+
+# ---------------------------------------------------------------------------
 # Potentiometer
 # ---------------------------------------------------------------------------
 
@@ -1423,6 +1588,11 @@ most two decimals and are written without units.
   sw-tactile-6x6 | sw-tactile-12x12                     a 4-leg push button as made: pins
                                                         1 and 2 are the switched pair, 3 and
                                                         4 are joined inside to 1 and 2
+  wire-<n>[-p<step>][-l<L>]                             a part that is NOT on the board -- a
+                                                        pot or jack on the panel -- as the n
+                                                        pads its wires are soldered into,
+                                                        <step> holes apart, each wire cut L
+                                                        whole mm long when that is known
 
 box-8x2-p1-r3-20.32x7.62x4 is a 16-pin module on a 0.1 inch grid, two rows three holes
 apart. box-6x1-p1-r1-16x14.5x7-o0x6 is a 16 x 14.5 mm breakout whose one row of six pins
@@ -1430,7 +1600,9 @@ runs along an edge: its body sits 6 mm down the rows from the pins' centre. The 
 signed, left out when it is zero, and moves the body on the part as it is turned.
 mod-2x19-p10-r1-27.94x54.3x3.5-s8.5-o0x-3 is an ESP32-DevKitC in female headers: two
 columns of 19 pins ten holes apart, its 27.94 x 54.3 mm board 8.5 mm up. idc-2x8
-is a 16-pin box header, numbered like hdr-2x8 with the key slot on the pin-1 row. Lead
+is a 16-pin box header, numbered like hdr-2x8 with the key slot on the pin-1 row.
+wire-3-l150 is a panel pot's three wires, 150 mm each, landing in three pads side by side;
+give the part its value and pin names, and declare it a potentiometer. Lead
 diameter is not in the grammar: it is a manufacturing detail with a sensible default per
 family, and putting it in every id would make every id unreadable."""
 
@@ -1557,6 +1729,16 @@ _GENERATED: tuple[tuple[re.Pattern[str], Callable[[re.Match[str]], Footprint]], 
         re.compile(r"^sw-tactile-(\d+x\d+)$"),
         lambda m: push_button_footprint(size=m[1]),
     ),
+    (
+        re.compile(r"^wire-(\d+)(?:-p(\d+))?(?:-l(\d+))?$"),
+        lambda m: flying_leads_footprint(
+            wires=_grid(m[1]),
+            # "-p1" builds the default and is then refused by the id comparison in
+            # generated_footprint: the default step is spelled by leaving it out.
+            step=_step(m[2]) if m[2] is not None else 1,
+            length_mm=int(m[3]) if m[3] is not None else None,
+        ),
+    ),
 )
 
 
@@ -1678,6 +1860,8 @@ BODY_DIM_KEYS: dict[BodyArchetype, tuple[str, str, Literal["x", "y"]]] = {
     "screw-terminal-vertical": ("length", "width", "x"),
     # The module's own board, named as a box's body is: width along the columns.
     "module-board": ("width", "depth", "x"),
+    # The row of pads and a pitch round them, as a single-row header's moulding is.
+    "flying-leads": ("length", "width", "x"),
 }
 
 

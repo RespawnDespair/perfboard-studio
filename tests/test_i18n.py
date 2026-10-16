@@ -380,8 +380,8 @@ def test_no_two_entries_in_a_menu_claim_the_same_accelerator() -> None:
         # appears depends on which list the part is in, and a letter that moved with it
         # would be a letter nobody could learn.
         "sheet symbol": ["&Disconnect {pin} from {net}", "&Properties…", "Re&name…",
-                         "D&uplicate", "&Arrange This Symbol", "Take &off the Board",
-                         "&Remove from the Design"],
+                         "D&uplicate", "&Arrange This Symbol", "&Mount on the Panel",
+                         "Take &off the Board", "&Remove from the Design"],
         "sheet net": ["Re&name Net…", "Net &Class", "&Edit Net…", "De&lete Net"],
         "sheet net class": ["&Signal", "&Ground", "&Power"],
         "sheet": ["&Add Part…", "Arran&ge the Sheet", "&Fit the Sheet"],

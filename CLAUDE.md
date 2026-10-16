@@ -306,6 +306,47 @@ The guide's part step names the edge (`guide._part_step`), and `view2d._paint_wi
 `#AARRGGBB`: `"#000000b4"` is a fully transparent blue, which is how the openings were first
 drawn invisible — give the alpha to `QColor(r, g, b, a)`.
 
+### A part off the board is the pads its wires land in
+
+A pot on the panel, a jack, a footswitch: on the board it is `wire-<n>[-p<step>][-l<mm>]`,
+archetype `flying-leads` -- a row of pads, pin N the pad lead N's wire is soldered into. That
+row IS its footprint, exactly as KiCad gives a panel pot's symbol a `SolderWire` footprint, so
+connectivity, LVS, the router, the placer and DRC took it without a line changing, and there
+is no document field: the length is in the id because it is a number about the physical part.
+What the part IS stays on the part -- value, pin names, and `PartSymbol`'s `potentiometer`
+and `led`, which exist so a pot on the panel is still drawn as one.
+
+Four things carry it, each with a test in `tests/test_flying_leads.py`:
+
+- **`footprints.off_board_mount` keeps what the package said.** The package's pin names
+  become the part's own (an LED's A and K), its symbol a declared one, and pins that stood in
+  one even row keep their spacing (`r-axial-4` -> `wire-2-p4`), so on a placed part every
+  pad is the hole its pin was in and routed copper still reaches it. A part not numbered
+  1..N is refused. The window's Mount on the Panel and MCP's `update_part(off_board=true)`
+  both call it and send ONE `component.update` (or `part.update`), which now takes a
+  `footprint_id`: lead bends go with the old package, a locked part refuses. MCP still
+  refuses any other footprint on a placed part.
+- **It has no mouth.** `geometry.flying_lead_side` is the edge nearest the pads, from where
+  they ARE and never from the rotation: a row reversed end for end is the same row and a wire
+  bends whichever way it is pulled. So it is deliberately NOT in `WIRE_ENTRY_BY_ARCHETYPE`,
+  and the terminal-entry rules say nothing about it. The guide names that edge. WHERE the
+  wires run is `geometry.flying_lead_routes`, one plan for both views (the 2D wire and the 3D
+  tube are one wire): straight over that edge, and a row pointing at it fanned into lanes
+  (`FLYING_LEAD_LANE_MM`), because from above three wires down one row are one line.
+  It is edge-seeking in the placer. Each wire carries `guide.lead_marker` ("RV1·2") at
+  `geometry.FLYING_LEAD_MARKER_MM` past the edge in both views, and its name lives there:
+  `bodies.pin_labels` prints none beside the pads, and its wires are obstacles to every other
+  part's names. Its colour is `guide.net_colours` by NAME everywhere -- the cut list, the
+  step ("— GND, black wire"), the 2D tooltip and the screen colour -- one assignment.
+- **The guide wires it in phase 7**, with the long wires and before the closing checks that
+  power the board up through the very jack it reaches. A continuity check on a net touching
+  one is lifted to that phase (`late_parts` in `_checkpoints`) -- ONLY for this archetype,
+  because doing it for every part would move checks in the goldens.
+- **Its wires are their own list** (`Guide.lead_list`, `LeadCut`): one hole and one lug, not
+  a `WireCut`'s two holes and a path. Gauge from `cut_gauge_awg`, colour from the net, as every
+  wire. The JSON emits `lead_list` only when it is not empty (the `language` rule), the CSV and
+  HTML add rows only when there are any, so every guide golden is byte for byte what it was.
+
 ### Two version numbers
 
 `version.py` holds the application version — the single source, read by `pyproject.toml`,

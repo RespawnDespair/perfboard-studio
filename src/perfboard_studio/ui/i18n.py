@@ -1577,6 +1577,32 @@ TURKISH: Mapping[str, str] = {
     "Rename Board": "Kartı Yeniden Adlandır",
     "Board name:": "Kartın adı:",
     "Screw terminal, wires from above (vertical)": "Klemens, kablo yukarıdan (dik)",
+    # -- parts off the board -------------------------------------------------
+    "Wires to a part off the board (panel pot, jack, switch)": (
+        "Kart dışındaki parçaya giden teller (panel potu, jak, anahtar)"
+    ),
+    "Wires": "Tel sayısı",
+    "Holes between pads": "Pedler arası delik",
+    "Wire length (mm, 0 to cut to fit)": "Tel boyu (mm; ölçüye göre kesmek için 0)",
+    "Parts off the board": "Kart dışındaki parçalar",
+    "&Mount on the Panel": "&Panele Monte Et",
+    "Off the board and wired to it instead — a pot on the panel, a jack in the enclosure. "
+    "Its pins become the pads its wires land in.": (
+        "Kartın dışına alınır ve karta tellerle bağlanır — paneldeki bir pot, kutudaki bir "
+        "jak gibi. Pinleri, tellerinin geldiği pedlere dönüşür."
+    ),
+    "{ref} has no footprint this program can build.": (
+        "{ref} için bu programın oluşturabileceği bir footprint yok."
+    ),
+    "{ref} is off the board now, wired to it. Its wires land where its pins were; the build "
+    "guide says where each one goes.": (
+        "{ref} artık kartın dışında, karta tellerle bağlı. Telleri pinlerinin olduğu yere "
+        "geliyor; hangisinin nereye gittiğini montaj rehberi söylüyor."
+    ),
+    "Potentiometer (three leads, the middle one the wiper)": (
+        "Potansiyometre (üç uç, ortadaki sürgü)"
+    ),
+    "LED (names A, K)": "LED (adlar A, K)",
     # -- the catalog and modules ---------------------------------------------
     "Transistors": "Transistörler",
     "MOSFETs": "MOSFET'ler",

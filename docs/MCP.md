@@ -224,7 +224,17 @@ from `get_component`, are printed on the sheet and in the guide's probes, and a 
 transistor is drawn as one only once its three leads are named B/C/E or G/D/S; until then
 `render_schematic`'s notes say what is missing. `update_part` reaches a part already on the
 board (all but its footprint); `pin_names` replaces the names whole and `symbol=""` clears
-the declaration.
+the declaration. `potentiometer` and `led` are declarable too, for a part that is not on the
+board at all.
+
+**A part on the panel is wired, not placed.** A pot, a jack or a footswitch in the
+enclosure is `wire-<n>` on the board: the row of pads its wires land in, `-p<step>` holes
+apart, each wire cut `-l<mm>` long when that is known. `update_part(ref, off_board=true)`
+makes one out of any part, placed or not, in one undo step: the pads go where its pins were
+when they stood in a row, so routed copper still reaches them, and the part keeps the pin
+names and symbol its package gave it. It is the one footprint change `update_part` makes on
+a part already on the board. The guide wires it in phase 7, names the pad each lug's wire
+goes into, and lists every wire in `guide.json`'s `lead_list` and in the cut list.
 
 **A netlist no longer has to come from KiCad.** `create_net` / `connect_pins` build one
 up on the board itself, which is what makes `autoroute` and `run_lvs` reachable on a

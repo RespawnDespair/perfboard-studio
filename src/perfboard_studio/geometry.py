@@ -410,6 +410,112 @@ def edges_touched(
     return tuple(side for side, gap in gaps if gap <= reach)  # type: ignore[misc]
 
 
+#: Ties between two equally near edges go to the first of these: an order, not a preference.
+_LEAD_EXIT_ORDER: tuple[EdgeSide, ...] = ("top", "bottom", "left", "right")
+
+#: Board-space direction (columns, rows) of each edge, rows growing downward.
+EDGE_DIRECTIONS: dict[EdgeSide, tuple[int, int]] = {
+    "left": (-1, 0),
+    "right": (1, 0),
+    "top": (0, -1),
+    "bottom": (0, 1),
+}
+
+
+def flying_lead_side(holes: Sequence[HoleCoord], board: Board) -> EdgeSide:
+    """The edge a part's flying leads leave the board over: the one nearest their pads.
+
+    Derived from WHERE the pads are, never from which way the part is turned. A row of pads
+    reversed end for end is the same row, and a wire bends whichever way it is pulled, so
+    there is no mouth here to face anywhere -- what decides the way the wires go is where
+    the panel is, and the nearest edge is the only thing this board knows about that. The
+    guide names it and both views draw the wires leaving over it, from this one answer.
+    """
+    if not holes:
+        return _LEAD_EXIT_ORDER[0]
+    xs = [hole.col * board.pitch for hole in holes]
+    ys = [hole.row * board.pitch for hole in holes]
+    centre_x = (min(xs) + max(xs)) / 2
+    centre_y = (min(ys) + max(ys)) / 2
+    edges = substrate_edges_mm(board)
+    gaps: dict[EdgeSide, float] = {
+        "top": centre_y - edges.min_y,
+        "bottom": edges.max_y - centre_y,
+        "left": centre_x - edges.min_x,
+        "right": edges.max_x - centre_x,
+    }
+    return min(_LEAD_EXIT_ORDER, key=lambda side: gaps[side])
+
+
+#: How far apart two flying leads are laid when one would otherwise lie on top of the other:
+#: a 1.1 mm jacket and half a millimetre of board between them, which also clears the pad a
+#: wire from further back passes beside (half of a 1.9 mm pad plus half a jacket is 1.5).
+FLYING_LEAD_LANE_MM: Mm = 1.6
+
+#: Where the marker on a flying lead sits -- the "RV1·2" a harness wire carries in a sleeve:
+#: centred this far past the edge it leaves over, in both views, so it labels the wire at the
+#: one place every wire of a part passes and nothing on the board is under it.
+FLYING_LEAD_MARKER_MM: Mm = 2.0
+
+
+def flying_lead_routes(
+    component: ComponentInstance, footprint: Footprint, board: Board, beyond_mm: Mm
+) -> tuple[tuple[str, tuple[Point2, ...]], ...]:
+    """Where each of a part off the board's wires runs, seen from above, pin by pin.
+
+    From its pad straight to the edge :func:`flying_lead_side` names and ``beyond_mm`` past
+    it, in board millimetres (the frame :func:`hole_to_mm` uses). ONE answer for the plan
+    view, which both views draw -- the 2D wire and the 3D tube are the same wire, and a
+    wire that left the board at one place on screen and another in 3D would be a drawing
+    of two harnesses.
+
+    A row of pads running towards its edge would lay every wire over the ones nearer the
+    edge, and from above they are one line: somebody counting wires against the cut list
+    sees two where there are three. So a wire with pads ahead of it in its line steps
+    sideways ``FLYING_LEAD_LANE_MM`` for each, at 45 degrees out of its pad, and runs beside
+    them instead -- as wires dressed into a harness lie.
+    """
+    holes = all_pin_holes(component, footprint)
+    side = flying_lead_side([at for _pin, at in holes], board)
+    d_col, d_row = EDGE_DIRECTIONS[side]
+    # Across the run, a quarter turn from it: which side the lanes open to is an order, not
+    # a preference, so it is the same for every part.
+    p_col, p_row = -d_row, d_col
+    edges = substrate_edges_mm(board)
+    pads = [(pin.number, at.col * board.pitch, at.row * board.pitch) for pin, at in holes]
+
+    def along(x: float, y: float) -> float:
+        return x * d_col + y * d_row
+
+    def across(x: float, y: float) -> float:
+        return x * p_col + y * p_row
+
+    routes: list[tuple[str, tuple[Point2, ...]]] = []
+    for number, x, y in pads:
+        ahead = sum(
+            1
+            for _other, ox, oy in pads
+            if abs(across(ox, oy) - across(x, y)) < 1e-6 and along(ox, oy) > along(x, y) + 1e-6
+        )
+        lane = ahead * FLYING_LEAD_LANE_MM
+        points = [Point2(x, y)]
+        if lane:
+            x, y = x + p_col * lane + d_col * lane, y + p_row * lane + d_row * lane
+            points.append(Point2(x, y))
+        if side == "left":
+            edge = Point2(edges.min_x, y)
+        elif side == "right":
+            edge = Point2(edges.max_x, y)
+        elif side == "top":
+            edge = Point2(x, edges.min_y)
+        else:
+            edge = Point2(x, edges.max_y)
+        points.append(edge)
+        points.append(Point2(edge.x + d_col * beyond_mm, edge.y + d_row * beyond_mm))
+        routes.append((number, tuple(points)))
+    return tuple(routes)
+
+
 def entry_faces_away(
     body: tuple[float, float, float, float],
     direction: tuple[float, float],

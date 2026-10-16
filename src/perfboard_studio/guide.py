@@ -56,12 +56,13 @@ from typing import Literal
 
 from .connectivity import FootprintLookup, PhysicalPinRef
 from .drc import DEFAULT_DRC_OPTIONS, DrcOptions, DrcViolation, run_drc, trace_electrical
-from .footprints import wire_entry
+from .footprints import flying_lead_length_mm, wire_entry
 from .geometry import (
     all_pin_holes,
     column_label,
     edge_connector_holes,
     entry_side,
+    flying_lead_side,
     format_hole,
     hole_to_mm,
     is_inside_board,
@@ -80,6 +81,7 @@ from .model import (
     ConductorId,
     ConductorKind,
     Footprint,
+    FootprintPin,
     HoleCoord,
     Mm,
     Net,
@@ -157,6 +159,10 @@ PHASE_BY_ARCHETYPE: dict[BodyArchetype, PhaseNumber] = {
     "box-header": 5,
     "screw-terminal-vertical": 5,
     "module-board": 5,
+    # The wires to a part off the board are long insulated wires, and go in with them: after
+    # every part is down, so they are not in the way of the iron, and before the closing
+    # checks, which power the board up through the very jack and switch they reach.
+    "flying-leads": 7,
 }
 
 #: Conductor kinds done on the solder side in phase 6, and in phase 7.
@@ -412,6 +418,31 @@ class WireCut:
 
 
 @dataclass(frozen=True, slots=True)
+class LeadCut:
+    """One wire from a pad on the board to a part that is not on it (``flying-leads``).
+
+    Its own list rather than a ``WireCut``, because a ``WireCut`` is a conductor with two
+    holes and a path between them, and this has one hole and one lug: what joins the two is
+    the wire itself, which is why the document holds no conductor for it.
+    """
+
+    component_id: str
+    ref: str
+    pin: str
+    #: What the part calls that lead, when it says: "W", "T", "+".
+    pin_name: str | None
+    hole: HoleCoord
+    net_name: str
+    #: What to cut, when the footprint says (``wire-3-l150``). ``None`` is "cut to fit": how
+    #: far it is to the panel is a fact about the enclosure, and a guessed number in a cut list
+    #: is worse than none.
+    cut_mm: Mm | None
+    strip_mm: Mm
+    awg: int
+    colour: str
+
+
+@dataclass(frozen=True, slots=True)
 class TrackCutJob:
     """One track to break, for a stripboard build.
 
@@ -570,6 +601,10 @@ class Guide:
     #: words -- headings, table columns, the tags beside a step -- in the same language as
     #: the guide it is given, without being told twice.
     language: GuideLanguage = "en"
+    #: The wires to the parts that are not on the board, one per lead. Empty on a board with
+    #: none, and left out of every export then, so every guide written before there were any
+    #: is what it was.
+    lead_list: tuple[LeadCut, ...] = ()
 
     @property
     def total_steps(self) -> int:
@@ -596,12 +631,19 @@ def build_guide(
     say = phrasebook(options.language)
     violations = run_drc(doc, lookup, options.drc)
     nets_by_id: dict[str, Net] = {net.id: net for net in doc.nets}
-    color_by_net = _assign_colors(doc)
+    color_by_net = net_colours(doc)
 
-    part_steps = _part_steps(doc, lookup, violations, say)
+    part_steps = _part_steps(doc, lookup, violations, options, say)
     conductor_steps, cut_list, spine_list = _conductor_steps(
         doc, nets_by_id, color_by_net, violations, options, say
     )
+    lead_list = _lead_cuts(doc, lookup, color_by_net, options, say)
+    # A part off the board is wired after the copper, so a net reaching it is not finished
+    # until its wires are in -- and a continuity check asked for before then fails for a
+    # reason that is not a fault.
+    late_parts = {
+        step.ref: phase for step, phase in part_steps if step.archetype == "flying-leads"
+    }
 
     by_phase: dict[PhaseNumber, list[GuideStep]] = {n: [] for n in PHASE_TITLES}
     for part_step, part_phase in part_steps:
@@ -609,7 +651,9 @@ def build_guide(
     for conductor_step, conductor_phase in conductor_steps:
         by_phase[conductor_phase].append(conductor_step)
 
-    checkpoints = _checkpoints(doc, lookup, violations, conductor_steps, options, say)
+    checkpoints = _checkpoints(
+        doc, lookup, violations, conductor_steps, options, say, late_parts
+    )
     track_cuts = _track_cuts(doc, say)
     checkpoints[0].extend(_cut_checks(track_cuts, say))
 
@@ -617,7 +661,7 @@ def build_guide(
         GuidePhase(
             number=number,
             title=say(PHASE_TITLES[number]),
-            summary=_phase_summary(number, doc, say),
+            summary=_phase_summary(number, doc, say, off_board=bool(lead_list)),
             steps=tuple(by_phase[number]),
             checkpoints=tuple(checkpoints.get(number, ())),
         )
@@ -635,25 +679,34 @@ def build_guide(
         spine_list=tuple(spine_list),
         track_cuts=track_cuts,
         iron=dataclasses.replace(iron, note=say(iron.note)),
-        tools=_tools(doc, cut_list, spine_list, say),
+        tools=_tools(doc, cut_list, spine_list, say, lead_list),
         warnings=_warnings(doc, lookup, violations, say),
         part_steps=len(part_steps),
         conductor_steps=len(conductor_steps),
         checkpoint_count=all_checks,
         language=options.language,
+        lead_list=tuple(lead_list),
     )
 
 
-def _phase_summary(number: PhaseNumber, doc: PerfDocument, say: Phrasebook) -> str:
+def _phase_summary(
+    number: PhaseNumber, doc: PerfDocument, say: Phrasebook, off_board: bool = False
+) -> str:
     """The phase's standing summary, with what the BOARD changes about it folded in.
 
-    Only phase 0 varies today, and it varies for a reason worth stating: every hole
+    Phase 7 gains a sentence when parts off the board are wired in it (``off_board``).
+    Phase 0 varies for a reason worth stating: every hole
     address in this guide is counted from a corner unless the board says otherwise, so
     "mark hole A1" is the step the whole document depends on. A board that prints its own
     A..Z / 01..NN legend has already done it, and telling somebody to mark a corner that
     is already labelled is how a guide starts feeling like it was not written for the
     board in front of them.
     """
+    if number == 7 and off_board:
+        return say(PHASE_SUMMARIES[7]) + " " + say(
+            "Then the wires to the parts off the board: into their pads here first, then "
+            "to the parts themselves once they are mounted."
+        )
     if number != 0:
         return say(PHASE_SUMMARIES[number])
 
@@ -718,7 +771,11 @@ def _phase_summary(number: PhaseNumber, doc: PerfDocument, say: Phrasebook) -> s
 
 
 def _part_steps(
-    doc: PerfDocument, lookup: FootprintLookup, violations: list[DrcViolation], say: Phrasebook
+    doc: PerfDocument,
+    lookup: FootprintLookup,
+    violations: list[DrcViolation],
+    options: GuideOptions,
+    say: Phrasebook,
 ) -> list[tuple[PartStep, PhaseNumber]]:
     """One step per placed component, in build order.
 
@@ -727,11 +784,18 @@ def _part_steps(
     dependent on document order.
     """
     extra_notes = _part_notes_from_drc(doc, violations, say)
+    colours = net_colours(doc)
+    net_by_pin = {(node.component_ref, node.pin): net for net in doc.nets for node in net.nodes}
     entries: list[tuple[PhaseNumber, Mm, str, PartStep]] = []
     for component in doc.components:
         footprint = lookup(component.footprint_id)
         if footprint is None:
             continue  # Reported as a warning; nothing can be said about where it goes.
+        wires = {
+            pin.number: (net.name, colours.get(net.id, "grey"))
+            for pin in footprint.pins
+            if (net := net_by_pin.get((component.ref, pin.number))) is not None
+        }
         step = _part_step(
             component,
             footprint,
@@ -739,6 +803,8 @@ def _part_steps(
             doc.height_limit_mm,
             extra_notes.get(component.id, ()),
             say,
+            strip_mm=options.strip_length_mm,
+            wires=wires,
         )
         phase = PHASE_BY_ARCHETYPE.get(footprint.body.archetype, 5)
         entries.append((phase, footprint.body_height, component.ref, step))
@@ -813,11 +879,18 @@ def _part_step(
     height_limit_mm: Mm | None = None,
     extra_notes: tuple[str, ...] = (),
     say: Phrasebook = ENGLISH,
+    strip_mm: Mm = 5.0,
+    wires: dict[str, tuple[str, str]] | None = None,
 ) -> PartStep:
     holes = all_pin_holes(component, footprint)
     pin_holes = tuple((pin.number, at) for pin, at in holes)
 
     notes: list[str] = []
+    off_board = footprint.body.archetype == "flying-leads"
+    if off_board:
+        notes.extend(
+            _flying_lead_notes(component, footprint, holes, board, strip_mm, say, wires or {})
+        )
     if footprint.body.archetype == "dip":
         # The old wording told the reader to "leave it until phase 8", which is where the
         # IC goes in but is not where this step is: PHASE_BY_ARCHETYPE puts a DIP in phase
@@ -872,7 +945,7 @@ def _part_step(
             height=footprint.body_height,
             limit=height_limit_mm,
         ))
-    elif footprint.body_height >= 10:
+    elif footprint.body_height >= 10 and not off_board:
         # The guess, kept only for a board that has not said what it has to fit inside.
         # Once there is a real number the real number wins.
         notes.append(say(
@@ -891,13 +964,110 @@ def _part_step(
         archetype=footprint.body.archetype,
         anchor=component.anchor,
         pin_holes=pin_holes,
-        span=_span_of(pin_holes, say),
-        bend_template_mm=_bend_template(pin_holes, board),
+        span=_wires_span(pin_holes, say) if off_board else _span_of(pin_holes, say),
+        # Two pads in a row are not two leads to bend: the wires are cut, not formed.
+        bend_template_mm=None if off_board else _bend_template(pin_holes, board),
         rotation=component.rotation,
         mirrored=component.mirrored,
         height_mm=footprint.body_height,
         polarity=_polarity_note(footprint, pin_holes, component, say),
         notes=tuple(notes),
+    )
+
+
+def lead_marker(ref: str, pin: str, name: str | None) -> str:
+    """What is written on a wire to a part off the board, where it leaves: "RV1·2", "J1·T".
+
+    The marker a harness wire carries, and the same text in both views. The part's own name
+    for the lead when it has one, its number otherwise; ids rather than words, so it is the
+    same in every language.
+    """
+    return f"{ref}·{name or pin}"
+
+
+def lead_end(ref: str, pin: str, name: str | None, say: Phrasebook = ENGLISH) -> str:
+    """The far end of a wire to a part off the board: "RV1 pin 2", "RV1 pin 2 (W)".
+
+    One phrasing for the step, the cut list and the HTML table, so the wire somebody cut
+    from the list is named the way the step they are following names it.
+    """
+    if name:
+        return say("{ref} pin {pin} ({name})", ref=ref, pin=pin, name=name)
+    return say("{ref} pin {pin}", ref=ref, pin=pin)
+
+
+def _flying_lead_notes(
+    component: ComponentInstance,
+    footprint: Footprint,
+    holes: list[tuple[FootprintPin, HoleCoord]],
+    board: Board,
+    strip_mm: Mm,
+    say: Phrasebook,
+    wires: dict[str, tuple[str, str]],
+) -> list[str]:
+    """What fitting a part that is not on the board means: wires, and where each one goes.
+
+    Pad by pad, because the one mistake this step can make is two wires swapped -- a pot
+    that turns the wrong way, a jack with tip and sleeve crossed -- and it looks exactly
+    right from the board. Each lead is named by what the part calls it when it says, and
+    each wire by its net and the colour the cut list gives it (``wires``: pin -> net name,
+    colour), which is the thing in the hand at the bench.
+    """
+    side = flying_lead_side([at for _pin, at in holes], board)
+    notes = [
+        say(
+            "{ref} is not on this board: it is mounted off it, on the panel or in the "
+            "enclosure, and these pads are where its wires land. Solder a wire into each pad "
+            "from the component side and lead them all out over the {side} edge.",
+            ref=component.ref,
+            side=say(side),
+        )
+    ]
+    pairs = []
+    for pin, at in holes:
+        lead = lead_end(component.ref, pin.number, pin_name_of(component, pin), say)
+        wire = wires.get(pin.number)
+        if wire is None:
+            pairs.append(say("{hole} to {lead}", hole=format_hole(at), lead=lead))
+        else:
+            pairs.append(say(
+                "{hole} to {lead} — {net}, {colour} wire",
+                hole=format_hole(at),
+                lead=lead,
+                net=wire[0],
+                colour=say(wire[1]),
+            ))
+    notes.append(say("Wire by wire: {pairs}.", pairs="; ".join(pairs)))
+    length = flying_lead_length_mm(footprint)
+    if length is not None:
+        notes.append(say(
+            "Cut each wire {length:g} mm and strip {strip:g} mm at both ends.",
+            length=length,
+            strip=strip_mm,
+        ))
+    else:
+        notes.append(say(
+            "Cut each wire long enough to reach {ref} where it is mounted, with enough slack "
+            "to open the enclosure, and strip {strip:g} mm at both ends.",
+            ref=component.ref,
+            strip=strip_mm,
+        ))
+    return notes
+
+
+def _wires_span(pin_holes: tuple[tuple[str, HoleCoord], ...], say: Phrasebook) -> str:
+    """Where the wires to a part off the board land: their row, and how many there are.
+
+    Not ``_span_of``: "B16 → A16, 1 holes apart" is the pitch to bend two leads to, and these
+    are wires, cut rather than bent.
+    """
+    if len(pin_holes) == 1:
+        return say("{hole}, 1 wire", hole=format_hole(pin_holes[0][1]))
+    return say(
+        "{start} → {end}, {count} wires",
+        start=format_hole(pin_holes[0][1]),
+        end=format_hole(pin_holes[-1][1]),
+        count=len(pin_holes),
     )
 
 
@@ -996,16 +1166,21 @@ def _polarity_note(
     by_number = dict(pin_holes)
 
     named = []
+    off_board = footprint.body.archetype == "flying-leads"
     for pin in footprint.pins:
         name = pin_name_of(component, pin)
         if name in _PIN_NAME_MEANING and pin.number in by_number:
-            named.append(say(
-                "{lead} in {hole}",
-                lead=say(_PIN_NAME_MEANING[name]),
-                hole=format_hole(by_number[pin.number]),
-            ))
+            lead_said = say(_PIN_NAME_MEANING[name])
+            where = format_hole(by_number[pin.number])
+            if off_board:
+                # Off the board the lead is not IN the hole -- the wire to it is.
+                named.append(say("{lead}: the wire in {hole}", lead=lead_said, hole=where))
+            else:
+                named.append(say("{lead} in {hole}", lead=lead_said, hole=where))
     if named:
         return "; ".join(named)
+    if off_board:
+        return None
 
     if footprint.body.archetype in ("to92", "to220") and component is not None:
         # A three-legged package says nothing about which leg is which; the PART may.
@@ -1302,6 +1477,48 @@ def _wire_cut(
     )
 
 
+def _lead_cuts(
+    doc: PerfDocument,
+    lookup: FootprintLookup,
+    color_by_net: dict[str, str],
+    options: GuideOptions,
+    say: Phrasebook,
+) -> list[LeadCut]:
+    """One wire per lead of every part off the board, in the order their steps come.
+
+    Gauge and colour are the answers every other wire on the board gets, from the same two
+    places: the net's declared current through ``cut_gauge_awg``, and the net's colour --
+    so the wire from the ground lug of a jack is black like every ground wire on the board.
+    """
+    net_by_pin: dict[tuple[str, str], Net] = {
+        (node.component_ref, node.pin): net for net in doc.nets for node in net.nodes
+    }
+    density = options.drc.max_wire_current_density_a_per_mm2
+    cuts: list[LeadCut] = []
+    for component in sorted(doc.components, key=lambda c: c.ref):
+        footprint = lookup(component.footprint_id)
+        if footprint is None or footprint.body.archetype != "flying-leads":
+            continue
+        length = flying_lead_length_mm(footprint)
+        for pin, at in all_pin_holes(component, footprint):
+            net = net_by_pin.get((component.ref, pin.number))
+            cuts.append(
+                LeadCut(
+                    component_id=component.id,
+                    ref=component.ref,
+                    pin=pin.number,
+                    pin_name=pin_name_of(component, pin),
+                    hole=at,
+                    net_name=net.name if net is not None else say("(unassigned)"),
+                    cut_mm=length,
+                    strip_mm=options.strip_length_mm,
+                    awg=cut_gauge_awg(None, net.current_a if net is not None else None, density),
+                    colour=color_by_net.get(net.id, "grey") if net is not None else "grey",
+                )
+            )
+    return cuts
+
+
 # ---------------------------------------------------------------------------
 # Wire templates: a wire's shape at 1:1, to cut, mark and bend it on
 # ---------------------------------------------------------------------------
@@ -1454,11 +1671,13 @@ def _runs_straight_on(a: tuple[Mm, Mm], b: tuple[Mm, Mm], c: tuple[Mm, Mm]) -> b
     return abs(cross) < 1e-9 and forward > 0
 
 
-def _assign_colors(doc: PerfDocument) -> dict[str, str]:
-    """Insulation colour per net: red for power, black for ground, then a fixed cycle.
+def net_colours(doc: PerfDocument) -> dict[str, str]:
+    """Insulation colour per net id, by NAME: red for power, black for ground, then a cycle.
 
     Assigned by net order in the document so the same board always produces the same cut
-    list -- a colour convention that changed between two runs would be worse than none.
+    list -- a colour convention that changed between two runs would be worse than none. The
+    cut list, the guide's steps and the board view's wire tooltips all read this, so the
+    colour a wire is called on the screen is the colour it is called at the bench.
     """
     colors: dict[str, str] = {}
     signal_index = 0
@@ -1595,6 +1814,7 @@ def _checkpoints(
     conductor_steps: list[tuple[ConductorStep, PhaseNumber]],
     options: GuideOptions,
     say: Phrasebook,
+    late_parts: dict[str, PhaseNumber] | None = None,
 ) -> dict[PhaseNumber, list[Checkpoint]]:
     """Every measurement, attached to the phase after which it can be made.
 
@@ -1634,6 +1854,11 @@ def _checkpoints(
         closing_phase = last_phase_for_net.get(check.net_name)
         if closing_phase is None:
             continue  # Nothing on the board builds this net; the LVS warning covers it.
+        # A part wired in after the copper finishes the net itself (``late_parts``).
+        for ref in (check.a.component_ref, check.b.component_ref):
+            late = (late_parts or {}).get(ref)
+            if late is not None and late > closing_phase:
+                closing_phase = late
         checks[closing_phase].append(
             Checkpoint(
                 kind="continuity",
@@ -1895,7 +2120,11 @@ def _gauges(cuts: list[WireCut]) -> str:
 
 
 def _tools(
-    doc: PerfDocument, cuts: list[WireCut], spines: list[SpineCut], say: Phrasebook
+    doc: PerfDocument,
+    cuts: list[WireCut],
+    spines: list[SpineCut],
+    say: Phrasebook,
+    leads: list[LeadCut] | None = None,
 ) -> tuple[str, ...]:
     """What to have on the bench, derived from what the board actually needs."""
     iron = IRON_BY_MATERIAL[doc.board.material]
@@ -1913,22 +2142,42 @@ def _tools(
     # line listing "black, tinned copper" sends nobody to the right drawer.
     hookup = [cut for cut in cuts if cut.insulated]
     bare = [cut for cut in cuts if not cut.insulated]
-    if hookup:
+    leads = leads or []
+    if hookup or leads:
         # Alphabetical in the language they are READ in, which is how somebody scans a
-        # list of colours for the one they are holding.
-        tools.append(say(
-            "Hookup wire, AWG {gauges} in {colours} — about {metres:.2f} m in total",
-            gauges=_gauges(hookup),
-            colours=", ".join(sorted({say(cut.colour) for cut in hookup})),
-            metres=sum(cut.cut_mm for cut in hookup) / 1000,
-        ))
+        # list of colours for the one they are holding. A wire to a part off the board is
+        # hookup wire from the same reels, so it is counted here and not on a line of its own.
+        gauges = ", ".join(
+            str(awg) for awg in sorted({cut.awg for cut in hookup} | {lead.awg for lead in leads})
+        )
+        colours = ", ".join(
+            sorted({say(cut.colour) for cut in hookup} | {say(lead.colour) for lead in leads})
+        )
+        metres = (
+            sum(cut.cut_mm for cut in hookup) + sum(lead.cut_mm or 0.0 for lead in leads)
+        ) / 1000
+        if any(lead.cut_mm is None for lead in leads):
+            tools.append(say(
+                "Hookup wire, AWG {gauges} in {colours} — about {metres:.2f} m, plus the "
+                "wires to the parts off the board, cut to fit",
+                gauges=gauges,
+                colours=colours,
+                metres=metres,
+            ))
+        else:
+            tools.append(say(
+                "Hookup wire, AWG {gauges} in {colours} — about {metres:.2f} m in total",
+                gauges=gauges,
+                colours=colours,
+                metres=metres,
+            ))
     if bare:
         tools.append(say(
             "Bare tinned copper wire, AWG {gauges} — about {metres:.2f} m in total",
             gauges=_gauges(bare),
             metres=sum(cut.cut_mm for cut in bare) / 1000,
         ))
-    if hookup:
+    if hookup or leads:
         tools.append(say("Wire strippers"))
     if doc.mounting_holes:
         diameters = sorted({m.diameter for m in doc.mounting_holes})
@@ -2091,6 +2340,10 @@ def describe(guide: Guide) -> str:
     ]
     if guide.cut_list:
         parts.append(say("{count} wire(s) to cut", count=len(guide.cut_list)))
+    if guide.lead_list:
+        parts.append(
+            say("{count} wire(s) to parts off the board", count=len(guide.lead_list))
+        )
     if guide.warnings:
         parts.append(say("{count} warning(s)", count=len(guide.warnings)))
     return ", ".join(parts)

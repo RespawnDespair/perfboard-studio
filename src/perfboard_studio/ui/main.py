@@ -179,11 +179,13 @@ from perfboard_studio.footprints import (
     box_header_footprint,
     dip_footprint,
     disc_ceramic_footprint,
+    flying_leads_footprint,
     footprint_lookup,
     generic_box_footprint,
     get_footprint,
     led_footprint,
     module_footprint,
+    off_board_mount,
     pin_header_footprint,
     radial_electrolytic_footprint,
     screw_terminal_footprint,
@@ -616,6 +618,7 @@ def _archetype_headings() -> dict[BodyArchetype, str]:
         "relay-box": t("Relays"),
         "module-board": t("Module boards"),
         "generic-box": t("Boxes of any size"),
+        "flying-leads": t("Parts off the board"),
     }
 
 
@@ -1662,6 +1665,8 @@ class PinoutEditor(QWidget):
             ("pmos", t("P-channel MOSFET (names G, D, S)")),
             ("zener", t("Zener diode")),
             ("fuse", t("Fuse or PTC")),
+            ("potentiometer", t("Potentiometer (three leads, the middle one the wiper)")),
+            ("led", t("LED (names A, K)")),
         )
         for value, label in choices:
             self.symbol.addItem(label, value)
@@ -2107,6 +2112,21 @@ def _custom_families() -> tuple[_CustomFamily, ...]:
             label=t("Screw terminal, wires from above (vertical)"),
             fields=(_CustomField("ways", t("Ways"), "int", 2, 24, 3),),
             build=lambda v: vertical_screw_terminal_footprint(ways=whole(v, "ways")),
+        ),
+        _CustomFamily(
+            label=t("Wires to a part off the board (panel pot, jack, switch)"),
+            fields=(
+                _CustomField("wires", t("Wires"), "int", 1, 24, 3),
+                _CustomField("step", t("Holes between pads"), "int", 1, 20, 1),
+                # Zero is "cut to fit": how far it is to the panel is the enclosure's
+                # business, and the guide says so rather than printing a guess.
+                _CustomField("length", t("Wire length (mm, 0 to cut to fit)"), "int", 0, 3000, 0),
+            ),
+            build=lambda v: flying_leads_footprint(
+                wires=whole(v, "wires"),
+                step=whole(v, "step"),
+                length_mm=whole(v, "length") or None,
+            ),
         ),
         _CustomFamily(
             label=t("Axial part (resistor, diode, choke)"),
@@ -7200,6 +7220,63 @@ class MainWindow(QMainWindow):
         if self._schematic_ref is not None:
             self._remove_symbol(self._schematic_ref)
 
+    def mount_off_board(self, ref: str) -> bool:
+        """Take a part off the board and wire it to the board instead, in one undo step.
+
+        A pot onto the panel, a jack into the enclosure: the part keeps its reference, its
+        value and its nets, and its package becomes the pads its wires land in
+        (``footprints.off_board_mount``), keeping what the package used to say -- an LED's
+        A and K, a pot's symbol. On the board it is one ``component.update``; in the design
+        one ``part.update``. Returns whether it happened.
+        """
+        document = self.bus.document
+        component = next((c for c in document.components if c.ref == ref), None)
+        part = next((p for p in document.parts if p.ref == ref), None)
+        target = component if component is not None else part
+        footprint = get_footprint(target.footprint_id) if target is not None else None
+        if target is None or footprint is None:
+            self.statusBar().showMessage(
+                t("{ref} has no footprint this program can build.").format(ref=ref), 6000
+            )
+            return False
+        try:
+            mount = off_board_mount(target, footprint)
+        except ValueError as error:
+            self.statusBar().showMessage(say(str(error)), 8000)
+            return False
+        if component is not None:
+            result = self.bus.dispatch(
+                "component.update",
+                UpdateComponentPayload(
+                    id=component.id,
+                    footprint_id=mount.footprint_id,
+                    pin_names=mount.pin_names,
+                    symbol=mount.symbol,
+                ),
+            )
+        else:
+            assert part is not None
+            result = self.bus.dispatch(
+                "part.update",
+                UpdatePartPayload(
+                    id=part.id,
+                    footprint_id=mount.footprint_id,
+                    pin_names=mount.pin_names,
+                    symbol=mount.symbol,
+                ),
+            )
+        if not result.ok:
+            self.statusBar().showMessage(f"[{result.code}] {result.message}", 8000)
+            return False
+        self.statusBar().showMessage(
+            t(
+                "{ref} is off the board now, wired to it. Its wires land where its pins were; "
+                "the build guide says where each one goes."
+            ).format(ref=ref),
+            8000,
+        )
+        return True
+
     def _remove_symbol(self, ref: str) -> None:
         """The body of the above, on a named part rather than on the selection.
 
@@ -7959,6 +8036,27 @@ class MainWindow(QMainWindow):
             menu.addSeparator()
             menu.addAction(self.act_route_selected)
             menu.addAction(self.act_reroute_selected)
+            selected = self.scene.selected_component_ids()
+            only = next(
+                (c for c in self.bus.document.components if [c.id] == list(selected)), None
+            )
+            only_footprint = get_footprint(only.footprint_id) if only is not None else None
+            if (
+                only is not None
+                and only_footprint is not None
+                and only_footprint.body.archetype != "flying-leads"
+            ):
+                menu.addSeparator()
+                mount = menu.addAction(t("&Mount on the Panel"))
+                mount.setToolTip(
+                    t(
+                        "Off the board and wired to it instead — a pot on the panel, a jack in "
+                        "the enclosure. Its pins become the pads its wires land in."
+                    )
+                )
+                mount.triggered.connect(
+                    lambda _checked=False, r=only.ref: self.mount_off_board(r)
+                )
         elif self.scene.selected_conductor_ids():
             menu.addAction(self.act_copy)
             menu.addAction(self.act_duplicate)
@@ -8160,6 +8258,19 @@ class MainWindow(QMainWindow):
                 t("Give this one symbol back to the layout, leaving the rest where you put them.")
             )
             back.triggered.connect(lambda _checked=False, i=part_id: self._auto_one_symbol(i))
+
+        target = component if component is not None else part
+        footprint = get_footprint(target.footprint_id) if target is not None else None
+        if footprint is not None and footprint.body.archetype != "flying-leads":
+            menu.addSeparator()
+            mount = menu.addAction(t("&Mount on the Panel"))
+            mount.setToolTip(
+                t(
+                    "Off the board and wired to it instead — a pot on the panel, a jack in the "
+                    "enclosure. Its pins become the pads its wires land in."
+                )
+            )
+            mount.triggered.connect(lambda _checked=False, r=ref: self.mount_off_board(r))
 
         menu.addSeparator()
         if component is not None:

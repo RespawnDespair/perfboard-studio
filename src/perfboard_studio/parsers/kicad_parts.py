@@ -197,6 +197,19 @@ def _terminal(m: re.Match[str]) -> list[str]:
     return [f"screw-terminal-{ways}-v" if m["orientation"] == "Vertical" else f"screw-terminal-{ways}"]
 
 
+def _solder_wire(m: re.Match[str]) -> list[str]:
+    """KiCad's wire-to-board pads -- the footprint a schematic gives a panel pot or a jack
+    that is wired to the board rather than mounted on it -- as this board's flying leads.
+
+    KiCad spaces them by the wire's jacket; the nearest whole number of holes keeps two
+    jackets from touching just as well. Numbered 1 to N in both, so nothing is renumbered.
+    """
+    wires = int(m["wires"])
+    pitch = m["pitch"]
+    step = max(1, round(float(pitch) / _PITCH_MM)) if pitch else 1
+    return [f"wire-{wires}" + (f"-p{step}" if step != 1 else "")]
+
+
 #: KiCad footprint name (the part after the library's colon) to candidate ids, best first.
 #: Anchored at the start of the name; KiCad's variants (``_Socket``, ``_LongPads``,
 #: ``_Clear``, ``_Wide``) follow what is matched and change nothing that matters here.
@@ -251,6 +264,16 @@ _KICAD_NAMES: tuple[tuple[re.Pattern[str], Callable[[re.Match[str]], list[str]]]
     # switch lands on them as drawn. See footprints.push_button_footprint.
     (re.compile(r"^SW_PUSH_6mm"), lambda m: ["sw-tactile-6x6"]),
     (re.compile(r"^SW_PUSH-12mm"), lambda m: ["sw-tactile-12x12"]),
+    # Connector_Wire: a part that is NOT on the board, wired to it -- see
+    # footprints.flying_leads_footprint.
+    (
+        re.compile(r"^SolderWire-[\d.]+sqmm_1x(?P<wires>\d+)(?:_P(?P<pitch>[\d.]+)mm)?"),
+        _solder_wire,
+    ),
+    (
+        re.compile(r"^SolderWirePad_1x(?P<wires>\d+)(?:_P(?P<pitch>[\d.]+)mm)?_Drill"),
+        _solder_wire,
+    ),
 )
 
 #: Through-hole packages that are common and deliberately NOT mapped: their pins are
@@ -488,6 +511,11 @@ def _part_names(footprint: Footprint, declared: PinNames) -> PinNames:
 # ---------------------------------------------------------------------------
 
 
+#: KiCad's potentiometer symbols: ``Device:R_Potentiometer``, ``R_POT``, ``R_Potentiometer_Dual``
+#: and the trimmers beside them.
+_POT_SYMBOL = re.compile(r":R_Pot", re.IGNORECASE)
+
+
 def _suggest(
     component: ImportedComponent, pins_used: int, lookup: Callable[[str], Footprint | None]
 ) -> tuple[PartSuggestion, list[str]]:
@@ -521,7 +549,15 @@ def _suggest(
             notes,
         )
     if from_kicad is not None:
-        return PartSuggestion(component.ref, from_kicad, component.value, "kicad"), notes
+        # A pot wired to the board from the panel: the pads cannot say it is a pot, and the
+        # SYMBOL it was drawn with can, so it is declared one and stays one on the sheet.
+        symbol: PartSymbol | None = None
+        if from_kicad.startswith("wire-") and _POT_SYMBOL.search(component.lib_part or ""):
+            symbol = "potentiometer"
+        return (
+            PartSuggestion(component.ref, from_kicad, component.value, "kicad", symbol=symbol),
+            notes,
+        )
     guessed = guess_footprint_id(component.ref, pins_used)
     return PartSuggestion(component.ref, guessed, component.value, "guess"), notes
 

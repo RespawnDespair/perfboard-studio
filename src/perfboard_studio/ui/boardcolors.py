@@ -82,8 +82,15 @@ SCHEMES: tuple[BoardScheme, ...] = (
     # at #c67a3f, #c17c58 and #bb7441 across three of them. It was briefly changed to a
     # brown on the reasoning that "pertinax is the colour of cardboard"; the boards say
     # otherwise, and this is the one colour in this file anybody can check.
+    #
+    # THE HUE IS STILL THE PHOTOGRAPHS'; the saturation is not. Drawn at the measured
+    # #c47a41, a whole board of flat orange in a dark window was the loudest thing on the
+    # screen, louder than every part on it -- an orange film capacitor all but vanished into
+    # it. A photograph's board has grain, gloss and shadow breaking it up, and the screen's
+    # has none. Chosen by looking at the candidates side by side (2026-10-16): the same 26
+    # degrees at saturation 0.53 and value 0.68, which still reads as pertinaks.
     BoardScheme(
-        "phenolic", "Orange (phenolic)", "#c47a41", "#3a2410", (0.769, 0.478, 0.255), "#2c2115",
+        "phenolic", "Orange (phenolic)", "#ad7a52", "#3a2410", (0.678, 0.478, 0.322), "#2c2115",
         *_BARE_COPPER,
     ),
 )

@@ -50,12 +50,14 @@ from .guide import (
     ConductorStep,
     Guide,
     GuideStep,
+    LeadCut,
     PartStep,
     WireCut,
     WireMarkKind,
     WireTemplate,
     all_steps,
     conductor_word,
+    lead_end,
     step_focus,
     wire_template,
 )
@@ -102,6 +104,9 @@ def guide_to_json(guide: Guide, indent: int = 2) -> str:
             "cut_list": [_plain(cut) for cut in guide.cut_list],
             "spine_list": [_plain(spine) for spine in guide.spine_list],
             "track_cuts": [_plain(cut) for cut in guide.track_cuts],
+            # Only when there are any, for the reason ``language`` is: a guide with no part
+            # off the board is byte for byte the guide it always was.
+            **({"lead_list": [_plain(lead) for lead in guide.lead_list]} if guide.lead_list else {}),
             "phases": [
                 {
                     "number": phase.number,
@@ -179,6 +184,21 @@ def cut_list_to_csv(guide: Guide) -> str:
                 "",
             ]
         )
+    for lead in guide.lead_list:
+        writer.writerow(
+            [
+                say("wire off the board"),
+                lead.net_name,
+                format_hole(lead.hole),
+                lead_end(lead.ref, lead.pin, lead.pin_name, say),
+                "",
+                "" if lead.cut_mm is None else f"{lead.cut_mm:.1f}",
+                f"{lead.strip_mm:.1f}",
+                lead.awg,
+                say(lead.colour),
+                say("cut to fit") if lead.cut_mm is None else "",
+            ]
+        )
     for spine in guide.spine_list:
         writer.writerow(
             [
@@ -195,6 +215,17 @@ def cut_list_to_csv(guide: Guide) -> str:
             ]
         )
     return out.getvalue()
+
+
+def _html_lead_row(lead: LeadCut, say: Phrasebook) -> str:
+    """A wire to a part off the board, in the cut list's table: one hole, and the lug."""
+    cut = say("cut to fit") if lead.cut_mm is None else f"{lead.cut_mm:.0f} mm"
+    return (
+        f"<tr><td>{say('wire off the board')}</td><td>{escape(lead.net_name)}</td>"
+        f"<td>{_hole(lead.hole)}</td>"
+        f"<td>{escape(lead_end(lead.ref, lead.pin, lead.pin_name, say))}</td>"
+        f"<td>{escape(cut)}</td><td>{lead.awg}</td><td>{escape(say(lead.colour))}</td></tr>"
+    )
 
 
 def _wire_type(insulated: bool, say: Phrasebook) -> str:
@@ -982,7 +1013,7 @@ def _html_tables(guide: Guide, say: Phrasebook) -> str:
         )
     parts.append("</table></div>")
 
-    if guide.cut_list or guide.spine_list:
+    if guide.cut_list or guide.spine_list or guide.lead_list:
         parts.append(f'<h3>{say("Wire")}</h3><div class="wrap"><table>')
         parts.append(
             "<tr>"
@@ -1004,6 +1035,8 @@ def _html_tables(guide: Guide, say: Phrasebook) -> str:
                 f"<td>{_hole(cut.to_hole)}</td><td>{cut.cut_mm:.0f} mm</td>"
                 f"<td>{cut.awg}</td><td>{escape(say(cut.colour))}</td></tr>"
             )
+        for lead in guide.lead_list:
+            parts.append(_html_lead_row(lead, say))
         for spine in guide.spine_list:
             parts.append(
                 f"<tr><td>{say('trace spine')}</td><td>{escape(spine.net_name)}</td>"

@@ -972,7 +972,9 @@ CONDUCTOR_KINDS: tuple[str, ...] = (
     "strip",
 )
 NET_CLASSES: tuple[NetClass, ...] = ("power", "ground", "signal")
-PART_SYMBOLS: tuple[PartSymbol, ...] = ("npn", "pnp", "nmos", "pmos", "zener", "fuse")
+PART_SYMBOLS: tuple[PartSymbol, ...] = (
+    "npn", "pnp", "nmos", "pmos", "zener", "fuse", "potentiometer", "led",
+)
 
 
 def _parse_pin_names(obj: dict[str, object], path: str) -> PinNames:

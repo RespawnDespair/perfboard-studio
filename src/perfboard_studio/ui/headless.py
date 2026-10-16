@@ -304,8 +304,11 @@ def headless(argv: list[str]) -> int:
     (out_dir / "cut_list.csv").write_text(cut_list_to_csv(guide), encoding="utf-8")
     (out_dir / "bom.csv").write_text(bom_to_csv(guide), encoding="utf-8")
     print(f"\nbuild guide  {describe_guide(guide)}")
+    off_board = (
+        f", {len(guide.lead_list)} to parts off the board" if guide.lead_list else ""
+    )
     print(f"             {guide.part_steps} part step(s), {guide.conductor_steps} connection(s), "
-          f"{len(guide.cut_list)} wire(s) -> guide.html")
+          f"{len(guide.cut_list)} wire(s){off_board} -> guide.html")
     # The weight is printed because the images are inlined: the guide has to stay a file
     # somebody opens on a phone, and this is the number that would quietly stop being
     # true.

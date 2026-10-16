@@ -90,6 +90,7 @@ from perfboard_studio.drc import run_drc
 from perfboard_studio.footprints import (
     GENERATED_ID_GRAMMAR,
     footprint_lookup,
+    off_board_mount,
     standard_footprints,
 )
 from perfboard_studio.geometry import (
@@ -866,6 +867,7 @@ class BoardSession:
         footprint_id: str | None = None,
         pin_names: dict[str, str] | None = None,
         symbol: str | None = None,
+        off_board: bool = False,
     ) -> dict[str, Any]:
         """Rename a part, or change what it is. Omitted fields are left alone.
 
@@ -881,14 +883,37 @@ class BoardSession:
         place it back" would lose its lead bends for no reason. Only the footprint of a
         placed part is out of reach: changing the package under a part soldered into holes
         is a different edit from renaming it, and it stays with ``unplace_component``.
+
+        ``off_board`` is the one exception, and it is the window's Mount on the Panel: the
+        part goes off the board and is wired to it (``footprints.off_board_mount``), its
+        footprint becoming the pads its wires land in -- where its pins were, when they were
+        one row -- and its package's pin names and symbol becoming its own. Explicit
+        ``pin_names`` and ``symbol`` still win over what it keeps.
         """
         if footprint_id is not None and self.lookup(footprint_id) is None:
             raise _no_such_footprint(footprint_id)
         symbol_arg = KEEP if symbol is None else cast(PartSymbol | None, symbol or None)
         names_arg = _pin_names_arg(pin_names)
         placed = next((c for c in self.document.components if c.ref == ref), None)
-        if placed is not None:
+        if off_board:
             if footprint_id is not None:
+                raise SessionError(
+                    "off_board chooses the footprint itself: the pads the wires land in. Give "
+                    "one or the other."
+                )
+            current = placed if placed is not None else self._require_part(ref)
+            package = self.lookup(current.footprint_id)
+            if package is None:
+                raise _no_such_footprint(current.footprint_id)
+            try:
+                moved = off_board_mount(current, package)
+            except ValueError as error:
+                raise SessionError(str(error)) from error
+            footprint_id = moved.footprint_id
+            names_arg = moved.pin_names if names_arg is None else names_arg
+            symbol_arg = moved.symbol if symbol_arg is KEEP else symbol_arg
+        if placed is not None:
+            if footprint_id is not None and not off_board:
                 raise SessionError(
                     f"{ref} is on the board, and its footprint is what its holes were chosen "
                     f"for. unplace_component takes it off; change the footprint there."
@@ -901,6 +926,7 @@ class BoardSession:
                     value=value,
                     pin_names=names_arg,
                     symbol=symbol_arg,
+                    footprint_id=footprint_id,
                 ),
             )
         return self._dispatch(

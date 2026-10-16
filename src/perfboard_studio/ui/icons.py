@@ -699,6 +699,21 @@ def _module(p: QPainter, style: Any) -> None:
         p.drawPoint(QPointF(72, y))
 
 
+def _flying_leads(p: QPainter, style: Any) -> None:
+    """A row of pads, each with a wire rising out of it and curving away off the board --
+    the only part of a panel pot or a jack the board ever has."""
+    for x, colour in ((30, "#d32f2f"), (50, "#f2c418"), (70, "#212121")):
+        _pad(p, x, 82, 9.0)
+        path = QPainterPath()
+        path.moveTo(QPointF(x, 78))
+        path.cubicTo(QPointF(x, 40), QPointF(x + 4, 24), QPointF(x + 20, 12))
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        p.setPen(_pen(style.edge, 11))
+        p.drawPath(path)
+        p.setPen(_pen(colour, 7))
+        p.drawPath(path)
+
+
 def _generic(p: QPainter, style: Any) -> None:
     _leads(p, (36, 64), 72, 96)
     _fill(p, style)
@@ -726,6 +741,7 @@ PART_DRAWINGS: dict[str, Callable[[QPainter, Any], None]] = {
     "box-header": _box_header,
     "screw-terminal-vertical": _screw_terminal,
     "module-board": _module,
+    "flying-leads": _flying_leads,
 }
 
 

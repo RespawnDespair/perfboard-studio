@@ -673,6 +673,11 @@ class UpdateComponentPayload:
     #: than merged, so what the dialog shows is exactly what the part ends up with.
     pin_names: PinNames | None = None
     symbol: PartSymbol | _Keep | None = KEEP
+    #: A different package on the same anchor, or ``None`` to keep this one -- which is how
+    #: a part goes off the board (``footprints.off_board_mount``) in one undo step. Its lead
+    #: bends go with the old package, since they were bent to its pins; the rest of the
+    #: copper stays for DRC and LVS to judge, as ``component.delete`` leaves it.
+    footprint_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1384,6 +1389,14 @@ class _UpdateComponent:
         symbol = (
             existing.symbol if isinstance(p.symbol, _Keep) else checked_part_symbol(p.symbol, ref)
         )
+        footprint_id = existing.footprint_id
+        if p.footprint_id is not None and p.footprint_id.strip() != existing.footprint_id:
+            footprint_id = p.footprint_id.strip()
+            if not footprint_id:
+                raise CommandError("empty-footprint", f"{ref} needs a footprint.")
+            if existing.locked:
+                # A new package moves the pins, which is what a lock is there to prevent.
+                raise CommandError("component-locked", f"{existing.ref} is locked.")
         # The rename carries the wiring; `rename_in_nets` says why, and refuses rather
         # than merging two parts when the new reference is already wired.
         nets = rename_in_nets(doc, existing.ref, ref)
@@ -1395,12 +1408,20 @@ class _UpdateComponent:
                 locked=p.locked if p.locked is not None else c.locked,
                 pin_names=pin_names,
                 symbol=symbol,
+                footprint_id=footprint_id,
             )
             if c.id == p.id
             else c
             for c in doc.components
         )
-        return dataclasses.replace(doc, components=components, nets=nets)
+        conductors = doc.conductors
+        if footprint_id != existing.footprint_id:
+            conductors = tuple(
+                c
+                for c in doc.conductors
+                if not (c.kind == "lead-bend" and c.component_id == p.id)
+            )
+        return dataclasses.replace(doc, components=components, nets=nets, conductors=conductors)
 
     def describe(self, p: UpdateComponentPayload, doc: PerfDocument) -> str:
         c = next((x for x in doc.components if x.id == p.id), None)

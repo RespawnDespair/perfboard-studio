@@ -157,6 +157,13 @@ yeniden numaralanır: KiCad bir Nano'yu bir yandan aşağı öbür yandan yukar�
 önce, üzerine "BC547" yazılmış genel bir transistör sembolünü de emetör önce numaralar —
 numarasıyla alındığında her biri kartı var olmayan bir parçaya göre kablolardı.
 
+**Paneldeki parça yerleştirilmez, tellenir.** Kutunun içinde duran bir pot, jak ya da
+footswitch sağ tık menüsünden panele alınır: kartta tellerinin geldiği bir sıra pede
+dönüşür, pinlerinin olduğu yerde, böylece bakır yollar onlara ulaşmaya devam eder; şemada ve
+parça listesinde ise yine bir pottur. Rehber onu uzun tellerle birlikte bağlatır, hangi pedin
+hangi uca gittiğini ve tellerin hangi kenardan çıktığını söyler, her teli kendi netinin
+renginde kesim listesine koyar ve netlerini ancak telleri takıldıktan sonra kontrol eder.
+
 ## Önce devreyi çizin
 
 Kart neyin nereye gideceğini söyler. Kartın yanında açılan şema paneli (`Ctrl+2`) *ne inşa
@@ -398,7 +405,8 @@ rehberi, 1:1 PDF çıktısı, kutusunu çizmek için kartın STEP modeli, T ve e
 paneli ve yanındaki sayfa dışa aktarımı, aralarında tek bir seçimle yan yana kart, şema ve
 3D, pin adları kartta basılan gerçek parça kataloğu, üzerinde ne varsa o olarak çizilen pin
 başlıklarındaki modüller, karta yazılan etiketler, parça parça okunan KiCad netlist'leri,
-kütüphanede olmayan parçaların kendi ölçüleriyle tarif edilmesi, çökme kurtarma, MCP
+kütüphanede olmayan parçaların kendi ölçüleriyle tarif edilmesi, karta tellerle bağlanan
+panel parçaları, çökme kurtarma, MCP
 sunucusu, TR/EN yerelleştirme, bir `v*` etiketiyle çalışan üç platformluk paketleme, ve
 yeni sürümü haber verip indiren güncelleme denetimi
 (**Yardım ▸ Güncellemeleri Denetle**; indirdiğini sürümün `SHA256SUMS` dosyasıyla

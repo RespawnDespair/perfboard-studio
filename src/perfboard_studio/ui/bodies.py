@@ -30,6 +30,7 @@ Everything here is derived from numbers already in the registry.
 
 from __future__ import annotations
 
+import itertools
 import math
 import re
 from collections.abc import Callable
@@ -41,6 +42,7 @@ from perfboard_studio.footprints import MIN_BODY_MM, body_extent, wire_entry
 from perfboard_studio.geometry import (
     SubstrateEdges,
     board_note_centre_mm,
+    flying_lead_routes,
     hole_to_mm,
     mounting_hole_centre_mm,
     substrate_edges_mm,
@@ -55,6 +57,10 @@ from perfboard_studio.model import (
     declared_pin_name,
     pin_name_of,
 )
+
+#: Half a flying lead's jacket, the width a pin name must stay clear of one by: the 3D view's
+#: 0.55 mm radius, the wider of the two views' wires.
+FLYING_LEAD_HALF_WIDTH_MM = 0.55
 
 # ---------------------------------------------------------------------------
 # Appearance
@@ -106,6 +112,9 @@ BODY_STYLES: dict[BodyArchetype, BodyStyle] = {
     # A module's own board: the blue solder mask most hobby modules are made in, with white
     # silkscreen -- the accent -- which is what its pin names are printed in.
     "module-board": BodyStyle(fill="#1f4f86", edge="#0e2b4d", accent="#eef2f7"),
+    # Hookup-wire jacket, for the icon and anything else that asks: on the board the wires
+    # are drawn in their nets' colours, and there is no body here to fill.
+    "flying-leads": BodyStyle(fill="#4a515c", edge="#22262d", accent="#e6e8ec"),
 }
 
 #: A polarized axial part is a diode, not a resistor. Same archetype, different object.
@@ -263,6 +272,7 @@ _SILHOUETTES: dict[BodyArchetype, Silhouette] = {
     "box-header": "rect",
     "screw-terminal-vertical": "rect",
     "module-board": "rect",
+    "flying-leads": "rounded",
 }
 
 #: Nothing is drawn thinner than this. The engine's floor for a body's width, re-exported
@@ -578,8 +588,13 @@ class PinLabel:
 def pin_labels(
     footprint: Footprint, component: ComponentInstance | None, pitch: float
 ) -> tuple[PinLabel, ...]:
-    """Every named pin of a placed part, and where its name is printed."""
-    if component is None or not footprint.pins:
+    """Every named pin of a placed part, and where its name is printed.
+
+    None for a part off the board: its names are on its wires' markers
+    (``guide.lead_marker``), where the wire they name is, and printed beside the pads as
+    well they would land on top of those same wires.
+    """
+    if component is None or not footprint.pins or footprint.body.archetype == "flying-leads":
         return ()
     placement = placement_for(footprint, pitch)
     module = footprint.body.archetype == "module-board"
@@ -694,6 +709,20 @@ def lay_out_pin_names(
         entry = placed_entry(comp, footprint, board)
         if entry is not None:
             standing.append((comp.id, entry[0]))
+        if footprint.body.archetype == "flying-leads":
+            # Its wires lie across the board to the edge, and a name under one is a name
+            # nobody can read. Each run on the board, a jacket wide.
+            for _number, points in flying_lead_routes(comp, footprint, board, 0.0):
+                for a, b in itertools.pairwise(points[:-1]):
+                    standing.append((
+                        comp.id,
+                        (
+                            min(a.x, b.x) - FLYING_LEAD_HALF_WIDTH_MM,
+                            max(a.x, b.x) + FLYING_LEAD_HALF_WIDTH_MM,
+                            min(a.y, b.y) - FLYING_LEAD_HALF_WIDTH_MM,
+                            max(a.y, b.y) + FLYING_LEAD_HALF_WIDTH_MM,
+                        ),
+                    ))
     for mount in document.mounting_holes:
         centre = mounting_hole_centre_mm(mount, board)
         r = max(mount.head_diameter, mount.diameter) / 2

@@ -156,9 +156,17 @@ from .striproute import StripboardPlan, plan_stripboard
 
 #: Parts that want a board edge. A connector has something plugged into it, a pot and a
 #: switch have a finger on them, and a terminal block has a screwdriver approaching it --
-#: none of which works from the middle of a populated board.
+#: none of which works from the middle of a populated board. Flying leads leave the board
+#: for a part on the panel, and every wire landed mid-board is a wire lying across the rest.
 EDGE_SEEKING_ARCHETYPES: frozenset[BodyArchetype] = frozenset(
-    {"screw-terminal", "pin-header", "box-header", "potentiometer", "tactile-switch"}
+    {
+        "screw-terminal",
+        "pin-header",
+        "box-header",
+        "potentiometer",
+        "tactile-switch",
+        "flying-leads",
+    }
 )
 
 # Which parts run hot, which parts mind, and how close is too close all live in
