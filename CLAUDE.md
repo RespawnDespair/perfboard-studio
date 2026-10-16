@@ -1692,6 +1692,14 @@ SOLID-core wire, because a stranded end frays in a clip. `tests/test_breadboard_
 checks the guide never tells anybody to solder -- by whole words, since "solderless" is the
 board's own name.
 
+**From the breadboard to a perfboard is a NEW document** (`commands.design_on_a_new_board`,
+File ▸ New Board from This Design…). Every part goes back into the design under its own id
+(`commands.part_of`, which `component.unplace` uses too), the nets, the sheet and the height
+limit come along, and everything of the old board's stays with it -- copper, cuts, labels,
+fingers, bores. Not a command, because the board the design was tried on is a file worth
+keeping; the window then goes straight to `on_choose_board`, which tries the stock boards on
+the design as it does for any design with nothing placed.
+
 ### Layering
 
 ```

@@ -215,6 +215,44 @@ def create_starter_document(meta: DocumentMeta) -> PerfDocument:
     )
 
 
+def part_of(component: ComponentInstance) -> SchematicPart:
+    """What a placed part IS, without where it is: the part ``component.unplace`` puts
+    back in the design, keeping its id so a replayed journal still describes one thing."""
+    return SchematicPart(
+        id=component.id,
+        ref=component.ref,
+        value=component.value,
+        footprint_id=component.footprint_id,
+        pin_names=component.pin_names,
+        symbol=component.symbol,
+    )
+
+
+def design_on_a_new_board(doc: PerfDocument, meta: DocumentMeta) -> PerfDocument:
+    """The same circuit as a new document, on a board with nothing on it yet.
+
+    How a design tried on a breadboard goes on to perfboard -- or from one board to any
+    other. The design is the document's own and is carried whole: every part, the placed
+    ones taken back off the board exactly as ``component.unplace`` takes them, every net,
+    the sheet as drawn (its placements are keyed on part ids, which do not change) and the
+    height the build has to fit under. What belonged to the old BOARD stays with it: the
+    copper and jumpers, cuts, labels written on it, fingers and bores. The new board is the
+    starter board, and the window then asks which board to buy the way it does for any
+    design with nothing placed. A new document and not a command: the board the design was
+    tried on is a file somebody may want to keep, and this leaves it exactly as it was.
+    """
+    starter = create_starter_document(meta)
+    return dataclasses.replace(
+        starter,
+        parts=doc.parts + tuple(part_of(component) for component in doc.components),
+        nets=doc.nets,
+        sheet=doc.sheet,
+        sheet_wires=doc.sheet_wires,
+        sheet_notes=doc.sheet_notes,
+        height_limit_mm=doc.height_limit_mm,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Shared validation helpers
 # ---------------------------------------------------------------------------
@@ -1691,17 +1729,7 @@ class _UnplaceComponent:
                 for c in doc.conductors
                 if not (c.kind == "lead-bend" and c.component_id == p.id)
             ),
-            parts=(
-                *doc.parts,
-                SchematicPart(
-                    id=existing.id,
-                    ref=existing.ref,
-                    value=existing.value,
-                    footprint_id=existing.footprint_id,
-                    pin_names=existing.pin_names,
-                    symbol=existing.symbol,
-                ),
-            ),
+            parts=(*doc.parts, part_of(existing)),
         )
 
     def describe(self, p: UnplaceComponentPayload, doc: PerfDocument) -> str:

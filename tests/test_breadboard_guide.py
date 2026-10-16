@@ -97,3 +97,57 @@ def test_a_chip_on_an_adapter_still_needs_the_iron_for_its_adapter() -> None:
     guide = build_guide(adapted, get_footprint)
     assert guide.iron is not None
     assert "Solder the surface-mount chips onto their adapters first" in guide.phases[0].summary
+
+
+# ---------------------------------------------------------------------------
+# From the breadboard to a perfboard
+# ---------------------------------------------------------------------------
+
+
+def test_the_design_goes_to_a_new_board_whole_and_the_old_board_stays_behind() -> None:
+    """Every part back in the design under its own id, every net and the sheet carried,
+    and nothing of the breadboard's: no jumpers, no breadboard. Then it places and wires
+    on the new board like any design."""
+    from perfboard_studio.commands import design_on_a_new_board
+    from perfboard_studio.lvs import run_lvs
+    from perfboard_studio.model import DocumentMeta
+    from perfboard_studio.placer import place_design
+
+    tried = _wired()
+    moved = design_on_a_new_board(tried, DocumentMeta(name="t", created="", modified=""))
+    assert moved.components == () and moved.conductors == ()
+    assert moved.board.type == "pad-per-hole"
+    assert sorted((p.id, p.ref, p.footprint_id) for p in moved.parts) == sorted(
+        (c.id, c.ref, c.footprint_id) for c in tried.components
+    )
+    assert moved.nets == tried.nets and moved.sheet == tried.sheet
+    assert {issue.kind for issue in run_lvs(moved, get_footprint).issues} == {"unplaced-component"}
+
+    placed = place_design(moved, get_footprint)
+    assert placed.unplaced == ()
+
+
+def test_the_window_takes_the_design_to_a_new_board_and_asks_which(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+
+    QApplication.instance() or QApplication(["perfboard-studio-tests"])
+    from perfboard_studio.ui import main as main_module
+
+    store = QSettings(str(tmp_path / "s.ini"), QSettings.Format.IniFormat)
+    monkeypatch.setattr(main_module, "app_settings", lambda: store)
+    asked: list[bool] = []
+    monkeypatch.setattr(main_module.MainWindow, "on_choose_board", lambda self: asked.append(True))
+    window = main_module.MainWindow(_wired())
+    try:
+        window.on_board_from_design()
+        doc = window.bus.document
+        assert asked == [True]
+        assert doc.board.type == "pad-per-hole" and doc.components == () and len(doc.parts) == 3
+        assert window.current_path is None
+    finally:
+        window._saved_document = window.bus.document
+        window.close()

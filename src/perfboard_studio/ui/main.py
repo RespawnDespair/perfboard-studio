@@ -170,6 +170,7 @@ from perfboard_studio.commands import (
     create_empty_document,
     create_standard_registry,
     create_starter_document,
+    design_on_a_new_board,
     preset_payload,
 )
 from perfboard_studio.connectivity import FootprintLookup, extract_physical_nets
@@ -4942,6 +4943,17 @@ class MainWindow(QMainWindow):
         act_new.setShortcut(QKeySequence.StandardKey.New)
         act_new.setToolTip(t("A blank board with no home on disk yet."))
         act_new.triggered.connect(self.on_new)
+        act_from_design = self.act_board_from_design = file_menu.addAction(
+            t("New Board from This &Design…")
+        )
+        act_from_design.setToolTip(
+            t(
+                "The same circuit on a board with nothing on it yet -- how a design tried on "
+                "a breadboard goes on to perfboard. The board it is on now, and its file, "
+                "stay exactly as they are."
+            )
+        )
+        act_from_design.triggered.connect(self.on_board_from_design)
         act_open = file_menu.addAction(t("&Open…"))
         act_open.setShortcut(QKeySequence.StandardKey.Open)
         act_open.triggered.connect(self.on_open)
@@ -10353,6 +10365,37 @@ class MainWindow(QMainWindow):
             ),
             8000,
         )
+
+    def on_board_from_design(self) -> None:
+        """Take this circuit to another board, as a new document: the breadboard it was
+        tried on stays in its file, the parts wait in the design, and the window goes
+        straight to the question of which board (``on_choose_board``)."""
+        current = self.bus.document
+        if not current.parts and not current.components:
+            self.statusBar().showMessage(t("There is no circuit here to take to another board."), 8000)
+            return
+        if not self._offer_to_save():
+            return
+        document = design_on_a_new_board(
+            current, DocumentMeta(name=UNTITLED_NAME, created=_now_iso(), modified=_now_iso())
+        )
+        self.current_path = None
+        self._disk_text = None
+        self._watch_current_path()
+        self.bus = self._new_bus(document)
+        self._subscribe_bus()
+        self.scene.bus = self.bus
+        self._forget_the_previous_document()
+        self.on_bus_changed(self.bus.document, None)
+        self._mark_saved()
+        self.view.fit_board()
+        self.statusBar().showMessage(
+            t("{count} part(s) waiting in the design: choose the board they go on.").format(
+                count=len(document.parts)
+            ),
+            8000,
+        )
+        self.on_choose_board()
 
     def on_board_setup(self) -> bool:
         """Change the grid or the substrate of the board already open. True when the

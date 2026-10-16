@@ -45,6 +45,11 @@ TURKISH: Mapping[str, str] = {
     "&Help": "Y&ardım",
     # -- file ----------------------------------------------------------------
     "&New Board…": "&Yeni Kart…",
+    "New Board from This &Design…": "Bu Tasarımdan Yeni Kart &Oluştur…",
+    "The same circuit on a board with nothing on it yet -- how a design tried on a breadboard goes on to perfboard. The board it is on now, and its file, stay exactly as they are.":
+        "Aynı devre, üzerinde henüz hiçbir şey olmayan bir kartta — breadboard'da denenen bir tasarım perfboard'a böyle geçer. Şimdiki kart ve dosyası olduğu gibi kalır.",
+    "There is no circuit here to take to another board.": "Burada başka bir karta taşınacak bir devre yok.",
+    "{count} part(s) waiting in the design: choose the board they go on.": "Tasarımda {count} parça bekliyor: hangi karta gideceklerini seç.",
     "&Open…": "&Aç…",
     "&Save": "&Kaydet",
     "Save &As…": "&Farklı Kaydet…",
