@@ -148,3 +148,68 @@ def test_a_jumper_drawn_on_a_breadboard_goes_in_from_above(window) -> None:  # t
     conductor = window.bus.document.conductors[0]
     assert conductor.side == "top"
     assert not [v for v in run_drc(window.bus.document, LOOKUP) if v.rule == "not-on-breadboard"]
+
+
+# ---------------------------------------------------------------------------
+# In 3D
+# ---------------------------------------------------------------------------
+
+
+def _timer_on_breadboard() -> PerfDocument:
+    from perfboard_studio.model import ComponentInstance, HoleCoord
+
+    u1 = ComponentInstance(
+        id="u1", ref="U1", value="NE555", footprint_id="dip-8", anchor=HoleCoord(10, 11),
+        rotation=270, mirrored=False, locked=False,
+    )
+    return PerfDocument(
+        meta=DocumentMeta(name="t", created="", modified=""), board=breadboard("830"), components=(u1,)
+    )
+
+
+def test_in_3d_a_breadboard_has_an_opening_at_every_hole_and_nowhere_else() -> None:
+    """Real openings, one per hole of the pattern, and a solid tile at every grid position
+    the pattern has none -- the channel, the strips beside the rails."""
+    from perfboard_studio.ui import view3d
+
+    board = breadboard("830")
+    doc = PerfDocument(meta=DocumentMeta(name="t", created="", modified=""), board=board)
+    glyphed = [
+        actor.GetMapper().GetInput().GetNumberOfPoints()
+        for actor in view3d.build_breadboard(doc)
+        if actor.GetMapper().IsA("vtkGlyph3DMapper")
+    ]
+    holes = board.cols * board.rows - len(missing_holes(board))
+    # The holed tiles and the wells behind them share the holes; the solid tiles take the rest.
+    assert sorted(glyphed) == sorted([holes, holes, len(missing_holes(board))])
+
+
+def test_in_3d_a_breadboard_carries_no_copper_and_no_solder(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """No substrate, pads, bores, legend or fillets: what a perfboard's 3D board is made of,
+    built on a breadboard, is what the first render showed -- green FR-4 with a hole at
+    every grid position and solder under it. None of those builders is asked."""
+    import vtk
+
+    from perfboard_studio.ui import view3d
+
+    def refused(*_args: object, **_kwargs: object) -> list[object]:
+        raise AssertionError("a copper board's builder was asked to draw a breadboard")
+
+    for name in ("build_substrate", "build_strips", "build_pads", "build_drills", "build_legend", "build_joints"):
+        monkeypatch.setattr(view3d, name, refused)
+    renderer = vtk.vtkRenderer()
+    view3d.populate_renderer(renderer, _timer_on_breadboard(), LOOKUP)
+    assert renderer.GetActors().GetNumberOfItems() > 0
+
+
+def test_in_3d_a_lead_stops_in_its_clip() -> None:
+    """Pushed into the plastic and held there, not through it: nothing comes out of the
+    underside of a breadboard to be trimmed."""
+    from perfboard_studio.ui import view3d
+
+    doc = _timer_on_breadboard()
+    body = view3d._world_body(LOOKUP, doc.components[0], doc.board)
+    assert body is not None
+    assert -doc.board.thickness < body.lead_bottom_z < 0
+    perfboard = view3d._world_body(LOOKUP, doc.components[0], DEFAULT_BOARD)
+    assert perfboard is not None and perfboard.lead_bottom_z < -DEFAULT_BOARD.thickness

@@ -94,6 +94,11 @@ SIZES: dict[str, tuple[int, int]] = {
 #: How thick the block is, clips and all. BusBoard gives its BB830 as 8.5 mm.
 THICKNESS_MM: Mm = 8.5
 
+#: How deep a lead goes before its clip holds it. It stops there, inside the plastic,
+#: rather than coming out of the underside to be trimmed -- one lead for the 3D view and
+#: the STEP export alike, as ``footprints.LEAD_TRIM_MM`` is for a soldered board.
+CLIP_DEPTH_MM: Mm = 4.0
+
 #: The square opening a lead goes into, taken as a drill: a clip grips 0.3 to 0.8 mm leads.
 #: ``wire-too-thick-for-hole`` reads it, which is the one rule that ever asks.
 HOLE_MM: Mm = 0.8

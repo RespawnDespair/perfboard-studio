@@ -1668,6 +1668,16 @@ offers no stock perfboard for one, so the Board step goes to Board Setup. Solder
 bare-wire tools are greyed out on it (`drc.BREADBOARD_CONDUCTOR_KINDS`), and a wire drawn by
 hand goes on its top side -- the default bottom is `not-on-breadboard`.
 
+**In 3D and in STEP it is plastic too.** `view3d.build_breadboard` replaces the substrate,
+pads, bores, legend and fillets: the top is tiles with a SQUARE opening glyphed at every hole
+of the pattern and a solid tile everywhere else, a dark well behind each opening (real
+openings, for `build_substrate`'s reason), and the groove, rail lines and print inlaid on top
+-- from `boardcolors.BREADBOARD`, the one table both views and the STEP palette read. The
+rail signs are bars, because `vtkVectorText` has no minus sign. A lead stops in its clip,
+`breadboard.CLIP_DEPTH_MM` below the top, instead of coming through to be trimmed: one depth
+for `_WorldBody.lead_bottom_z` and for the STEP export's leads, as `LEAD_TRIM_MM` is one
+trim for a soldered board. The STEP plate is drilled only where the pattern has holes.
+
 ### Layering
 
 ```

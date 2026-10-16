@@ -28,6 +28,14 @@ from typing import Any, Literal
 import vtk  # type: ignore[import-untyped]
 from vtkmodules.util import numpy_support
 
+from perfboard_studio.breadboard import (
+    CLIP_DEPTH_MM,
+    RAIL_CLASS,
+    has_hole,
+    is_breadboard,
+    rail_of,
+    strip_letter,
+)
 from perfboard_studio.connectivity import FootprintLookup
 from perfboard_studio.footprints import (
     ADAPTER_PIN_TAIL_MM,
@@ -80,7 +88,7 @@ from perfboard_studio.model import (
 from perfboard_studio.occupancy import stacking_layers
 from perfboard_studio.stripboard import cut_holes, segments
 
-from .boardcolors import scheme_for
+from .boardcolors import BREADBOARD, scheme_for
 from .bodies import (
     BODY_STYLES,
     PIN_NAME_HEIGHT_MM,
@@ -548,6 +556,189 @@ def build_substrate(doc: PerfDocument) -> list[vtk.vtkActor]:
     for actor in actors:
         actor.GetProperty().SetColor(*rgb)
         _finish(actor.GetProperty(), MASK)
+    return actors
+
+
+# ---------------------------------------------------------------------------
+# A solderless breadboard
+# ---------------------------------------------------------------------------
+
+#: The square opening, across, and how deep the dark well behind it is drawn -- enough to
+#: read as a hole into the plastic from any angle this view is looked at from.
+BREADBOARD_HOLE_MM = 1.1
+BREADBOARD_WELL_MM = 2.2
+#: The groove down the middle, the rail lines and the print, laid this far proud of the top.
+_BREADBOARD_INLAY_MM = 0.02
+BREADBOARD_GROOVE_MM = 1.6
+BREADBOARD_LINE_MM = 0.35
+BREADBOARD_NUMBER_MM = 1.3
+BREADBOARD_LETTER_MM = 1.5
+
+
+def _square_tile_with_hole(pitch: float, hole: float) -> vtk.vtkPolyData:
+    """A pitch square of plastic with a square opening in the middle, as four quads, so the
+    tiled top is watertight the way ``_tile_with_hole``'s is."""
+    half, inner = pitch / 2, hole / 2
+    mesh = _Mesh()
+    mesh.rectangle((-half, -half, half, -inner), 0.0)
+    mesh.rectangle((-half, inner, half, half), 0.0)
+    mesh.rectangle((-half, -inner, -inner, inner), 0.0)
+    mesh.rectangle((inner, -inner, half, inner), 0.0)
+    return mesh.data()
+
+
+def _square_well(hole: float, depth: float) -> vtk.vtkPolyData:
+    """The inside of an opening: four walls and the clip's dark floor."""
+    h = hole / 2
+    mesh = _Mesh()
+    corners = [(-h, -h), (h, -h), (h, h), (-h, h)]
+    for (ax, ay), (bx, by) in zip(corners, corners[1:] + corners[:1], strict=True):
+        mesh.polygon([(ax, ay, 0.0), (bx, by, 0.0), (bx, by, -depth), (ax, ay, -depth)])
+    mesh.rectangle((-h, -h, h, h), -depth)
+    return mesh.data()
+
+
+def _breadboard_row_y(board: Board, row: float) -> float:
+    return -row * board.pitch
+
+
+def _breadboard_col_x(board: Board, col: float) -> float:
+    return col * board.pitch
+
+
+def build_breadboard(doc: PerfDocument) -> list[vtk.vtkActor]:
+    """A solderless breadboard, in place of the substrate, the copper and the legend.
+
+    THE OPENINGS ARE REAL, for ``build_substrate``'s reason: a dark square laid on white
+    reads as print. The top is tiles -- a pitch square with a square taken out, glyphed at
+    every hole the pattern has, and a solid tile everywhere it has none -- with a dark well
+    behind each opening. On top of that, as the board has them: the groove down the middle,
+    a line beside each rail in the ink of the class it is for, and the print -- column
+    numbers every five and the row letters at both ends -- from ``boardcolors.BREADBOARD``,
+    the table the 2D view paints from. ``vtkVectorText`` prints ASCII only, so the rail
+    signs are drawn as bars rather than as the minus sign the 2D view uses.
+    """
+    board = doc.board
+    top, bottom = 0.0, -board.thickness
+    holed = vtk.vtkPoints()
+    solid = vtk.vtkPoints()
+    wells = vtk.vtkPoints()
+    for col in range(board.cols):
+        for row in range(board.rows):
+            x, y = _xy(board, HoleCoord(col, row))
+            if has_hole(board, HoleCoord(col, row)):
+                holed.InsertNextPoint(x, y, top)
+                wells.InsertNextPoint(x, y, top)
+            else:
+                solid.InsertNextPoint(x, y, top)
+
+    mesh = _Mesh()
+    for rect in _border_rects(board):
+        mesh.rectangle(rect, top)
+    x0, y0, x1, y1 = board_outline_rect(board)
+    mesh.rectangle((x0, y0, x1, y1), bottom)
+    for (ax, ay), (bx, by) in (
+        ((x0, y0), (x1, y0)),
+        ((x1, y0), (x1, y1)),
+        ((x1, y1), (x0, y1)),
+        ((x0, y1), (x0, y0)),
+    ):
+        mesh.polygon([(ax, ay, top), (bx, by, top), (bx, by, bottom), (ax, ay, bottom)])
+
+    body_rgb = _rgb(BREADBOARD.body)
+    actors: list[vtk.vtkActor] = []
+    plastic: list[vtk.vtkActor] = []
+    if holed.GetNumberOfPoints():
+        plastic.append(_glyphed(holed, _square_tile_with_hole(board.pitch, BREADBOARD_HOLE_MM)))
+    if solid.GetNumberOfPoints():
+        plastic.append(_glyphed(solid, _solid_tile(board)))
+    sides = vtk.vtkActor()
+    sides_mapper = vtk.vtkPolyDataMapper()
+    sides_mapper.SetInputData(mesh.data())
+    sides.SetMapper(sides_mapper)
+    plastic.append(sides)
+    for actor in plastic:
+        actor.GetProperty().SetColor(*body_rgb)
+        _finish(actor.GetProperty(), MOULDED)
+    actors.extend(plastic)
+
+    if wells.GetNumberOfPoints():
+        well = _glyphed(wells, _square_well(BREADBOARD_HOLE_MM, BREADBOARD_WELL_MM))
+        well.GetProperty().SetColor(*_rgb(BREADBOARD.hole))
+        _finish(well.GetProperty(), LAMINATE)
+        actors.append(well)
+
+    lines: dict[str, _Mesh] = {}
+    letters = {row: strip_letter(board, row) for row in range(board.rows)}
+    strip_rows = [row for row in range(board.rows) if letters[row] is not None]
+    upper = max(row for row in strip_rows if (letters[row] or "") >= "f")
+    lower = min(row for row in strip_rows if (letters[row] or "") <= "e")
+    middle = (_breadboard_row_y(board, upper) + _breadboard_row_y(board, lower)) / 2
+    groove = _Mesh()
+    groove.rectangle((x0, middle - BREADBOARD_GROOVE_MM / 2, x1, middle + BREADBOARD_GROOVE_MM / 2), _BREADBOARD_INLAY_MM)
+    left = _breadboard_col_x(board, 0) - board.pitch * 0.4
+    right = _breadboard_col_x(board, board.cols - 1) + board.pitch * 0.4
+    rail_rows = [row for row in range(board.rows) if rail_of(board, row) is not None]
+    for row in rail_rows:
+        rail = rail_of(board, row)
+        assert rail is not None
+        pair = [r for r in rail_rows if (r < board.rows / 2) == (row < board.rows / 2)]
+        away = -1 if row == min(pair) else 1
+        y = _breadboard_row_y(board, row + away * 0.62)
+        colour = BREADBOARD.rail_ink(RAIL_CLASS[rail])
+        target = lines.setdefault(colour, _Mesh())
+        target.rectangle((left, y - BREADBOARD_LINE_MM / 2, right, y + BREADBOARD_LINE_MM / 2), _BREADBOARD_INLAY_MM)
+        for at_col in (-1.15, board.cols - 1 + 1.15):
+            cx = _breadboard_col_x(board, at_col)
+            cy = _breadboard_row_y(board, row)
+            arm = BREADBOARD_LETTER_MM * 0.45
+            target.rectangle((cx - arm, cy - 0.12, cx + arm, cy + 0.12), _BREADBOARD_INLAY_MM)
+            if rail.endswith("+"):
+                target.rectangle((cx - 0.12, cy - arm, cx + 0.12, cy + arm), _BREADBOARD_INLAY_MM)
+
+    for mesh_, colour, material in (
+        (groove, BREADBOARD.groove, MOULDED),
+        *((m, c, INK) for c, m in lines.items()),
+    ):
+        actor = vtk.vtkActor()
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputData(mesh_.data())
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetColor(*_rgb(colour))
+        _finish(actor.GetProperty(), material)
+        actors.append(actor)
+
+    texts: list[tuple[str, float, float, float]] = []
+    for col in range(board.cols):
+        number = col + 1
+        if number != 1 and number % 5:
+            continue
+        for at_row in (min(strip_rows) - 1.05, max(strip_rows) + 1.05):
+            texts.append((str(number), _breadboard_col_x(board, col), _breadboard_row_y(board, at_row), BREADBOARD_NUMBER_MM))
+    for row in strip_rows:
+        for at_col in (-1.15, board.cols - 1 + 1.15):
+            texts.append((letters[row] or "", _breadboard_col_x(board, at_col), _breadboard_row_y(board, row), BREADBOARD_LETTER_MM))
+    append = vtk.vtkAppendPolyData()
+    for text, x, y, height in texts:
+        glyphs = _printed(text, height, board.pitch * 1.6)
+        if glyphs is None:
+            continue
+        moved = vtk.vtkTransform()
+        moved.Translate(x, y, _BREADBOARD_INLAY_MM)
+        placed = vtk.vtkTransformPolyDataFilter()
+        placed.SetTransform(moved)
+        placed.SetInputData(glyphs)
+        placed.Update()
+        append.AddInputData(placed.GetOutput())
+    if texts:
+        append.Update()
+        printed = vtk.vtkActor()
+        printed_mapper = vtk.vtkPolyDataMapper()
+        printed_mapper.SetInputData(append.GetOutput())
+        printed.SetMapper(printed_mapper)
+        printed.GetProperty().SetColor(*_rgb(BREADBOARD.print_ink))
+        _finish(printed.GetProperty(), INK)
+        actors.append(printed)
     return actors
 
 
@@ -1661,7 +1852,9 @@ def _world_body(lookup: FootprintLookup, comp: Any, board: Board) -> _WorldBody 
         height=placement.height,
         axis=axis,
         style=style_for(fp),
-        thickness=board.thickness,
+        # On a breadboard a lead stops in its clip, inside the plastic, instead of coming
+        # through to be trimmed on a solder side the board does not have.
+        thickness=CLIP_DEPTH_MM if is_breadboard(board) else board.thickness,
         pins=tuple(
             (hole.col * board.pitch, -hole.row * board.pitch)
             for _pin, hole in all_pin_holes(comp, fp)
@@ -5795,23 +5988,27 @@ def populate_renderer(
     # makes this safe to call repeatedly without re-adding a light every time.
     ren.RemoveAllViewProps()
 
-    for actor in build_substrate(doc):
+    # A breadboard is plastic with holes and print: no substrate, copper, legend, fingers,
+    # bores or solder joints, all of which the document refuses on one anyway.
+    breadboard = is_breadboard(board)
+    for actor in build_breadboard(doc) if breadboard else build_substrate(doc):
         ren.AddActor(actor)
     # The board's own copper goes down before the pads, so a stripboard reads as strips
     # with holes in them rather than as a grid of islands that happen to line up.
-    for actor in build_strips(doc):
+    for actor in () if breadboard else build_strips(doc):
         ren.AddActor(actor)
     # Copper face by face, because a single-sided board genuinely has none on top: the
     # component side is bare phenolic with drilled holes, which is most of what makes
     # those boards look and solder differently.
-    for face in ("top", "bottom"):
+    for face in () if breadboard else ("top", "bottom"):
         if board.single_sided and face == "top":
             continue
         ren.AddActor(build_pads(board, face, holes_without_grid_pad(doc, face) | cut_holes(doc)))
     # A finger has no bore, so it gets no wall either -- and neither does a position a
     # mounting bore's patch has taken over, where the plate is solid.
-    ren.AddActor(build_drills(board, patched_holes(doc) | undrilled_holes(doc)))
-    for actor in build_legend(doc):
+    if not breadboard:
+        ren.AddActor(build_drills(board, patched_holes(doc) | undrilled_holes(doc)))
+    for actor in () if breadboard else build_legend(doc):
         ren.AddActor(actor)
     if board_notes:
         for actor in build_board_notes(doc):
@@ -5820,9 +6017,10 @@ def populate_renderer(
         ren.AddActor(actor)
     for actor in build_mounting_holes(doc):
         ren.AddActor(actor)
-    if exploded_mm <= 0:
+    if exploded_mm <= 0 and not breadboard:
         # Not in an exploded view: the parts are off the board there, and a joint round a
-        # lead that is not in its hole is solder on nothing.
+        # lead that is not in its hole is solder on nothing. Nor on a breadboard, which is
+        # not soldered.
         for actor in build_joints(doc, lookup):
             ren.AddActor(actor)
     leaders = build_drop_lines(lookup, doc, exploded_mm)

@@ -26,6 +26,30 @@ from perfboard_studio.model import BoardMaterial
 
 
 @dataclass(frozen=True, slots=True)
+class BreadboardColours:
+    """A solderless breadboard, in both views: white plastic, dark openings, a groove, the
+    rail lines and grey print. Not a ``BoardScheme``, because a scheme is a solder mask over
+    copper and a breadboard has neither -- and not offered in the View menu, because every
+    breadboard is this colour."""
+
+    body: str = "#f3f2ee"
+    edge: str = "#cbc8c0"
+    hole: str = "#2e2d2b"
+    hole_rim: str = "#d9d6ce"
+    groove: str = "#dedbd3"
+    print_ink: str = "#77746c"
+    #: The line beside a rail, by the class of net the rail is for (``breadboard.RAIL_CLASS``).
+    ground: str = "#2f63c0"
+    power: str = "#d4373a"
+
+    def rail_ink(self, net_class: str) -> str:
+        return self.ground if net_class == "ground" else self.power
+
+
+BREADBOARD = BreadboardColours()
+
+
+@dataclass(frozen=True, slots=True)
 class BoardScheme:
     """One board's appearance. ``key`` is stable; ``label`` is shown and translated."""
 

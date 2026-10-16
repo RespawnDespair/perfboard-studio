@@ -58,6 +58,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from itertools import pairwise
 
+from .breadboard import CLIP_DEPTH_MM, is_breadboard
 from .connectivity import FootprintLookup
 from .drc import placed_body_box
 from .footprints import LEAD_RADIUS_MM, LEAD_TRIM_MM, MIN_BODY_MM, body_extent
@@ -66,6 +67,7 @@ from .geometry import (
     board_outline_mm,
     hole_key,
     hole_to_mm,
+    holeless_positions,
     mounting_hole_centre_mm,
     undrilled_holes,
 )
@@ -235,7 +237,9 @@ def board_model(
     for mount in doc.mounting_holes:
         centre = mounting_hole_centre_mm(mount, board)
         drill(*place(centre.x, centre.y), mount.diameter / 2)
-    undrilled = undrilled_holes(doc)
+    # A breadboard has a hole only where its pattern does -- not in the channel, nor in the
+    # strips beside the rails -- and a finger has none at all.
+    undrilled = undrilled_holes(doc) | holeless_positions(board)
     drilled: set[str] = set()
     for row in range(board.rows):
         for col in range(board.cols):
@@ -353,6 +357,9 @@ def _part_solids(
         for centre in [hole_to_mm(hole, board)]
     ]
     solids: list[Solid] = []
+    # Where a lead ends: trimmed just past the solder side, or -- on a breadboard -- held in
+    # its clip inside the plastic (``breadboard.CLIP_DEPTH_MM``, the 3D view's own depth).
+    floor = top - CLIP_DEPTH_MM if is_breadboard(board) else -LEAD_TRIM_MM
 
     def lead(base: Vec, axis: Vec, length: float) -> None:
         if length > 1e-6:
@@ -377,7 +384,7 @@ def _part_solids(
             if not low <= at <= high:
                 start = min(at, end)
                 lead((start, py, cz) if along_x else (px, start, cz), axis, abs(at - end))
-            lead((px, py, -LEAD_TRIM_MM), (0.0, 0.0, 1.0), cz + LEAD_TRIM_MM)
+            lead((px, py, floor), (0.0, 0.0, 1.0), cz - floor)
         return tuple(solids)
 
     if archetype in ROUND_ARCHETYPES:
@@ -386,7 +393,7 @@ def _part_solids(
     else:
         solids.append(Solid(Box((x0, y0, top), (x1, y1, top + height)), rgb))
     for px, py in pins:
-        lead((px, py, -LEAD_TRIM_MM), (0.0, 0.0, 1.0), top + LEAD_TRIM_MM)
+        lead((px, py, floor), (0.0, 0.0, 1.0), top - floor)
     return tuple(solids)
 
 

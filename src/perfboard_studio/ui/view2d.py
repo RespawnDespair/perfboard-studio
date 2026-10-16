@@ -150,7 +150,7 @@ from perfboard_studio.phrasebook import guide_language, phrasebook
 from perfboard_studio.ratsnest import RatsnestLink, all_links, ratsnest
 from perfboard_studio.stripboard import cut_holes, is_stripboard, segments
 
-from .boardcolors import scheme_for
+from .boardcolors import BREADBOARD, scheme_for
 from .bodies import (
     BODY_STYLES,
     PIN_NAME_HEIGHT_MM,
@@ -1020,18 +1020,6 @@ class StripGridItem(QGraphicsItem):
             painter.drawRoundedRect(rect, radius, radius)
 
 
-#: A solderless breadboard, as it looks: white plastic, square openings, a groove down the
-#: middle, a red and a blue line beside the rails and grey print. Its own colours rather than
-#: a board scheme, because a scheme is a solder mask and this board has none.
-BREADBOARD_BODY = "#f3f2ee"
-BREADBOARD_EDGE = "#cbc8c0"
-BREADBOARD_HOLE = "#2e2d2b"
-BREADBOARD_HOLE_RIM = "#d9d6ce"
-BREADBOARD_GROOVE = "#dedbd3"
-BREADBOARD_PRINT = "#77746c"
-#: The rail lines: what each rail's class looks like printed beside it.
-BREADBOARD_RAIL_INK: dict[str, str] = {"ground": "#2f63c0", "power": "#d4373a"}
-
 #: The opening a lead goes into, across, in mm -- a square, as moulded.
 BREADBOARD_HOLE_MM = 1.1
 #: How wide the groove down the middle is drawn.
@@ -1079,10 +1067,10 @@ class BreadboardItem(QGraphicsItem):
         # A moulded opening: a pale chamfer round a dark square, so it reads as a hole in
         # the plastic rather than a dot printed on it.
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(QColor(BREADBOARD_HOLE_RIM)))
+        painter.setBrush(QBrush(QColor(BREADBOARD.hole_rim)))
         painter.drawRoundedRect(QRectF(0, 0, side, side), side * 0.18, side * 0.18)
         inset = side * 0.16
-        painter.setBrush(QBrush(QColor(BREADBOARD_HOLE)))
+        painter.setBrush(QBrush(QColor(BREADBOARD.hole)))
         painter.drawRect(QRectF(inset, inset, side - 2 * inset, side - 2 * inset))
         painter.end()
         self._hole_pixmap = pixmap
@@ -1112,7 +1100,7 @@ class BreadboardItem(QGraphicsItem):
         lower = min(row for row in strip_rows if (letters[row] or "") <= "e")
         middle = (self._row_y(upper) + self._row_y(lower)) / 2
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QBrush(QColor(BREADBOARD_GROOVE)))
+        painter.setBrush(QBrush(QColor(BREADBOARD.groove)))
         painter.drawRect(
             QRectF(outline.left(), middle - BREADBOARD_GROOVE_MM / 2, outline.width(), BREADBOARD_GROOVE_MM)
         )
@@ -1128,7 +1116,7 @@ class BreadboardItem(QGraphicsItem):
                 pair = [r for r in rail_rows if (r < b.rows / 2) == (row < b.rows / 2)]
                 away = -1 if row == min(pair) else 1
                 y = self._row_y(row + away * 0.62)
-                painter.setPen(QPen(QColor(BREADBOARD_RAIL_INK[RAIL_CLASS[rail]]), 0.35))
+                painter.setPen(QPen(QColor(BREADBOARD.rail_ink(RAIL_CLASS[rail])), 0.35))
                 painter.drawLine(QPointF(left, y), QPointF(right, y))
 
         # The openings.
@@ -1159,7 +1147,7 @@ class BreadboardItem(QGraphicsItem):
         # The print: column numbers above the top strip row and below the bottom one,
         # every five as the board has them, and the row letters at both ends.
         painter.save()
-        painter.setPen(QColor(BREADBOARD_PRINT))
+        painter.setPen(QColor(BREADBOARD.print_ink))
         number_rows = (min(strip_rows) - 1.05, max(strip_rows) + 1.05)
         for col in range(b.cols):
             number = col + 1
@@ -1188,7 +1176,7 @@ class BreadboardItem(QGraphicsItem):
             rail = rail_of(b, row)
             if rail is None:
                 continue
-            painter.setPen(QColor(BREADBOARD_RAIL_INK[RAIL_CLASS[rail]]))
+            painter.setPen(QColor(BREADBOARD.rail_ink(RAIL_CLASS[rail])))
             for at_col in ends:
                 draw_physical_label(
                     painter,
@@ -3527,8 +3515,8 @@ class BoardScene(QGraphicsScene):
         breadboard = is_breadboard(board)
         substrate = self.addRect(
             outline,
-            QPen(QColor(BREADBOARD_EDGE if breadboard else scheme.edge), 0.4),
-            QBrush(QColor(BREADBOARD_BODY if breadboard else scheme.fill)),
+            QPen(QColor(BREADBOARD.edge if breadboard else scheme.edge), 0.4),
+            QBrush(QColor(BREADBOARD.body if breadboard else scheme.fill)),
         )
         substrate.setZValue(-100)
 

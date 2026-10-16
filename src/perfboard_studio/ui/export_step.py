@@ -16,11 +16,12 @@ from pathlib import Path
 
 from PySide6.QtGui import QColor
 
+from perfboard_studio.breadboard import is_breadboard
 from perfboard_studio.connectivity import FootprintLookup
 from perfboard_studio.model import ComponentInstance, Conductor, Footprint, PerfDocument
 from perfboard_studio.step_export import Palette, Rgb, document_to_step
 
-from .boardcolors import scheme_for
+from .boardcolors import BREADBOARD, scheme_for
 from .bodies import style_for
 from .moduleart import board_colour_for
 from .view3d import LEAD_RGB, net_colouring, wire_rgb
@@ -54,7 +55,7 @@ def step_palette(doc: PerfDocument) -> Palette:
         return wire_rgb(conductor, net_class.get(net), signal_index.get(net, 0))
 
     return Palette(
-        board=scheme_for(doc.board.material).rgb,
+        board=_rgb(BREADBOARD.body) if is_breadboard(doc.board) else scheme_for(doc.board.material).rgb,
         lead=LEAD_RGB,
         body=_body_rgb,
         component_body=_component_rgb(doc.board.pitch),

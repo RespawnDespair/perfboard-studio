@@ -8,6 +8,7 @@ from itertools import pairwise
 import pytest
 
 from perfboard_studio.breadboard import (
+    CLIP_DEPTH_MM,
     RAIL_GROUP,
     SIZES,
     breadboard,
@@ -340,3 +341,19 @@ def test_an_agent_places_and_reads_back_in_breadboard_names() -> None:
     assert session.check_heights()["parts"][0]["at"] == "e11"
     with pytest.raises(SessionError, match="row letter a-j"):
         session.place_component("U2", "dip-8", "K12", rotation=270)
+
+
+def test_a_breadboard_leaves_as_step_with_its_own_holes_and_leads_in_their_clips() -> None:
+    """The plate is drilled only where the pattern has a hole, and every lead ends inside
+    the plastic -- the 3D view's depth (``CLIP_DEPTH_MM``) -- instead of below it."""
+    from perfboard_studio.step_export import Cylinder, Plate, board_model
+
+    doc = _doc(FULL, _dip("U1", HoleCoord(10, 11)))
+    parts = board_model(doc, get_footprint)
+    plate = next(s.shape for s in parts[0].solids if isinstance(s.shape, Plate))
+    assert len(plate.holes) == 830
+    leads = [
+        s.shape for part in parts[1:] for s in part.solids
+        if isinstance(s.shape, Cylinder) and s.shape.axis == (0.0, 0.0, 1.0)
+    ]
+    assert leads and all(lead.base[2] == pytest.approx(FULL.thickness - CLIP_DEPTH_MM) for lead in leads)
