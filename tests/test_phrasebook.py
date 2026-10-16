@@ -93,6 +93,8 @@ def said_from_tables() -> set[str]:
     return (
         set(PHASE_TITLES.values())
         | set(guide_module.PHASE_SUMMARIES.values())
+        | set(guide_module.BREADBOARD_PHASE_TITLES.values())
+        | set(guide_module.BREADBOARD_PHASE_SUMMARIES.values())
         | {iron.note for iron in guide_module.IRON_BY_MATERIAL.values()}
         | set(guide_module._PIN_NAME_MEANING.values())
         | set(guide_module._LEAD_NAME_MEANING.values())

@@ -54,6 +54,7 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
+from .breadboard import has_rails, is_breadboard
 from .connectivity import FootprintLookup, PhysicalPinRef
 from .drc import DEFAULT_DRC_OPTIONS, DrcOptions, DrcViolation, run_drc, trace_electrical
 from .footprints import adapter_package, flying_lead_length_mm, wire_entry
@@ -65,6 +66,7 @@ from .geometry import (
     flying_lead_side,
     format_hole,
     hole_to_mm,
+    holeless_positions,
     is_inside_board,
     path_length_mm,
     row_label,
@@ -137,6 +139,51 @@ PHASE_SUMMARIES: dict[PhaseNumber, str] = {
     7: "Insulated wire, which may cross anything already on the solder side.",
     8: "Fit the ICs, run the final checks, and power up under current limit.",
 }
+
+#: A solderless breadboard is built in the same order, shortest first, with three
+#: differences, and these are the phases they change. JUMPERS GO FIRST: a jumper lies flat
+#: on the plastic, so it is the lowest thing on the board and nothing then has to be lifted
+#: to reach the holes under it -- and a flat jumper may run beneath a part that stands over
+#: it. THE ICS GO SECOND, across the groove, because there is no iron for them to fear and
+#: they are what the rows around them are counted from. And there is no solder side, so
+#: phase 6 is always empty and is not shown.
+BREADBOARD_PHASE_TITLES: dict[PhaseNumber, str] = {
+    **PHASE_TITLES,
+    1: "Jumpers, then what lies flat",
+    2: "ICs across the groove",
+    7: "Wires to the parts off the board",
+    8: "Checks and power",
+}
+
+BREADBOARD_PHASE_SUMMARIES: dict[PhaseNumber, str] = {
+    **PHASE_SUMMARIES,
+    1: (
+        "The jumper wires first, laid flat on the plastic and pushed down into their holes, "
+        "so nothing has to be lifted later to reach a hole under a part. Then the parts that "
+        "lie flat: axial resistors and diodes."
+    ),
+    2: (
+        "The ICs, each straddling the groove down the middle: one row of pins in row e, "
+        "the other in row f. Touch something earthed before you pick one up."
+    ),
+    7: (
+        "The wires to the parts off the board: into their holes here first, then to the "
+        "parts themselves once they are mounted."
+    ),
+    8: "Run the final checks, and power up under current limit.",
+}
+
+#: Which phase a body goes in on a breadboard: a DIP, or a chip on its adapter, goes in
+#: whole in phase 2 -- there is no socket to fit first. Everything else as on perfboard.
+BREADBOARD_PHASE_BY_ARCHETYPE: dict[BodyArchetype, PhaseNumber] = {
+    "dip": 2,
+    "smd-adapter": 2,
+}
+
+#: How much of each end of a breadboard jumper is stripped: the bare end is what goes into
+#: the clip, so it is the whole leg. A quarter of an inch, what the pre-cut kits are made
+#: with, and enough to reach the clip under a 0.3 inch moulding.
+BREADBOARD_STRIP_MM: Mm = 6.0
 
 #: Which phase each kind of body belongs in. Ordered by how tall it stands, because that
 #: is what decides whether the board still lies flat while the next part is soldered.
@@ -593,7 +640,8 @@ class Guide:
     #: Stripboard only, and empty on every other board: the tracks to break before
     #: anything is soldered.
     track_cuts: tuple[TrackCutJob, ...]
-    iron: IronSettings
+    #: None on a breadboard with nothing to solder -- see build_guide.
+    iron: IronSettings | None
     tools: tuple[str, ...]
     warnings: tuple[GuideWarning, ...]
     #: Counts, for a summary line and for tests that care about coverage.
@@ -644,16 +692,27 @@ def build_guide(
     # A part off the board is wired after the copper, so a net reaching it is not finished
     # until its wires are in -- and a continuity check asked for before then fails for a
     # reason that is not a fault.
+    #
+    # On a breadboard EVERY part goes in after the copper -- the jumpers are phase 1 -- so
+    # every part is late in that sense, and a check on a net waits for the parts it probes.
+    # Only there: on perfboard the parts come first and the goldens hold that.
+    breadboard = is_breadboard(doc.board)
     late_parts = {
-        step.ref: phase for step, phase in part_steps if step.archetype == "flying-leads"
+        step.ref: phase
+        for step, phase in part_steps
+        if breadboard or step.archetype == "flying-leads"
     }
 
     adapters = _adapters(doc, lookup)
+    titles = BREADBOARD_PHASE_TITLES if breadboard else PHASE_TITLES
     by_phase: dict[PhaseNumber, list[GuideStep]] = {n: [] for n in PHASE_TITLES}
-    for part_step, part_phase in part_steps:
-        by_phase[part_phase].append(part_step)
-    for conductor_step, conductor_phase in conductor_steps:
-        by_phase[conductor_phase].append(conductor_step)
+    # The jumpers ahead of the flat parts that share phase 1 with them on a breadboard,
+    # which is the whole reason they are in it.
+    ordered: list[tuple[GuideStep, PhaseNumber]] = (
+        [*conductor_steps, *part_steps] if breadboard else [*part_steps, *conductor_steps]
+    )
+    for step_in_order, step_phase in ordered:
+        by_phase[step_phase].append(step_in_order)
 
     checkpoints = _checkpoints(
         doc, lookup, violations, conductor_steps, options, say, late_parts
@@ -664,7 +723,7 @@ def build_guide(
     phases = tuple(
         GuidePhase(
             number=number,
-            title=say(PHASE_TITLES[number]),
+            title=say(titles[number]),
             summary=_phase_summary(
                 number, doc, say, off_board=bool(lead_list), adapters=adapters
             ),
@@ -674,7 +733,11 @@ def build_guide(
         for number in sorted(PHASE_TITLES)
     )
 
-    iron = IRON_BY_MATERIAL[doc.board.material]
+    # A breadboard is not soldered -- unless a chip has to go onto its adapter first, and
+    # an adapter is an FR-4 board like any other.
+    iron: IronSettings | None = (
+        None if breadboard and not adapters else IRON_BY_MATERIAL[doc.board.material]
+    )
     all_checks = sum(len(phase.checkpoints) for phase in phases)
     return Guide(
         board=doc.board,
@@ -684,7 +747,7 @@ def build_guide(
         cut_list=tuple(cut_list),
         spine_list=tuple(spine_list),
         track_cuts=track_cuts,
-        iron=dataclasses.replace(iron, note=say(iron.note)),
+        iron=None if iron is None else dataclasses.replace(iron, note=say(iron.note)),
         tools=_tools(doc, cut_list, spine_list, say, lead_list, adapters),
         warnings=_warnings(doc, lookup, violations, say),
         part_steps=len(part_steps),
@@ -723,6 +786,8 @@ def _phase_summary(
     is already labelled is how a guide starts feeling like it was not written for the
     board in front of them.
     """
+    if is_breadboard(doc.board):
+        return _breadboard_phase_summary(number, doc, say, adapters)
     if number == 7 and off_board:
         return say(PHASE_SUMMARIES[7]) + " " + say(
             "Then the wires to the parts off the board: into their pads here first, then "
@@ -804,6 +869,43 @@ def _phase_summary(
     return summary
 
 
+def _breadboard_phase_summary(
+    number: PhaseNumber,
+    doc: PerfDocument,
+    say: Phrasebook,
+    adapters: tuple[tuple[str, str, int], ...],
+) -> str:
+    """A breadboard's phase summary. Phase 0 is about which way round to lay it: every
+    address in the guide is the one printed on the board, and they only match the board
+    in front of you if it is the right way up."""
+    if number != 0:
+        return say(BREADBOARD_PHASE_SUMMARIES[number])
+    summary = say(
+        "Lay the breadboard down with column 1 on the left and row j at the top: every "
+        "address in this guide is printed on it, row letter first — e12 is row e, "
+        "column 12. Then get the parts ready."
+    )
+    if has_rails(doc.board):
+        summary += " " + say(
+            "On some boards each rail is broken in the middle — a gap in its red or blue "
+            "line. If yours is, bridge the two halves of every rail with a short jumper "
+            "before anything else."
+        )
+    if adapters:
+        summary += " " + say(
+            "Solder the surface-mount chips onto their adapters first: {chips}. Line each "
+            "chip's pin-1 dot up with the adapter's pin 1, tack one corner leg, check it "
+            "is square, then do the rest with plenty of flux — and look along every leg "
+            "under a magnifier for a bridge. Once the adapter is on the board, nobody can "
+            "reach those legs.",
+            chips=say.joined([
+                say("{ref} ({package})", ref=ref, package=package)
+                for ref, package, _ in adapters
+            ]),
+        )
+    return summary
+
+
 # -- parts ------------------------------------------------------------------
 
 
@@ -844,6 +946,8 @@ def _part_steps(
             wires=wires,
         )
         phase = PHASE_BY_ARCHETYPE.get(footprint.body.archetype, 5)
+        if is_breadboard(doc.board):
+            phase = BREADBOARD_PHASE_BY_ARCHETYPE.get(footprint.body.archetype, phase)
         entries.append((phase, footprint.body_height, component.ref, step))
 
     entries.sort(key=lambda entry: (entry[0], entry[1], entry[2]))
@@ -871,7 +975,15 @@ def _part_notes_from_drc(
                 _conductor_where(path_by_id.get(conductor_id), say, board=doc.board)
                 for conductor_id in violation.conductor_ids
             ]
-            if len(wheres) > 1:
+            if is_breadboard(doc.board):
+                # Every jumper on a breadboard is in phase 1 already; what is worth saying
+                # is only that this part stands over one.
+                note = say(
+                    "The jumpers {wheres} run underneath this part. They went in first, in "
+                    "phase 1; check they are pressed down flat before this goes over them.",
+                    wheres=say.joined(wheres),
+                )
+            elif len(wheres) > 1:
                 note = say(
                     "The top jumpers {wheres} run underneath this part, so they have to be "
                     "soldered first — they are in phase 1 for that reason. Check they are "
@@ -928,7 +1040,17 @@ def _part_step(
         notes.extend(
             _flying_lead_notes(component, footprint, holes, board, strip_mm, say, wires or {})
         )
-    if footprint.body.archetype == "dip":
+    breadboard = is_breadboard(board)
+    if breadboard and footprint.body.archetype in ("dip", "smd-adapter"):
+        # No socket and no iron: the chip goes straight in, and what goes wrong is a leg
+        # folded under the body instead of into its hole.
+        first = min(holes, key=lambda held: (held[0].number != "1", held[0].number))[1]
+        notes.append(say(
+            "Across the groove, pin 1 in {hole}. Line both rows of legs up over their holes "
+            "and press the body down evenly, so that no leg folds under it.",
+            hole=format_hole(first, board),
+        ))
+    elif footprint.body.archetype == "dip":
         # The old wording told the reader to "leave it until phase 8", which is where the
         # IC goes in but is not where this step is: PHASE_BY_ARCHETYPE puts a DIP in phase
         # 2, the SOCKET phase. Say which of the two things happens now and which does not.
@@ -938,7 +1060,13 @@ def _part_step(
             "socket: it is the last thing on the board that should meet an iron."
         ))
     package = adapter_package(footprint)
-    if package is not None:
+    if package is not None and breadboard:
+        notes.append(say(
+            "A {package} on its DIP adapter, which should already carry the chip (phase 0). "
+            "From here on it is a DIP.",
+            package=package,
+        ))
+    elif package is not None:
         # The chip went onto its adapter in phase 0 (``_phase_summary``); what is left is the
         # header, which is where an adapter goes crooked, and then it is a DIP like any other.
         notes.append(say(
@@ -949,7 +1077,7 @@ def _part_step(
             "adapter itself goes in with the other ICs in phase 8.",
             package=package,
         ))
-    if component.mirrored:
+    if component.mirrored and not breadboard:
         notes.append(say(
             "This part is mirrored: it goes in from the SOLDER side, not the component "
             "side. Check the pin order against the board before soldering."
@@ -965,6 +1093,11 @@ def _part_step(
         )
         notes.append(say(
             "The wire entries face the {side} edge of the board — the screws on top, the "
+            "openings towards the {side}. Check before pushing it in: it fits the holes "
+            "either way round.",
+            side=say(side),
+        ) if breadboard else say(
+            "The wire entries face the {side} edge of the board — the screws on top, the "
             "openings towards the {side}. Check before soldering: it fits the holes either "
             "way round.",
             side=say(side),
@@ -974,7 +1107,13 @@ def _part_step(
             "The wires go in from ABOVE: this is the header, and the screw plug is pushed "
             "down into it. Keep the space over it clear for the plug and a screwdriver."
         ))
-    if footprint.body.archetype == "module-board":
+    if footprint.body.archetype == "module-board" and breadboard:
+        notes.append(say(
+            "It plugs straight into the breadboard on its own pins: check its orientation "
+            "against the pin names, line every pin up over its hole and press it down "
+            "evenly."
+        ))
+    elif footprint.body.archetype == "module-board":
         seat = footprint.body.dims.get("seat", 0.0)
         if seat >= 5.0:
             notes.append(say(
@@ -990,6 +1129,11 @@ def _part_step(
     if height_limit_mm is not None and footprint.body_height > height_limit_mm:
         notes.append(say(
             "{height:g} mm tall, and this build has {limit:g} mm of room. It will not fit "
+            "as it stands — lay it down or swap it before you push it in.",
+            height=footprint.body_height,
+            limit=height_limit_mm,
+        ) if breadboard else say(
+            "{height:g} mm tall, and this build has {limit:g} mm of room. It will not fit "
             "as it stands — lay it down or swap it before you solder it in.",
             height=footprint.body_height,
             limit=height_limit_mm,
@@ -998,6 +1142,10 @@ def _part_step(
         # The guess, kept only for a board that has not said what it has to fit inside.
         # Once there is a real number the real number wins.
         notes.append(say(
+            "{height:.0f} mm tall — check it clears anything meant to go over the board "
+            "before you push it in.",
+            height=footprint.body_height,
+        ) if breadboard else say(
             "{height:.0f} mm tall — check it clears anything meant to go over the board "
             "before you solder it down.",
             height=footprint.body_height,
@@ -1345,7 +1493,9 @@ def _conductor_steps(
             spine_list.append(step.spine)
 
         phase = PHASE_BY_CONDUCTOR.get(conductor.kind, 6)
-        if conductor.id in trapped:
+        if is_breadboard(doc.board):
+            phase = 1  # Flat on the plastic before any part: see BREADBOARD_PHASE_TITLES.
+        elif conductor.id in trapped:
             # A top jumper normally goes in at phase 7, soldered to pins that are already
             # fitted. One that runs UNDER a part cannot: by phase 7 the part is on the
             # board and the wire has nowhere to go. So the ones DRC flagged move to phase
@@ -1448,7 +1598,13 @@ def _conductor_step(
                 copper=awg_diameter_mm(cut.awg),
                 drill=board.drill_diameter,
             ))
-        if conductor.kind == "top-jumper":
+        if is_breadboard(board):
+            notes.append(say(
+                "Strip {strip:g} mm off each end, bend both ends straight down and push them "
+                "into their holes until the insulation meets the plastic.",
+                strip=cut.strip_mm,
+            ))
+        elif conductor.kind == "top-jumper":
             notes.append(say(
                 "This one runs over the COMPONENT side, not the solder side. Keep it clear "
                 "of anything that has to be reachable later."
@@ -1519,6 +1675,12 @@ def _wire_cut(
     # allowance anyway would pad every bare run by a centimetre.
     strip_mm = options.strip_length_mm if insulated else 0.0
     ends = 2 * (board.thickness + options.bend_allowance_mm) + 2 * strip_mm
+    if is_breadboard(board):
+        # A breadboard jumper does not go THROUGH anything: its stripped ends bend down
+        # into the clips and that is the whole of them, so the wire is the path and two
+        # legs -- not the path, two board thicknesses and two bends.
+        strip_mm = BREADBOARD_STRIP_MM
+        ends = 2 * strip_mm
     # The gauge the document names, if it names one; otherwise the one the current asks
     # for. Before this read the document, a wire stored as AWG 18 was printed as AWG 24.
     awg = cut_gauge_awg(stored_awg, current_a, options.drc.max_wire_current_density_a_per_mm2)
@@ -2189,13 +2351,21 @@ def _tools(
 ) -> tuple[str, ...]:
     """What to have on the bench, derived from what the board actually needs."""
     iron = IRON_BY_MATERIAL[doc.board.material]
-    tools = [
+    breadboard = is_breadboard(doc.board)
+    tools = [] if breadboard and not adapters else [
         say(
             "Soldering iron with a fine tip, set to {temperature} °C",
             temperature=iron.temperature_c,
         ),
         say("60/40 or lead-free solder, 0.7–1.0 mm"),
         say("Flux — a pen or a small pot. Solder traces are not reliably makeable without it"),
+    ]
+    if breadboard:
+        tools.insert(0, say(
+            "A solderless breadboard, {points} points",
+            points=doc.board.cols * doc.board.rows - len(holeless_positions(doc.board)),
+        ))
+    tools += [
         say("Side cutters and small pliers"),
         say("A multimeter with a continuity buzzer (every checkpoint below uses it)"),
     ]
@@ -2217,7 +2387,17 @@ def _tools(
         metres = (
             sum(cut.cut_mm for cut in hookup) + sum(lead.cut_mm or 0.0 for lead in leads)
         ) / 1000
-        if any(lead.cut_mm is None for lead in leads):
+        if breadboard:
+            # SOLID core, and it has to be said: a stranded wire frays in a clip instead of
+            # going into it, and is the reel most people reach for first.
+            tools.append(say(
+                "Solid-core hookup wire, AWG {gauges} in {colours} — about {metres:.2f} m in "
+                "total. Not stranded: a stranded end frays in the clip instead of going in.",
+                gauges=gauges,
+                colours=colours,
+                metres=metres,
+            ))
+        elif any(lead.cut_mm is None for lead in leads):
             tools.append(say(
                 "Hookup wire, AWG {gauges} in {colours} — about {metres:.2f} m, plus the "
                 "wires to the parts off the board, cut to fit",

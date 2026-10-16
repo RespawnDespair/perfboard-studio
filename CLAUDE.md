@@ -1678,6 +1678,20 @@ rail signs are bars, because `vtkVectorText` has no minus sign. A lead stops in 
 for `_WorldBody.lead_bottom_z` and for the STEP export's leads, as `LEAD_TRIM_MM` is one
 trim for a soldered board. The STEP plate is drilled only where the pattern has holes.
 
+**The guide builds a breadboard in the same order, with three differences**
+(`guide.BREADBOARD_PHASE_TITLES`, `BREADBOARD_PHASE_SUMMARIES`, `BREADBOARD_PHASE_BY_ARCHETYPE`).
+Every jumper is phase 1 and comes AHEAD of the flat parts that share the phase: a jumper
+lying on the plastic is the lowest thing on the board, and nothing then has to be lifted to
+reach a hole under a part. The ICs go in phase 2, whole and across the groove, because there
+is no iron for them to fear. Phase 6 is always empty. Because the parts now come AFTER the
+copper, `late_parts` covers every part on a breadboard -- a continuity check waits for the
+parts it probes -- and only there, so no golden moved. `Guide.iron` is None unless a chip has
+to go onto an adapter; a jumper is cut to its path plus two stripped legs
+(`BREADBOARD_STRIP_MM`), not two board thicknesses and two bends; and the bench list asks for
+SOLID-core wire, because a stranded end frays in a clip. `tests/test_breadboard_guide.py`
+checks the guide never tells anybody to solder -- by whole words, since "solderless" is the
+board's own name.
+
 ### Layering
 
 ```

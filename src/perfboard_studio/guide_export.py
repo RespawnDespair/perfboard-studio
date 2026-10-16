@@ -41,8 +41,9 @@ from dataclasses import fields, is_dataclass
 from html import escape
 from typing import Any
 
+from .breadboard import is_breadboard
 from .drc import MATERIAL_LABELS
-from .geometry import board_size_mm, format_hole
+from .geometry import board_size_mm, format_hole, holeless_positions
 from .guide import (
     TEMPLATE_MARGIN_MM,
     WIRE_INK,
@@ -421,16 +422,27 @@ def guide_to_html(guide: Guide, step_images: Mapping[str, bytes] | None = None) 
         # header and the "Cut it to..." line twelve lines down described one board in two
         # notations.
         '<p class="sub">'
-        + say(
-            "Soldering guide · {cols} × {rows} {material} perfboard at {pitch:g} mm pitch · "
-            "{steps} steps, {checks} checks · Perfboard Studio {version}",
-            cols=guide.board.cols,
-            rows=guide.board.rows,
-            material=escape(MATERIAL_LABELS[guide.board.material]),
-            pitch=guide.board.pitch,
-            steps=guide.total_steps,
-            checks=guide.checkpoint_count,
-            version=escape(__version__),
+        + (
+            say(
+                "Building guide · solderless breadboard, {points} points · {steps} steps, "
+                "{checks} checks · Perfboard Studio {version}",
+                points=guide.board.cols * guide.board.rows - len(holeless_positions(guide.board)),
+                steps=guide.total_steps,
+                checks=guide.checkpoint_count,
+                version=escape(__version__),
+            )
+            if is_breadboard(guide.board)
+            else say(
+                "Soldering guide · {cols} × {rows} {material} perfboard at {pitch:g} mm pitch · "
+                "{steps} steps, {checks} checks · Perfboard Studio {version}",
+                cols=guide.board.cols,
+                rows=guide.board.rows,
+                material=escape(MATERIAL_LABELS[guide.board.material]),
+                pitch=guide.board.pitch,
+                steps=guide.total_steps,
+                checks=guide.checkpoint_count,
+                version=escape(__version__),
+            )
         )
         + "</p>",
     ]
@@ -533,15 +545,9 @@ def _html_preparation(guide: Guide, say: Phrasebook) -> str:
         + f"</span> — {escape(phase.title)}</h2>"
         f'<p class="sub">{escape(phase.summary)}</p>'
         f"<h3>{say('On the bench')}</h3><ul>{rows}</ul>"
-        f"<h3>{say('Iron')}</h3><p>"
-        + say(
-            "{temperature} °C, no more than {dwell:g} s on any one pad. {note}",
-            temperature=guide.iron.temperature_c,
-            dwell=guide.iron.max_dwell_s,
-            note=escape(guide.iron.note),
-        )
-        + f"</p><h3>{say('The board')}</h3><p>"
-        + say(
+        + _html_iron(guide, say)
+        + f"<h3>{say('The board')}</h3><p>"
+        + (_html_breadboard(guide, say) if is_breadboard(guide.board) else say(
             "Cut it to {cols} × {rows} holes ({size}) and mark hole {a1} in the top-left "
             "corner on the COMPONENT side. Every address below is counted from it, so if it "
             "is marked wrong, everything else is.",
@@ -553,8 +559,34 @@ def _html_preparation(guide: Guide, say: Phrasebook) -> str:
             # bordered board short by the border on both sides.
             size=_board_mm(guide),
             a1='<span class="hole">A1</span>',
-        )
+        ))
         + f"</p>{_html_cuts(guide, say)}{checks}</section>"
+    )
+
+
+def _html_iron(guide: Guide, say: Phrasebook) -> str:
+    """The iron, when there is one: a breadboard with nothing to solder has none."""
+    if guide.iron is None:
+        return ""
+    return (
+        f"<h3>{say('Iron')}</h3><p>"
+        + say(
+            "{temperature} °C, no more than {dwell:g} s on any one pad. {note}",
+            temperature=guide.iron.temperature_c,
+            dwell=guide.iron.max_dwell_s,
+            note=escape(guide.iron.note),
+        )
+        + "</p>"
+    )
+
+
+def _html_breadboard(guide: Guide, say: Phrasebook) -> str:
+    """What the board is, where a perfboard's says what to cut it to. Which way round it
+    goes is the phase-0 summary just above, which the window's guide shows too."""
+    return say(
+        "A solderless breadboard, {points} points. Nothing on it is cut, drilled or "
+        "soldered: every part and every wire is pushed into its holes.",
+        points=guide.board.cols * guide.board.rows - len(holeless_positions(guide.board)),
     )
 
 

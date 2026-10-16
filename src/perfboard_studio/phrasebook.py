@@ -189,6 +189,103 @@ TURKISH: dict[str, str] = {
     "Tall and mechanical": "Uzun ve mekanik parçalar",
     "Solder side: traces and bare wire": "Lehim yüzü: lehim yolları ve çıplak tel",
     "Long insulated wires": "Uzun izoleli teller",
+    # -- a solderless breadboard (guide.BREADBOARD_PHASE_TITLES and the steps on one) --
+    "Jumpers, then what lies flat": "Önce jumper'lar, sonra yatık parçalar",
+    "ICs across the groove": "Oluğun üstüne entegreler",
+    "Wires to the parts off the board": "Kart dışındaki parçaların telleri",
+    "Checks and power": "Kontroller ve enerji",
+    "The jumper wires first, laid flat on the plastic and pushed down into their holes, so "
+    "nothing has to be lifted later to reach a hole under a part. Then the parts that lie "
+    "flat: axial resistors and diodes.": (
+        "Önce jumper telleri: plastiğin üstüne düz yatırılıp deliklerine bastırılarak, "
+        "böylece sonradan bir parçanın altındaki deliğe ulaşmak için hiçbir şeyi kaldırmak "
+        "gerekmez. Ardından yatık duran parçalar: eksenel dirençler ve diyotlar."
+    ),
+    "The ICs, each straddling the groove down the middle: one row of pins in row e, the "
+    "other in row f. Touch something earthed before you pick one up.": (
+        "Entegreler, her biri ortadaki oluğun iki yanında: bir sıra pin e sırasında, "
+        "öbürü f sırasında. Birini eline almadan önce topraklı bir şeye dokun."
+    ),
+    "The wires to the parts off the board: into their holes here first, then to the "
+    "parts themselves once they are mounted.": (
+        "Kart dışındaki parçaların telleri: önce buradaki deliklerine, sonra parçalar "
+        "yerine takılınca parçaların kendisine."
+    ),
+    "Run the final checks, and power up under current limit.": (
+        "Son kontrolleri yap ve akım sınırı altında enerji ver."
+    ),
+    "Lay the breadboard down with column 1 on the left and row j at the top: every "
+    "address in this guide is printed on it, row letter first — e12 is row e, column "
+    "12. Then get the parts ready.": (
+        "Breadboard'u 1. kolon solda, j sırası üstte olacak şekilde yatır: bu "
+        "rehberdeki her adres üstünde basılı, önce sıra harfi — e12, e sırası ve 12. "
+        "kolon demek. Sonra parçaları hazırla."
+    ),
+    "On some boards each rail is broken in the middle — a gap in its red or blue line. "
+    "If yours is, bridge the two halves of every rail with a short jumper before "
+    "anything else.": (
+        "Bazı kartlarda her ray ortada kesiktir — kırmızı ya da mavi çizgisinde bir "
+        "boşluk olur. Seninki öyleyse, her şeyden önce her rayın iki yarısını kısa bir "
+        "jumper'la birleştir."
+    ),
+    "A solderless breadboard, {points} points. Nothing on it is cut, drilled or soldered: "
+    "every part and every wire is pushed into its holes.": (
+        "Lehimsiz bir breadboard, {points} nokta. Üzerinde hiçbir şey kesilmez, delinmez "
+        "ya da lehimlenmez: her parça ve her tel deliklerine itilerek takılır."
+    ),
+    "Building guide · solderless breadboard, {points} points · {steps} steps, {checks} "
+    "checks · Perfboard Studio {version}": (
+        "Kurulum rehberi · lehimsiz breadboard, {points} nokta · {steps} adım, {checks} "
+        "kontrol · Perfboard Studio {version}"
+    ),
+    "A solderless breadboard, {points} points": "Lehimsiz bir breadboard, {points} nokta",
+    "Solid-core hookup wire, AWG {gauges} in {colours} — about {metres:.2f} m in total. "
+    "Not stranded: a stranded end frays in the clip instead of going in.": (
+        "Tek telli (solid) bağlantı teli, AWG {gauges}, renkler: {colours} — toplam "
+        "yaklaşık {metres:.2f} m. Çok telli değil: çok telli bir uç klibe girmek yerine "
+        "dağılır."
+    ),
+    "Across the groove, pin 1 in {hole}. Line both rows of legs up over their holes and "
+    "press the body down evenly, so that no leg folds under it.": (
+        "Oluğun üstünden, 1. pin {hole} deliğinde. İki sıra bacağı da deliklerinin "
+        "üstüne hizala ve gövdeyi eşit bastır; hiçbir bacak altına kıvrılmasın."
+    ),
+    "A {package} on its DIP adapter, which should already carry the chip (phase 0). "
+    "From here on it is a DIP.": (
+        "DIP adaptörü üzerinde bir {package}; çip adaptöre 0. aşamada lehimlenmiş "
+        "olmalı. Bundan sonrası bir DIP gibi."
+    ),
+    "It plugs straight into the breadboard on its own pins: check its orientation "
+    "against the pin names, line every pin up over its hole and press it down evenly.": (
+        "Kendi pinleriyle doğrudan breadboard'a takılır: yönünü pin adlarıyla "
+        "karşılaştır, her pini deliğinin üstüne hizala ve eşit bastır."
+    ),
+    "The jumpers {wheres} run underneath this part. They went in first, in phase 1; "
+    "check they are pressed down flat before this goes over them.": (
+        "{wheres} jumper'ları bu parçanın altından geçiyor. Önce, 1. aşamada "
+        "takıldılar; bu parça üstlerine gelmeden önce düz bastırıldıklarını kontrol et."
+    ),
+    "The wire entries face the {side} edge of the board — the screws on top, the "
+    "openings towards the {side}. Check before pushing it in: it fits the holes either "
+    "way round.": (
+        "Kablo girişleri kartın {side} kenarına bakıyor — vidalar üstte, ağızlar {side} "
+        "tarafa. Takmadan önce kontrol et: deliklere iki yönde de oturur."
+    ),
+    "{height:.0f} mm tall — check it clears anything meant to go over the board before "
+    "you push it in.": (
+        "{height:.0f} mm yüksekliğinde — takmadan önce kartın üstüne gelecek hiçbir "
+        "şeye değmeyeceğini kontrol et."
+    ),
+    "{height:g} mm tall, and this build has {limit:g} mm of room. It will not fit as it "
+    "stands — lay it down or swap it before you push it in.": (
+        "{height:g} mm yüksekliğinde, bu montajda ise {limit:g} mm yer var. Bu hâliyle "
+        "sığmaz — takmadan önce yatır ya da değiştir."
+    ),
+    "Strip {strip:g} mm off each end, bend both ends straight down and push them into "
+    "their holes until the insulation meets the plastic.": (
+        "Her iki uçtan {strip:g} mm soy, iki ucu da dik aşağı bük ve izolasyon plastiğe "
+        "değene kadar deliklerine it."
+    ),
     "Closing up": "Kapanış",
     "Cut the board, mark hole A1, and get the iron and the parts ready.": (
         "Kartı kes, A1 deliğini işaretle ve havyayı ısıtıp parçaları hazırla."
