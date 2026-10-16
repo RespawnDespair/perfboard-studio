@@ -115,6 +115,8 @@ TEMPLATES: tuple[str, ...] = (
     "Autoroute stripboard: {cuts} cut(s), {links} link(s)",
     "Cut track at {hole}",
     "Cut {cuts} track(s) and fit {links} link(s)",
+    "Autoroute breadboard: {count} jumper(s)",
+    "Fit {count} jumper(s)",
     "Remove cut {id}",
     # -- the board itself -------------------------------------------------------------------
     "Set board to {cols}x{rows} {material}",
@@ -163,6 +165,7 @@ TEMPLATES: tuple[str, ...] = (
     "Nothing to do: every net is already right on this board.",
     "{count} cut(s)",
     "{count} link(s)",
+    "{count} jumper(s)",
     "{count} problem(s)",
 )
 

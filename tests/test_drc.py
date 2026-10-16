@@ -306,6 +306,7 @@ PYTHON_ONLY_RULES = frozenset(
         "wire-over-joint",
         "no-hole",
         "not-on-breadboard",
+        "wrong-rail",
     }
 )
 

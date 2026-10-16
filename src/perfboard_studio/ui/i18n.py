@@ -553,6 +553,7 @@ TURKISH: Mapping[str, str] = {
     "Pin on a mounting hole": "Montaj deliğinde pin",
     "No hole there": "Orada delik yok",
     "Not possible on a breadboard": "Breadboard'da olmaz",
+    "Pin on the wrong rail": "Pin yanlış rayda",
     "Pads may lift": "Pedler kalkabilir",
     "Pin connected to nothing": "Hiçbir yere bağlı olmayan pin",
     "Solder trace skips a hole": "Lehim yolu bir deliği atlıyor",
@@ -1490,6 +1491,7 @@ TURKISH: Mapping[str, str] = {
     "Routing every style…": "Her tarz yönlendiriliyor…",
     "Routing…": "Yönlendiriliyor…",
     "Planning cuts and links…": "Kesikler ve bağlantılar planlanıyor…",
+    "Planning jumpers…": "Jumper'lar planlanıyor…",
     "Stopping, and keeping the best found so far…": (
         "Durduruluyor; şimdiye kadar bulunan en iyisi tutuluyor…"
     ),
@@ -2058,6 +2060,8 @@ TURKISH: Mapping[str, str] = {
     "Autoroute stripboard: {cuts} cut(s), {links} link(s)": "Şeritli kartı otomatik yönlendir: {cuts} kesim, {links} köprü",
     "Cut track at {hole}": "{hole} deliğinde şeridi kes",
     "Cut {cuts} track(s) and fit {links} link(s)": "{cuts} şerit kes, {links} köprü tak",
+    "Autoroute breadboard: {count} jumper(s)": "Breadboard'u otomatik yönlendir: {count} jumper",
+    "Fit {count} jumper(s)": "{count} jumper tak",
     "Remove cut {id}": "{id} kesimini kaldır",
     "Set board to {cols}x{rows} {material}": "Kartı {cols}x{rows} {material} yap",
     "Use a {cols}x{rows} {material} board": "{cols}x{rows} {material} kart kullan",
@@ -2101,6 +2105,7 @@ TURKISH: Mapping[str, str] = {
     "Nothing to do: every net is already right on this board.": "Yapılacak bir şey yok: bu karttaki her net zaten doğru.",
     "{count} cut(s)": "{count} kesim",
     "{count} link(s)": "{count} köprü",
+    "{count} jumper(s)": "{count} jumper",
     "{count} problem(s)": "{count} sorun",
     "line": "çizgi",
     "rectangle": "dikdörtgen",

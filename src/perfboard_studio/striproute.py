@@ -38,6 +38,7 @@ import dataclasses
 from dataclasses import dataclass
 from itertools import pairwise
 
+from .breadboard import is_breadboard
 from .command import CommandContext, CommandError
 from .commands import (
     AddConductorPayload,
@@ -125,7 +126,10 @@ def describe_plan(plan: StripboardPlan) -> str:
     """One line, for a status bar or a confirmation dialog."""
     if plan.is_empty and not plan.problems:
         return "Nothing to do: every net is already right on this board."
-    bits = [f"{len(plan.cuts)} cut(s)", f"{len(plan.links)} link(s)"]
+    if is_breadboard(plan.document.board):
+        bits = [f"{len(plan.links)} jumper(s)"]
+    else:
+        bits = [f"{len(plan.cuts)} cut(s)", f"{len(plan.links)} link(s)"]
     if plan.problems:
         bits.append(f"{len(plan.problems)} problem(s)")
     return ", ".join(bits)
@@ -169,8 +173,8 @@ def plan_stripboard(
             label="",
         )
 
-    wanted = _wanted_nets(doc, only_net_ids)
-    pins = _pin_holes(doc, lookup)
+    wanted = wanted_nets(doc, only_net_ids)
+    pins = pins_by_hole(doc, lookup)
     problems: list[StripProblem] = []
 
     working, cuts, planned_cuts, cut_problems = _plan_cuts(doc, pins, wanted)
@@ -198,12 +202,12 @@ def plan_stripboard(
     )
 
 
-def _wanted_nets(doc: PerfDocument, only_net_ids: tuple[NetId, ...] | None) -> dict[NetId, str]:
+def wanted_nets(doc: PerfDocument, only_net_ids: tuple[NetId, ...] | None) -> dict[NetId, str]:
     ids = set(only_net_ids) if only_net_ids is not None else None
     return {net.id: net.name for net in doc.nets if ids is None or net.id in ids}
 
 
-def _pin_holes(doc: PerfDocument, lookup: FootprintLookup) -> dict[str, tuple[PhysicalPinRef, HoleCoord]]:
+def pins_by_hole(doc: PerfDocument, lookup: FootprintLookup) -> dict[str, tuple[PhysicalPinRef, HoleCoord]]:
     """Every pin on the board by hole key, so a hole can name what is standing in it.
 
     Two pins in one hole is a document DRC objects to and this planner cannot fix, so the
@@ -219,7 +223,7 @@ def _pin_holes(doc: PerfDocument, lookup: FootprintLookup) -> dict[str, tuple[Ph
     return out
 
 
-def _net_of_pin(doc: PerfDocument, wanted: dict[NetId, str]) -> dict[tuple[str, str], NetId]:
+def net_of_pin(doc: PerfDocument, wanted: dict[NetId, str]) -> dict[tuple[str, str], NetId]:
     return {
         (node.component_ref, node.pin): net.id
         for net in doc.nets
@@ -243,7 +247,7 @@ def _plan_cuts(
     an undeclared pin is a gap in the schematic, and cutting the board because of one
     would be the tool acting on a guess.
     """
-    net_of = _net_of_pin(doc, wanted)
+    net_of = net_of_pin(doc, wanted)
     # A drill may not go through a hole that has anything soldered into it: a pin, or any
     # hole a conductor touches. Blunt on purpose -- the question is only "may a bit go
     # here", and the answer is no for all of them.

@@ -47,7 +47,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from .model import STANDARD_PITCH_MM, Board, HoleCoord, Mm
+from .model import STANDARD_PITCH_MM, Board, HoleCoord, Mm, NetClass
 
 #: Rows on a breadboard with power rails, and on one without.
 ROWS_WITH_RAILS = 20
@@ -55,6 +55,19 @@ ROWS_WITHOUT_RAILS = 12
 
 #: Which of the four power rails a row is. "top" is the rail pair beside row j.
 type Rail = Literal["top-", "top+", "bottom-", "bottom+"]
+
+#: Which class of net each rail is FOR: what the line printed beside it says. A rail is
+#: electrically just a long clip, and a signal can be run down one -- but everybody who
+#: looks at the board reads the red line as the supply and the blue as ground, so a pin of
+#: any other net standing in a rail is a board that lies about itself. The placer counts
+#: it with the pairs nothing can separate, the planner reports it, and DRC warns about it
+#: (``wrong-rail``); all three ask :func:`rail_takes`.
+RAIL_CLASS: dict[Rail, NetClass] = {
+    "top-": "ground",
+    "top+": "power",
+    "bottom-": "ground",
+    "bottom+": "power",
+}
 
 #: What each row is, top to bottom, on a board with rails: a strip letter, a rail, or
 #: None where the grid has no hole. Read off the MB102 -- see the module docstring.
@@ -172,6 +185,13 @@ def rail_of(board: Board, row: int) -> Rail | None:
     if role in ("top-", "top+", "bottom-", "bottom+"):
         return role  # type: ignore[return-value]
     return None
+
+
+def rail_takes(rail: Rail, net_class: NetClass | None) -> bool:
+    """Whether a pin of a net of this class belongs in this rail. None is a pin no net
+    declares, which belongs in none: it would be joined to the supply without anybody
+    having asked for it."""
+    return net_class == RAIL_CLASS[rail]
 
 
 def has_hole(board: Board, hole: HoleCoord) -> bool:

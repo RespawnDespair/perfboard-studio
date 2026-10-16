@@ -124,6 +124,8 @@ from perfboard_studio.boardfit import (
     BoardVerdict,
     choose_board,
 )
+from perfboard_studio.breadboard import is_breadboard
+from perfboard_studio.breadroute import plan_joined_board
 from perfboard_studio.catalog import CATALOG, CATEGORY_ORDER, CatalogPart, catalog_part
 from perfboard_studio.command import CommandBus, CommandContext, DispatchResult, HistoryEntry
 from perfboard_studio.commands import (
@@ -286,8 +288,8 @@ from perfboard_studio.recovery import RecoveryRecord, is_worth_offering
 from perfboard_studio.router import CrossingPolicy, RouterOptions, RoutingStyle, options_for_style
 from perfboard_studio.schematic import build_schematic, snap_to_grid, wires_as_drawn
 from perfboard_studio.schematic_export import drawing_to_svg
-from perfboard_studio.stripboard import is_stripboard
-from perfboard_studio.striproute import StripboardPlan, plan_stripboard
+from perfboard_studio.stripboard import board_joins_holes, is_stripboard
+from perfboard_studio.striproute import StripboardPlan
 from perfboard_studio.striproute import describe_plan as describe_strip_plan
 from perfboard_studio.updates import RELEASES_PAGE_URL, Release, is_check_due
 from perfboard_studio.version import __version__
@@ -3287,6 +3289,7 @@ def _rule_title(rule: str) -> str:
         "mounting-hole-conflict": t("Pin on a mounting hole"),
         "no-hole": t("No hole there"),
         "not-on-breadboard": t("Not possible on a breadboard"),
+        "wrong-rail": t("Pin on the wrong rail"),
         "pad-lifting-risk": t("Pads may lift"),
         "pin-not-connected": t("Pin connected to nothing"),
         "solder-trace-invalid-path": t("Solder trace skips a hole"),
@@ -9511,7 +9514,7 @@ class MainWindow(QMainWindow):
         # already there, so the work is deciding where to BREAK it and what to link across
         # afterwards. Running the perfboard router on one would lay solder traces along
         # tracks that are already joined, and bare wire across a face that is solid copper.
-        if is_stripboard(self.bus.document.board):
+        if board_joins_holes(self.bus.document.board):
             self._route_stripboard(only_net_ids)
             return
 
@@ -9633,8 +9636,8 @@ class MainWindow(QMainWindow):
         document = self.bus.document
         t0 = time.perf_counter()
         plan = self._run_planner(
-            t("Planning cuts and links…"),
-            lambda _should_stop: plan_stripboard(document, self.lookup, only_net_ids),
+            t("Planning jumpers…") if is_breadboard(document.board) else t("Planning cuts and links…"),
+            lambda _should_stop: plan_joined_board(document, self.lookup, only_net_ids),
         )
         elapsed = (time.perf_counter() - t0) * 1000
         if plan is None:

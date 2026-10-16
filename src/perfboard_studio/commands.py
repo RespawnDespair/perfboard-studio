@@ -2809,12 +2809,21 @@ class _AddCut:
 
 
 class _ApplyStripboardPlan:
+    """A planned set of cuts and links as one step -- and, on a breadboard, a planned set
+    of jumpers: a board that joins its own holes is wired by one command, so the window,
+    the MCP server and an undo treat the two alike (``breadroute.py``)."""
+
     type = "stripboard.apply"
 
     def apply(
         self, doc: PerfDocument, p: ApplyStripboardPlanPayload, ctx: CommandContext
     ) -> PerfDocument:
-        if doc.board.type != "stripboard":
+        if is_breadboard(doc.board):
+            if p.cuts:
+                raise CommandError(
+                    "breadboard", "A breadboard has no tracks to cut; its clips are fixed."
+                )
+        elif doc.board.type != "stripboard":
             raise CommandError(
                 "not-stripboard",
                 f"This board is {doc.board.type}, which has no tracks to cut or link.",
@@ -2870,6 +2879,8 @@ class _ApplyStripboardPlan:
     def describe(self, p: ApplyStripboardPlanPayload, doc: PerfDocument) -> str:
         if p.label:
             return p.label
+        if is_breadboard(doc.board):
+            return f"Fit {len(p.conductors)} jumper(s)"
         return f"Cut {len(p.cuts)} track(s) and fit {len(p.conductors)} link(s)"
 
 

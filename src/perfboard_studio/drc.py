@@ -40,7 +40,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from .breadboard import is_breadboard
+from .breadboard import RAIL_CLASS, has_hole, is_breadboard, rail_of, rail_takes
 from .connectivity import FootprintLookup, PhysicalNet, PhysicalPinRef, extract_physical_nets
 from .footprints import WIRE_ENTRY_CLEARANCE_MM, body_extent, entry_corridor, wire_entry
 from .geometry import (
@@ -90,6 +90,7 @@ from .model import (
     HoleCoord,
     LeadBendConductor,
     Net,
+    NetClass,
     NetId,
     PerfDocument,
     Point2,
@@ -1513,6 +1514,48 @@ def _check_breadboard_conductors(doc: PerfDocument) -> list[DrcViolation]:
     return violations
 
 
+def _check_wrong_rails(doc: PerfDocument, lookup: FootprintLookup) -> list[DrcViolation]:
+    """A pin standing in a breadboard rail its net is not for (``breadboard.rail_takes``).
+
+    A warning, because it works: a rail is only a long clip, and a signal down one is
+    joined exactly as well as a supply. What it is not is readable -- the line beside a rail
+    says + or -, and everybody who looks at the board, the builder included, reads it as
+    the supply and the ground. The placer counts it with the pairs nothing can separate,
+    and the planner reports it, so neither proposes one.
+    """
+    if not is_breadboard(doc.board):
+        return []
+    class_of: dict[tuple[str, str], NetClass] = {
+        (node.component_ref, node.pin): net.net_class for net in doc.nets for node in net.nodes
+    }
+    violations: list[DrcViolation] = []
+    for component in doc.components:
+        footprint = lookup(component.footprint_id)
+        if footprint is None:
+            continue
+        for pin, hole in all_pin_holes(component, footprint):
+            rail = rail_of(doc.board, hole.row) if has_hole(doc.board, hole) else None
+            net_class = class_of.get((component.ref, pin.number))
+            if rail is None or rail_takes(rail, net_class):
+                continue
+            what = "no net" if net_class is None else f"a {net_class} net"
+            violations.append(
+                DrcViolation(
+                    rule="wrong-rail",
+                    severity="warning",
+                    message=(
+                        f"{component.ref} pin {pin.number} is in the {rail[:-1]} {rail[-1]} rail at "
+                        f"{_safe_hole(hole, doc.board)}, which is for {RAIL_CLASS[rail]}, and it is "
+                        f"on {what}. It works, but the board then says {rail[-1]} over it — move "
+                        f"the part off the rail."
+                    ),
+                    holes=(hole,),
+                    component_ids=(component.id,),
+                )
+            )
+    return violations
+
+
 def _check_cut_track_conflicts(doc: PerfDocument, lookup: FootprintLookup) -> list[DrcViolation]:
     """Pins and conductors soldered where a track cut has taken the copper away.
 
@@ -2293,6 +2336,7 @@ def run_drc(
         *_check_cut_track_conflicts(doc, lookup),
         *_check_holeless_positions(doc, lookup),
         *_check_breadboard_conductors(doc),
+        *_check_wrong_rails(doc, lookup),
         *_check_pad_lifting_risk(doc, options),
         *_check_solder_trace_feasibility(doc, options),
         *_check_current_capacity(doc, options),

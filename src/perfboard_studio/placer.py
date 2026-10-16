@@ -91,6 +91,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 
 from .autoroute import plan_autoroute
+from .breadboard import clip_of, is_breadboard, rail_of, rail_takes
+from .breadroute import plan_joined_board
 from .command import CommandContext
 from .commands import (
     ComponentPlacement,
@@ -147,8 +149,8 @@ from .model import (
     Rotation,
 )
 from .router import DEFAULT_ROUTER_COSTS
-from .stripboard import MIN_SEPARABLE_GAP, is_stripboard, strip_axis
-from .striproute import StripboardPlan, plan_stripboard
+from .stripboard import MIN_SEPARABLE_GAP, board_joins_holes, is_stripboard, strip_axis
+from .striproute import StripboardPlan
 
 # ---------------------------------------------------------------------------
 # Domain knowledge: which parts care about where they are
@@ -892,9 +894,24 @@ class _Strips:
     #: worked on is a board whose strips are already broken in places, and two pins either
     #: side of an existing cut are not joined and need nothing done about them.
     cuts: dict[int, frozenset[int]]
+    #: On a breadboard: every hole's (clip index, position along the clip), from
+    #: ``breadboard.clip_of``. None on stripboard, whose strips are rows or columns.
+    clips: dict[tuple[int, int], tuple[int, int]] | None = None
+    #: On a breadboard: per RAIL clip index, the nets (by declaration index) whose pins
+    #: belong in it -- ``breadboard.rail_takes``. A pin of any other net on a rail is
+    #: counted with the conflicts, as ``breadroute`` reports it.
+    rail_nets: dict[int, frozenset[int]] | None = None
+
+    @property
+    def separable(self) -> bool:
+        """Whether two nets on one strip can be parted at all: by a cut on stripboard, by
+        nothing on a breadboard."""
+        return self.clips is None
 
     def strip_of(self, col: int, row: int) -> tuple[int, int] | None:
         """(strip index, position along it) for a hole, or None if it is off the board."""
+        if self.clips is not None:
+            return self.clips.get((col, row))
         index, position = (row, col) if self.horizontal else (col, row)
         if not (0 <= index < self.count and 0 <= position < self.length):
             return None
@@ -904,8 +921,38 @@ class _Strips:
 def _build_strips(
     doc: PerfDocument, parts: list[_Part], pin_nets: list[tuple[int, ...]]
 ) -> _Strips | None:
-    """The strip facts for this document, or None if it has no strips."""
+    """The strip facts for this document, or None if it has no strips.
+
+    A breadboard's clips are its strips (``breadboard.py``): five holes up each half of a
+    column, a long run down each rail, and nothing that can be cut. They are mapped hole by
+    hole, which is what lets every count below take a breadboard unchanged.
+    """
     board = doc.board
+    if is_breadboard(board):
+        index_of: dict[tuple[int, int], int] = {}
+        clips: dict[tuple[int, int], tuple[int, int]] = {}
+        rail_nets: dict[int, frozenset[int]] = {}
+        for row in range(board.rows):
+            rail = rail_of(board, row)
+            for col in range(board.cols):
+                clip = clip_of(board, HoleCoord(col, row))
+                if clip is None:
+                    continue
+                index = index_of.setdefault(clip, len(index_of))
+                clips[(col, row)] = (index, col if clip[1] == -1 else row)
+                if rail is not None and index not in rail_nets:
+                    rail_nets[index] = frozenset(
+                        i for i, net in enumerate(doc.nets) if rail_takes(rail, net.net_class)
+                    )
+        return _Strips(
+            horizontal=False,
+            count=len(index_of),
+            length=max(board.cols, board.rows),
+            pin_nets=tuple(pin_nets),
+            cuts={},
+            clips=clips,
+            rail_nets=rail_nets,
+        )
     if not is_stripboard(board):
         return None
     horizontal = strip_axis(board) == "horizontal"
@@ -924,7 +971,12 @@ def _build_strips(
     )
 
 
-def _conflicts_on_strip(entries: list[tuple[int, int]], cuts: frozenset[int]) -> int:
+def _conflicts_on_strip(
+    entries: list[tuple[int, int]],
+    cuts: frozenset[int],
+    separable: bool = True,
+    takes: frozenset[int] | None = None,
+) -> int:
     """Pairs on one strip that no cut can separate, from its ``(position, net)`` pins.
 
     ``striproute._plan_cuts`` spelled out over integers instead of over a document, and
@@ -940,8 +992,13 @@ def _conflicts_on_strip(entries: list[tuple[int, int]], cuts: frozenset[int]) ->
     * and a pair with fewer than ``MIN_SEPARABLE_GAP`` holes between them is the conflict
       this counts. Two pins in ONE hole land here too, with a gap of zero, which is what
       they physically are: joined, in different nets, and not separable by drilling.
+
+    On a breadboard (``separable`` False) no gap is enough, because nothing can be cut:
+    every consecutive pair of declared pins in different nets is one, which is exactly what
+    ``breadroute`` reports as ``cannot-separate``. And on a rail (``takes`` given) every
+    pin of a net the rail is not for is one more -- ``breadroute``'s ``wrong-rail``.
     """
-    conflicts = 0
+    conflicts = 0 if takes is None else sum(1 for _, net in entries if net not in takes)
     previous_position = -1
     previous_net = -1
     occupied_between = 0
@@ -960,7 +1017,7 @@ def _conflicts_on_strip(entries: list[tuple[int, int]], cuts: frozenset[int]) ->
             already_cut = bool(cuts) and any(
                 at in cuts for at in range(previous_position + 1, position)
             )
-            if gap < MIN_SEPARABLE_GAP and not already_cut:
+            if not separable or (gap < MIN_SEPARABLE_GAP and not already_cut):
                 conflicts += 1
         previous_position = position
         previous_net = net
@@ -1136,7 +1193,10 @@ class _State:
         assert strips is not None
         was = self.strip_conflict_of.get(strip, 0)
         now = _conflicts_on_strip(
-            self.strip_entries[strip], strips.cuts.get(strip, frozenset())
+            self.strip_entries[strip],
+            strips.cuts.get(strip, frozenset()),
+            strips.separable,
+            None if strips.rail_nets is None else strips.rail_nets.get(strip),
         )
         if now:
             self.strip_conflict_of[strip] = now
@@ -1321,8 +1381,16 @@ class _Scorer:
             # and pins sharing a strip are joined by the board with nothing soldered at
             # all. Pins sharing the OTHER axis are joined by nothing, so counting them as
             # aligned would price a free connection where a jumper has to go.
-            along = rows if self.strips.horizontal else cols
-            spread = len(set(along)) - 1
+            if self.strips.clips is not None:
+                # A breadboard joins what shares a CLIP, and nothing else: a net is as
+                # spread out as the number of clips its pins stand in. A pin on no clip
+                # (off the board, or where there is no hole) is an island of its own.
+                on = [self.strips.clips.get(pin) for pin in zip(cols, rows, strict=True)]
+                clips = {clip[0] for clip in on if clip is not None}
+                spread = len(clips) + sum(clip is None for clip in on) - 1
+            else:
+                along = rows if self.strips.horizontal else cols
+                spread = len(set(along)) - 1
         return hpwl, spread * self.board_pitch
 
     def part_terms(self, state: _State, position: int) -> tuple[int, int, float]:
@@ -3243,8 +3311,8 @@ def _build_cost(doc: PerfDocument, lookup: FootprintLookup) -> tuple[int, float]
     routed** -- which is every board anybody would think to ask.
     """
     doc = replace(doc, conductors=())
-    if is_stripboard(doc.board):
-        plan = plan_stripboard(doc, lookup)
+    if board_joins_holes(doc.board):
+        plan = plan_joined_board(doc, lookup)
         # Every problem, not only the inseparable pairs: a pin the planner could not find
         # and a strip it could not cut are both "this board cannot be finished as placed",
         # which is what the first number means on the other branch too.

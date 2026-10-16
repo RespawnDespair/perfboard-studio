@@ -35,6 +35,7 @@ from PySide6.QtWidgets import QApplication
 from perfboard_studio import persist
 from perfboard_studio.autoroute import describe as describe_plan
 from perfboard_studio.autoroute import describe_best, plan_autoroute, plan_best_autoroute
+from perfboard_studio.breadroute import plan_joined_board
 from perfboard_studio.drc import run_drc
 from perfboard_studio.footprints import footprint_lookup
 from perfboard_studio.geometry import board_outline_mm, hole_span_mm
@@ -48,6 +49,8 @@ from perfboard_studio.placer import plan_placement
 from perfboard_studio.ratsnest import ratsnest, summarize
 from perfboard_studio.schematic import build_schematic
 from perfboard_studio.schematic_export import drawing_to_svg
+from perfboard_studio.stripboard import board_joins_holes
+from perfboard_studio.striproute import describe_plan as describe_strip_plan
 from perfboard_studio.version import describe as describe_version
 
 from . import view3d
@@ -244,7 +247,22 @@ def headless(argv: list[str]) -> int:
         f"{remaining.nets - remaining.closed_nets} open net(s), {remaining.total_length_mm:.0f} mm total"
     )
 
-    if doc.nets:
+    if doc.nets and board_joins_holes(doc.board):
+        # A stripboard or a breadboard is wired by its own planner -- cuts and links, or
+        # jumpers -- and has no routing styles to sweep: the board decides what joins what.
+        t0 = time.perf_counter()
+        joined = plan_joined_board(doc, lookup)
+        t_plan = (time.perf_counter() - t0) * 1000
+        print(f"autoroute    {t_plan:6.1f} ms   (dry run, nothing committed)")
+        print(f"             {describe_strip_plan(joined)}")
+        for strip_problem in joined.problems:
+            print(f"  ! {strip_problem.code}: {strip_problem.message}")
+        after = run_lvs(joined.document, lookup).summary
+        print(
+            f"             would leave LVS at {after.matched_nets}/{after.schematic_nets} matched, "
+            f"{after.opens} open(s), {after.shorts} short(s)"
+        )
+    elif doc.nets:
         t0 = time.perf_counter()
         plan = plan_autoroute(doc, lookup)
         t_plan = (time.perf_counter() - t0) * 1000

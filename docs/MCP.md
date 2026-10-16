@@ -127,7 +127,10 @@ the only route to a different board size, material or type was `new_document`, w
 throws the work away. `set_board` also carries the board TYPE, which is not a display
 setting: on stripboard whole rows of holes arrive already joined, so connectivity, DRC,
 the build guide and `autoroute` all answer differently — `autoroute` on one plans cuts
-and links rather than traces and wires, and reports the pairs it could not separate.
+and links rather than traces and wires, and reports the pairs it could not separate. On a
+breadboard it plans jumpers into free holes, power and ground from the rails, and reports a
+clip it cannot reach (`clip-full`), two nets one clip joins (`cannot-separate`) and a pin on
+a rail its net is not for (`wrong-rail`); `cut_count` is always 0 there.
 There are four types: `pad-per-hole` (every hole its own island, the default),
 `stripboard`, `plain` — bare substrate with no copper at all, where every connection
 is point-to-point wire and there is no pad for a solder trace to reach — and `breadboard`,

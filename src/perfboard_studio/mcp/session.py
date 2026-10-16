@@ -39,6 +39,7 @@ from perfboard_studio.autoroute import (
 )
 from perfboard_studio.autoroute import describe as describe_route
 from perfboard_studio.breadboard import is_breadboard
+from perfboard_studio.breadroute import plan_joined_board
 from perfboard_studio.catalog import (
     CATEGORY_ORDER,
     CatalogCategory,
@@ -141,9 +142,8 @@ from perfboard_studio.router import (
     options_for_style,
 )
 from perfboard_studio.step_export import Plate, board_model, model_to_step
-from perfboard_studio.stripboard import is_stripboard
+from perfboard_studio.stripboard import board_joins_holes
 from perfboard_studio.striproute import describe_plan as describe_strip_plan
-from perfboard_studio.striproute import plan_stripboard
 from perfboard_studio.version import __version__
 
 # ---------------------------------------------------------------------------
@@ -1318,7 +1318,8 @@ class BoardSession:
         # is deciding where to BREAK it. The perfboard router would lay solder traces
         # along tracks that are already joined and bare wire across a solid copper face,
         # so the board type picks the planner -- for an agent exactly as for the window.
-        if is_stripboard(self.document.board):
+        # A breadboard is the same problem with nothing to cut (breadroute.py).
+        if board_joins_holes(self.document.board):
             return self._autoroute_stripboard(only)
 
         # Cleared BEFORE planning, exactly as the GUI does it, so the plan is made
@@ -1401,7 +1402,7 @@ class BoardSession:
         not do comes back in ``problems`` -- an agent that is told only what worked cannot
         tell a finished board from a half-finished one.
         """
-        plan = plan_stripboard(self.document, self.lookup, only)
+        plan = plan_joined_board(self.document, self.lookup, only)
         problems = [
             {
                 "code": problem.code,

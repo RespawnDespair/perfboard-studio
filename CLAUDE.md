@@ -1623,6 +1623,40 @@ LVS, the router, the guide and its exports, the MCP server and the window all sa
 `format_hole(c, board)`, and `parse_hole` reads ONLY those names on a breadboard, in either
 case: a grid address accepted beside them would make `A1` two different holes.
 
+**`breadroute.py` wires one, and it is stripboard's planner with the scissors taken away.**
+Its plan is a `striproute.StripboardPlan` with no cuts, committed by the same
+`stripboard.apply` (which refuses a cut on a breadboard), so the window, the MCP server and
+the placer apply and price it through the code they had; `breadroute.plan_joined_board` is
+what every caller asks of a board that joins its own holes. Four rules, each with a test in
+`tests/test_breadroute.py`:
+
+- **One lead to a hole.** A jumper reaches a pin by a FREE hole of the clip it shares, never
+  the pin's own; a clip with a lead in every hole is `clip-full`. A hole under a part's body
+  counts — the jumper goes in first, which is ordinary on a breadboard and the only way to
+  reach a clip a trimmer stands over — but it is priced (`UNDER_BODY_COST`) with the parts
+  a jumper runs under, by `jumper-under-body`'s own predicate, so it is never chosen while
+  an open hole will do. Forbidding it left three of the six examples unwireable.
+- **Supply comes from the rails.** A ground net takes the − rails and a power net the +
+  rails (`RAILS_FOR_CLASS`; one net of a class takes both, two take one each), every island
+  of it drops a jumper to its nearer rail, and a pair that ends up carrying a net both top
+  and bottom is bridged once, straight across, at an end of the board. A rail somebody
+  already wired to a net stays that net's.
+- **A rail is for the class its line says** (`breadboard.RAIL_CLASS`, `rail_takes`). A
+  signal down the + rail is joined perfectly well and is a board that says + over a signal,
+  so a pin of any other net in a rail is `wrong-rail`: a planner problem, a DRC warning, and
+  a conflict the placer prices. The first trial put an LED straight across the two bottom
+  rails, and LVS called it clean.
+- **The placer counts exactly what the planner refuses.** On a breadboard `_Strips` maps
+  every hole to its clip (`clips`) and every rail to the nets it takes (`rail_nets`); a
+  consecutive pair of declared nets in one clip is a conflict whatever the gap, because
+  nothing can be cut (`separable`). `test_the_placer_counts_exactly_what_the_planner_refuses`
+  holds the two to one count over random placements — two pins in one hole excluded, as on
+  stripboard, because that is a collision with its own term.
+
+`_cheapest` tries jumpers shortest first and stops once a length reaches the best cost: the
+length is a lower bound, so the answer is the exhaustive one, and walking every jumper's holes
+for the parts it passes under was nearly all of a placement trial on a breadboard.
+
 ### Layering
 
 ```
