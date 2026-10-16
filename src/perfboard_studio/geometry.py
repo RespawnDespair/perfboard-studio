@@ -20,8 +20,10 @@ import math
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import cache
 from typing import Literal
 
+from .breadboard import missing_holes
 from .model import (
     Board,
     BoardEdge,
@@ -718,8 +720,24 @@ def unusable_holes(doc: PerfDocument) -> frozenset[str]:
     A CUT track is deliberately not here. A cut destroys the copper and leaves the hole,
     so a lead still fits; what it would be soldered to is nothing, which is
     ``cut-track-conflict`` and a different question with a different answer.
+
+    The third member is a breadboard's positions with NO HOLE at all
+    (:func:`holeless_positions`): the channel down the middle, the gaps beside the rails,
+    the column a rail leaves out every six. Nothing can go in those for the plainest
+    reason there is.
     """
-    return consumed_holes(doc) | undrilled_holes(doc)
+    return consumed_holes(doc) | undrilled_holes(doc) | holeless_positions(doc.board)
+
+
+@cache
+def holeless_positions(board: Board) -> frozenset[str]:
+    """The grid positions a breadboard has no hole at, as :func:`hole_key` strings; empty
+    on every other board. See ``breadboard.missing_holes``.
+
+    Remembered per board, because the planners ask it of every candidate and it walks
+    every position; a board is frozen, so the same board always has the same answer.
+    """
+    return frozenset(hole_key(hole) for hole in missing_holes(board))
 
 
 def mounting_hole_centre_mm(hole_mount: MountingHole, board: Board) -> Point2:

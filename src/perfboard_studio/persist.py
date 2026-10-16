@@ -37,6 +37,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal, cast
 
+from .breadboard import board_problem, is_breadboard
 from .geometry import validate_orthogonal_chain
 from .model import (
     DEFAULT_BOARD_NOTE_SIZE_MM,
@@ -952,7 +953,7 @@ def _check_unknown_keys(obj: dict[str, object], known: tuple[str, ...], path: st
             warnings.append(f'Unknown property "{_field_path(path, key)}" was ignored.')
 
 
-BOARD_TYPES: tuple[BoardType, ...] = ("pad-per-hole", "stripboard", "plain")
+BOARD_TYPES: tuple[BoardType, ...] = ("pad-per-hole", "stripboard", "plain", "breadboard")
 BOARD_MATERIALS: tuple[BoardMaterial, ...] = ("FR4", "FR2", "FR1")
 STRIP_AXES: tuple[str, ...] = ("horizontal", "vertical")
 PAD_SHAPES: tuple[PadShape, ...] = ("round", "oblong")
@@ -1145,7 +1146,7 @@ def _parse_board(raw: object, warnings: list[str]) -> Board:
             path,
         )
 
-    return Board(
+    board = Board(
         type=_expect_enum(_require_field(obj, "type", path), _field_path(path, "type"), BOARD_TYPES),  # type: ignore[arg-type]
         cols=cols,
         rows=rows,
@@ -1163,6 +1164,9 @@ def _parse_board(raw: object, warnings: list[str]) -> Board:
         single_sided=single_sided,
         labels=labels,
     )
+    if (problem := board_problem(board)) is not None:
+        raise ValidationError("invalid-board", problem, path)
+    return board
 
 
 def _parse_mounting_hole(raw: object, path: str, warnings: list[str]) -> MountingHole:
@@ -1738,6 +1742,15 @@ def _parse_document(raw_input: object) -> tuple[PerfDocument, list[str]]:
             f"under. Ignored; the board is treated as having no height limit."
         )
         height_limit_mm = None
+
+    # What ``board.set`` refuses about a breadboard's features, refused here too: a bore
+    # or a finger strip in a block of plastic describes no board anybody can hold.
+    if is_breadboard(board) and (mounting_holes or edge_connectors):
+        raise ValidationError(
+            "invalid-board",
+            "A breadboard has no mounting holes or edge connectors.",
+            "board",
+        )
 
     document = PerfDocument(
         meta=meta,

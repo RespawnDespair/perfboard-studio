@@ -30,6 +30,11 @@ WHICH WAY THE STRIPS RUN is ``board.strip_axis``, and ``None`` means horizontal:
 stock is sold with the strips along the long side, and a board that declares nothing has
 to behave like the board people actually buy rather than raising.
 
+A BREADBOARD IS ASKED HERE TOO. Its clips are segments nobody can cut, so
+:func:`segment_of` answers for it from ``breadboard.clip_of`` and :func:`cut_between`
+never offers a cut on it -- which is how ``connectivity``, ``striproute`` and the placer,
+all written against segments, take a breadboard without a line about plastic.
+
 Pure and deterministic, like everything above ``ui/``.
 """
 
@@ -38,6 +43,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from .breadboard import clip_holes, clip_of, is_breadboard
 from .geometry import hole_key, is_inside_board
 from .model import Board, HoleCoord, PerfDocument
 
@@ -78,6 +84,12 @@ MIN_SEPARABLE_GAP = 2
 
 def is_stripboard(board: Board) -> bool:
     return board.type == "stripboard"
+
+
+def board_joins_holes(board: Board) -> bool:
+    """Whether the board itself joins holes before anything is fitted: stripboard's strips
+    and a breadboard's clips. On every other board each hole is an island."""
+    return is_stripboard(board) or is_breadboard(board)
 
 
 def strip_axis(board: Board) -> Literal["horizontal", "vertical"]:
@@ -133,7 +145,11 @@ def segment_of(doc: PerfDocument, hole: HoleCoord) -> tuple[int, int] | None:
     The ordinal is the number of cuts before this hole along its own strip, which makes
     it stable under adding a cut somewhere else on the board -- and cheap, since it never
     walks the strip.
+
+    On a breadboard it is the clip under the hole, and None where there is no hole.
     """
+    if is_breadboard(doc.board):
+        return clip_of(doc.board, hole)
     if not is_stripboard(doc.board) or not is_inside_board(hole, doc.board):
         return None
     cuts = cut_holes(doc)
@@ -159,6 +175,8 @@ def segments(doc: PerfDocument) -> tuple[StripSegment, ...]:
     For rendering and for the build guide. Connectivity does not use this -- it asks
     ``segment_of`` about the holes that actually carry something, because a 30 x 20 board
     has 600 holes and only a few dozen of them are soldered into.
+
+    Empty on a breadboard, whose clips are its printed pattern and drawn as one.
     """
     if not is_stripboard(doc.board):
         return ()
@@ -191,6 +209,8 @@ def segment_holes(doc: PerfDocument, hole: HoleCoord) -> tuple[HoleCoord, ...]:
 
     Empty when the hole is cut, off the board, or the board has no strips.
     """
+    if is_breadboard(doc.board):
+        return clip_holes(doc.board, hole)
     id_ = segment_of(doc, hole)
     if id_ is None:
         return ()
@@ -238,8 +258,8 @@ def cut_between(
     likely to lift the neighbouring pad when it is drilled, and the middle of the run is
     also where a later part is least likely to want to sit.
     """
-    if not joined_by_board(doc, a, b) or a == b:
-        return None
+    if not is_stripboard(doc.board) or not joined_by_board(doc, a, b) or a == b:
+        return None  # Nothing to cut, or -- on a breadboard -- nothing that CAN be cut.
 
     board = doc.board
     index = strip_index(board, a)

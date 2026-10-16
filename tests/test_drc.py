@@ -304,6 +304,8 @@ PYTHON_ONLY_RULES = frozenset(
         "terminal-entry-blocked",
         "terminal-entry-faces-in",
         "wire-over-joint",
+        "no-hole",
+        "not-on-breadboard",
     }
 )
 

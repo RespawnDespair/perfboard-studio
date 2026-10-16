@@ -31,6 +31,7 @@ import math
 from dataclasses import dataclass
 from typing import Any, Literal, cast, get_args
 
+from .breadboard import board_problem, is_breadboard
 from .command import (
     CommandContext,
     CommandDefinition,
@@ -379,6 +380,14 @@ def checked_part_symbol(symbol: object, ref: str) -> PartSymbol | None:
             f"{', '.join(allowed)}.",
         )
     return cast(PartSymbol, symbol)
+
+
+def refuse_on_breadboard(board: Board, what: str) -> None:
+    """A breadboard is a block of plastic over spring clips: nothing is drilled into it and
+    it has no copper of its own, so a mounting bore or a row of fingers on one describes
+    no board anybody can hold. Refused, like a cut on pad-per-hole."""
+    if is_breadboard(board):
+        raise CommandError("breadboard", f"A breadboard has no {what}.")
 
 
 def assert_hole_on_board(hole: HoleCoord, board: Board, what: str) -> None:
@@ -1924,6 +1933,12 @@ class _SetBoard:
             raise CommandError(
                 "invalid-board", "A printed row label cannot be narrower than one digit."
             )
+        if (problem := board_problem(b)) is not None:
+            raise CommandError("invalid-board", problem)
+        if is_breadboard(b) and doc.mounting_holes:
+            refuse_on_breadboard(b, "mounting holes; remove them first")
+        if is_breadboard(b) and doc.edge_connectors:
+            refuse_on_breadboard(b, "edge connectors; remove them first")
 
         # Shrinking the board could strand parts outside it. Refuse rather than
         # silently dropping the user's work, and name EVERY offender: naming the first
@@ -2020,6 +2035,10 @@ class _ApplyBoardPreset:
         stripped = dataclasses.replace(doc, edge_connectors=(), mounting_holes=())
         resized = _SetBoard().apply(stripped, SetBoardPayload(board=p.board), ctx)
 
+        if p.edge_connectors:
+            refuse_on_breadboard(p.board, "edge connectors")
+        if p.mounting_holes:
+            refuse_on_breadboard(p.board, "mounting holes")
         seen: set[str] = set()
         for connector in p.edge_connectors:
             if connector.id in seen:
@@ -2883,6 +2902,7 @@ class _AddMountingHole:
     def apply(
         self, doc: PerfDocument, p: AddMountingHolePayload, ctx: CommandContext
     ) -> PerfDocument:
+        refuse_on_breadboard(doc.board, "mounting holes")
         assert_hole_on_board(p.at, doc.board, "Mounting hole")
         if not (p.diameter > 0):
             raise CommandError(
@@ -2924,6 +2944,7 @@ class _AddMountingHoles:
     ) -> PerfDocument:
         if not p.ats:
             raise CommandError("nothing-to-add", "No mounting holes were given.")
+        refuse_on_breadboard(doc.board, "mounting holes")
         if p.ids is not None and len(p.ids) != len(p.ats):
             raise CommandError(
                 "id-count-mismatch",
@@ -3006,6 +3027,7 @@ class _AddEdgeConnector:
         self, doc: PerfDocument, p: AddEdgeConnectorPayload, ctx: CommandContext
     ) -> PerfDocument:
         board = doc.board
+        refuse_on_breadboard(board, "edge connectors")
         if not _is_plain_int(p.start) or not _is_plain_int(p.count) or p.start < 0 or p.count < 1:
             raise CommandError(
                 "invalid-edge-connector",

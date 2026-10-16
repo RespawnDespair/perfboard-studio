@@ -45,6 +45,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from itertools import pairwise
 
+from .breadboard import is_breadboard
 from .geometry import all_pin_holes, hole_key
 from .model import (
     BoardSide,
@@ -54,7 +55,7 @@ from .model import (
     PerfDocument,
     contacts_every_path_hole,
 )
-from .stripboard import is_stripboard, segment_of
+from .stripboard import board_joins_holes, segment_of
 
 # ---------------------------------------------------------------------------
 # Public types
@@ -267,7 +268,7 @@ def _extract_physical_nets(doc: PerfDocument, lookup: FootprintLookup) -> list[P
         if contact is not None:
             conductor_contact[conductor.id] = contact
 
-    # --- Pass 3: the board's own copper (stripboard only). ---
+    # --- Pass 3: the board's own joins (stripboard and breadboard only). ---
     #
     # A stripboard arrives with whole rows already joined, so some of this board's
     # connections were made by whoever manufactured it. A cut breaks a strip into two,
@@ -278,11 +279,16 @@ def _extract_physical_nets(doc: PerfDocument, lookup: FootprintLookup) -> list[P
     # indistinguishable from the empty pads this module deliberately does not register --
     # see the note in the docstring. Registering them would put every empty hole on the
     # board into a net, and every consumer would filter them straight back out.
-    if is_stripboard(doc.board):
+    #
+    # A breadboard's clip is INSIDE the hole and grips whatever is pushed into it from
+    # above, so there every node in a hole takes part -- a jumper's end is in the clip as
+    # surely as a lead is -- where on stripboard only the copper side does.
+    if board_joins_holes(doc.board):
+        either_side = is_breadboard(doc.board)
         by_segment: dict[tuple[int, int], list[str]] = {}
         for key in sorted(node_info):
             info = node_info[key]
-            if info.side != "bottom":
+            if info.side != "bottom" and not either_side:
                 continue
             segment = segment_of(doc, info.hole)
             if segment is not None:

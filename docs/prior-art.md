@@ -64,6 +64,14 @@ self-contained offline HTML file for board assembly, with click-to-correlate bet
 a parts list and a board view, is the proven model our build guide export follows.
 No code is shared; the idea is public and widely reimplemented.
 
+**Fritzing (parts: CC-BY-SA)** — the breadboard pattern (`src/perfboard_studio/breadboard.py`)
+was measured off Fritzing's part definitions of the RSR 03MB102, its half-size and its mini
+breadboard (`core/breadboard2.fzp`, `core/Half_breadboard_v2.fzp`, `core/miniBreadboard.fzp`
+and their SVGs in fritzing-parts): which holes exist, which share a clip, where the rails
+stand and which colour line is beside which. Those are facts about a physical board, restated
+as a formula; no file, drawing or code of Fritzing's is copied or shipped, and the Fritzing
+application's source (GPL-3.0) was not read.
+
 **KiCad** — we parse KiCad's S-expression netlist format. The format is documented
 publicly and the parser is written from the specification and from example files.
 
@@ -104,3 +112,4 @@ KiCad's libraries in KiCad.
 - InteractiveHtmlBom — https://github.com/openscopeproject/InteractiveHtmlBom
 - KiCad netlist parser reference — https://docs.kicad.org/doxygen/classKICAD__NETLIST__PARSER.html
 - KiCad libraries licence — https://www.kicad.org/libraries/license/
+- Fritzing parts — https://github.com/fritzing/fritzing-parts

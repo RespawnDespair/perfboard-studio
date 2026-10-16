@@ -128,9 +128,13 @@ throws the work away. `set_board` also carries the board TYPE, which is not a di
 setting: on stripboard whole rows of holes arrive already joined, so connectivity, DRC,
 the build guide and `autoroute` all answer differently — `autoroute` on one plans cuts
 and links rather than traces and wires, and reports the pairs it could not separate.
-There are three types, not two: `pad-per-hole` (every hole its own island, the default),
-`stripboard`, and `plain` — bare substrate with no copper at all, where every connection
-is point-to-point wire and there is no pad for a solder trace to reach.
+There are four types: `pad-per-hole` (every hole its own island, the default),
+`stripboard`, `plain` — bare substrate with no copper at all, where every connection
+is point-to-point wire and there is no pad for a solder trace to reach — and `breadboard`,
+the solderless kind, whose clips join five holes across each half of a column and the
+length of each rail. A breadboard is 20 rows (with power rails) or 12 (without) at
+2.54 mm, as long as it has columns; its holes are named as it prints them, `e12` and
+`T+12`, and nothing that needs solder or a drill is accepted on one.
 
 `check_heights` is the one from PLAN.md §9.2's list that neither render tool can stand
 in for: a part too tall for the case looks exactly like one that fits, from every angle

@@ -551,6 +551,8 @@ TURKISH: Mapping[str, str] = {
     "Bent lead too long": "Bükülen bacak fazla uzun",
     "Too close to a mounting hole": "Montaj deliğine fazla yakın",
     "Pin on a mounting hole": "Montaj deliğinde pin",
+    "No hole there": "Orada delik yok",
+    "Not possible on a breadboard": "Breadboard'da olmaz",
     "Pads may lift": "Pedler kalkabilir",
     "Pin connected to nothing": "Hiçbir yere bağlı olmayan pin",
     "Solder trace skips a hole": "Lehim yolu bir deliği atlıyor",

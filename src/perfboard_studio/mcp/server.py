@@ -283,9 +283,11 @@ def set_board(
     """Change the board under the design, keeping everything on it. Anything left out is
     left alone. board_type is "pad-per-hole" (every hole its own island), "stripboard"
     (whole rows already joined — you cut the track to separate them, and strip_axis says
-    which way they run) or "plain" (bare substrate with no copper at all, so every
-    connection is point-to-point wire). Shrinking a board that still has a part hanging
-    off the new edge is refused, naming the part."""
+    which way they run), "plain" (bare substrate with no copper at all, so every
+    connection is point-to-point wire) or "breadboard" (solderless: 20 rows with power
+    rails or 12 without, 2.54 mm pitch, five holes to a clip and nothing soldered).
+    Shrinking a board that still has a part hanging off the new edge is refused, naming
+    the part."""
     return session.set_board(cols, rows, material, board_type, strip_axis, pitch, single_sided)
 
 

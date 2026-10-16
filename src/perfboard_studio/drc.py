@@ -40,6 +40,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from .breadboard import is_breadboard
 from .connectivity import FootprintLookup, PhysicalNet, PhysicalPinRef, extract_physical_nets
 from .footprints import WIRE_ENTRY_CLEARANCE_MM, body_extent, entry_corridor, wire_entry
 from .geometry import (
@@ -58,6 +59,7 @@ from .geometry import (
     hangs_over_edge,
     hole_key,
     hole_to_mm,
+    holeless_positions,
     holes_under_line,
     is_axis_aligned_box,
     is_inside_board,
@@ -1425,6 +1427,92 @@ def _check_edge_connector_conflicts(
     return violations
 
 
+def _check_holeless_positions(doc: PerfDocument, lookup: FootprintLookup) -> list[DrcViolation]:
+    """Pins and wire ends where a breadboard has no hole at all.
+
+    The plainest member of the "nothing to fit it into" family: the channel down the middle
+    of a breadboard, the strip beside each rail and the column a rail skips every six are
+    plastic. A lead put there does not go in. ``geometry.holeless_positions`` is the one
+    answer to where they are, and the placer and the router read the same set through
+    ``unusable_holes``.
+    """
+    holeless = holeless_positions(doc.board)
+    if not holeless:
+        return []
+    violations: list[DrcViolation] = []
+    for component in doc.components:
+        footprint = lookup(component.footprint_id)
+        if footprint is None:
+            continue
+        for pin, hole in all_pin_holes(component, footprint):
+            if hole_key(hole) not in holeless:
+                continue
+            violations.append(
+                DrcViolation(
+                    rule="no-hole",
+                    severity="error",
+                    message=(
+                        f"{component.ref} pin {pin.number} is at {_safe_hole(hole)}, where the "
+                        f"breadboard has no hole — move the part onto the holes."
+                    ),
+                    holes=(hole,),
+                    component_ids=(component.id,),
+                )
+            )
+    for conductor in doc.conductors:
+        for hole in dict.fromkeys(conductor.path[:1] + conductor.path[-1:]):
+            if hole_key(hole) not in holeless:
+                continue
+            violations.append(
+                DrcViolation(
+                    rule="no-hole",
+                    severity="error",
+                    message=(
+                        f"Conductor {conductor.id} ends at {_safe_hole(hole)}, where the "
+                        f"breadboard has no hole."
+                    ),
+                    holes=(hole,),
+                    conductor_ids=(conductor.id,),
+                )
+            )
+    return violations
+
+
+#: What can be fitted to a solderless breadboard: a wire pushed into two holes from above.
+#: Solder, a lead bent along the underside and bare wire on the solder side all need a
+#: face this board does not have.
+BREADBOARD_CONDUCTOR_KINDS: frozenset[str] = frozenset({"insulated-wire", "top-jumper"})
+
+
+def _check_breadboard_conductors(doc: PerfDocument) -> list[DrcViolation]:
+    """Copper a solderless breadboard cannot have: anything soldered, or under the board.
+
+    An error rather than a refusal, for ``mounting-hole-conflict``'s reason: a board
+    changed to a breadboard keeps the copper it had, and the obvious order of work is to
+    change the board and then see what no longer fits -- which this lists.
+    """
+    if not is_breadboard(doc.board):
+        return []
+    violations: list[DrcViolation] = []
+    for conductor in doc.conductors:
+        if conductor.kind in BREADBOARD_CONDUCTOR_KINDS and conductor.side == "top":
+            continue
+        violations.append(
+            DrcViolation(
+                rule="not-on-breadboard",
+                severity="error",
+                message=(
+                    f"Conductor {conductor.id} is a {conductor.kind} on the {conductor.side} "
+                    f"side; on a solderless breadboard nothing is soldered and nothing runs "
+                    f"underneath — use a jumper wire."
+                ),
+                holes=tuple(dict.fromkeys(conductor.path[:1] + conductor.path[-1:])),
+                conductor_ids=(conductor.id,),
+            )
+        )
+    return violations
+
+
 def _check_cut_track_conflicts(doc: PerfDocument, lookup: FootprintLookup) -> list[DrcViolation]:
     """Pins and conductors soldered where a track cut has taken the copper away.
 
@@ -2203,6 +2291,8 @@ def run_drc(
         *_check_edge_connector_conflicts(doc, lookup),
         *_check_mounting_hole_clearance(doc, lookup),
         *_check_cut_track_conflicts(doc, lookup),
+        *_check_holeless_positions(doc, lookup),
+        *_check_breadboard_conductors(doc),
         *_check_pad_lifting_risk(doc, options),
         *_check_solder_trace_feasibility(doc, options),
         *_check_current_capacity(doc, options),

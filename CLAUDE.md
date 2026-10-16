@@ -194,7 +194,7 @@ the next regeneration silently disagree), and pinned by its own test:
 - `PYTHON_ONLY_RULES` — rules the original never had (`conductor-crossing`,
   `jumper-under-body`, `conductor-off-board`, `unknown-footprint`,
   `component-overhangs-edge`, `wire-too-thick-for-hole`, `terminal-entry-blocked`,
-  `terminal-entry-faces-in`, `wire-over-joint`), so
+  `terminal-entry-faces-in`, `wire-over-joint`, `no-hole`, `not-on-breadboard`), so
   there is nothing for a fixture to record.
   `unknown-footprint` fires on eight of the fifteen fixtures, every time
   on the id `c-disc-1`, which exists in neither engine: the fixtures are dumps of the
@@ -1575,6 +1575,44 @@ horizontal-strip board), and a candidate placement is judged by `plan_stripboard
 by `autoroute.py` — ranking a stripboard with the pad-per-hole router scores it on a build
 nobody is going to follow.
 
+### A breadboard is stripboard nobody can cut
+
+`board.type == "breadboard"` is a solderless breadboard: spring clips under a block of
+plastic, five holes to a clip across each half of a column, a long clip down each power
+rail. `breadboard.py` owns the pattern and hangs off `model` alone, because `geometry` asks
+it two things — which positions have no hole, and what a hole is called — and so cannot be
+asked anything in return.
+
+Four decisions carry it, each with a test in `tests/test_breadboard.py`:
+
+- **The pattern is the board's shape, not a field.** 20 rows is a board with rails, 12 one
+  without, the columns are its length; `breadboard.board_problem` refuses anything else, for
+  `board.set` and for a file alike. Nothing new is written to a `.perf`, so the format does
+  not move. The pattern was READ OFF Fritzing's drawing of the 03MB102 (hole positions and
+  rail colours only, recorded in `docs/prior-art.md`), and reproduces the 170, 400 and 830
+  tie points the three sizes are sold by. The half-size rails sit 0.37 of a pitch off the
+  columns there; a hole here is a grid position, so they are rounded, and the docstring says
+  so rather than passing the rounding off as a measurement.
+- **A clip is a segment.** `stripboard.segment_of` answers from `breadboard.clip_of` on a
+  breadboard and `cut_between` never offers a cut there, which is how `connectivity`, LVS,
+  `striproute` and the placer take a breadboard without a line about plastic. Two pins of
+  different nets in one clip are an LVS short, never a DRC finding: the document is fine,
+  the circuit is not. Connectivity's board pass takes EITHER side on a breadboard, because
+  the clip is inside the hole and grips a jumper pushed in from above.
+- **A position with no hole is the third member of `unusable_holes`**
+  (`geometry.holeless_positions`): the channel, the strips beside the rails, the column a
+  rail skips. DRC calls a pin or a wire end there `no-hole`, and the placer and the router
+  already read that set as a wall.
+- **Nothing is soldered or drilled.** A mounting hole or an edge connector is refused on a
+  breadboard (`commands.refuse_on_breadboard`, and at load); copper that needs solder or the
+  underside — a solder trace, a lead bend, bare wire on the solder side — is
+  `not-on-breadboard`, an error rather than a refusal, so a board changed to a breadboard
+  keeps what it had and lists what no longer fits.
+
+A breadboard hole is named as the board prints it (`breadboard.hole_name`): the ROW letter
+and the column number, lower case — `e12` — the other way round from a perfboard address and
+never mistakable for one; a rail hole is the rail and the column beside it (`T+12`).
+
 ### Layering
 
 ```
@@ -1588,6 +1626,9 @@ model → geometry → stripboard → connectivity / occupancy
 
 `boardfit.py` sits below `placer`, `autoroute` and `drc` because it is all three run in a row
 on a candidate board and then compared; nothing in the engine imports it.
+
+`breadboard.py` hangs off `model` alone too, and `geometry` imports it: see "A breadboard is
+stripboard nobody can cut" above.
 
 `wiregauge.py` hangs off `model` alone — it is arithmetic on a gauge number — and is read
 by `drc`, `router`, `striproute` and `guide`, which is how three siblings and their

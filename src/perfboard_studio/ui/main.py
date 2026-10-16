@@ -3282,6 +3282,8 @@ def _rule_title(rule: str) -> str:
         "lead-bend-too-long": t("Bent lead too long"),
         "mounting-hole-clearance": t("Too close to a mounting hole"),
         "mounting-hole-conflict": t("Pin on a mounting hole"),
+        "no-hole": t("No hole there"),
+        "not-on-breadboard": t("Not possible on a breadboard"),
         "pad-lifting-risk": t("Pads may lift"),
         "pin-not-connected": t("Pin connected to nothing"),
         "solder-trace-invalid-path": t("Solder trace skips a hole"),
