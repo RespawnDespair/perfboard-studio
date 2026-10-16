@@ -35,12 +35,15 @@ from perfboard_studio.drc import run_drc
 from perfboard_studio.footprints import get_footprint
 from perfboard_studio.geometry import (
     all_pin_holes,
+    format_hole,
     hole_key,
     hole_ref_to_coord,
     holeless_positions,
+    parse_hole,
     unusable_holes,
 )
 from perfboard_studio.lvs import run_lvs
+from perfboard_studio.mcp.session import BoardSession, SessionError
 from perfboard_studio.model import (
     ComponentInstance,
     DocumentMeta,
@@ -296,3 +299,44 @@ def test_a_breadboard_survives_the_file_and_a_wrong_one_does_not_load() -> None:
     refused = deserialize_document(text)
     assert not refused.ok
     assert refused.code == "invalid-board"
+
+
+# ---------------------------------------------------------------------------
+# What a hole is called, everywhere
+# ---------------------------------------------------------------------------
+
+
+def test_a_hole_is_named_as_the_board_it_is_on_prints_it() -> None:
+    e11 = HoleCoord(10, 11)
+    assert format_hole(e11) == "K12"
+    assert format_hole(e11, dataclasses.replace(FULL, type="pad-per-hole")) == "K12"
+    assert format_hole(e11, FULL) == "e11"
+    assert format_hole(HoleCoord(10, 9), FULL) == "column 11 (no hole)"
+    assert format_hole(HoleCoord(-1, 3), FULL) == "(col -1, row 3)"
+
+
+def test_a_breadboard_reads_only_its_own_names_in_either_case() -> None:
+    """Everything the tool says about a breadboard is in its own names, so those are what
+    it reads; a grid address beside them would make "A1" two different holes."""
+    assert parse_hole("e11", FULL) == parse_hole("E11", FULL) == HoleCoord(10, 11)
+    assert parse_hole("t+3", FULL) == parse_hole("T+3", FULL) == HoleCoord(2, 1)
+    with pytest.raises(ValueError, match="row letter a-j"):
+        parse_hole("K12", FULL)
+    assert parse_hole("k12", dataclasses.replace(FULL, type="pad-per-hole")) == HoleCoord(10, 11)
+
+
+def test_drc_names_a_breadboard_hole_as_the_board_prints_it() -> None:
+    doc = _doc(FULL, _dip("U1", HoleCoord(10, 11), rotation=180))
+    messages = [v.message for v in run_drc(doc, get_footprint) if v.rule == "no-hole"]
+    assert messages and all("(no hole)" in m for m in messages)
+    assert not any("K1" in m for m in messages)
+
+
+def test_an_agent_places_and_reads_back_in_breadboard_names() -> None:
+    session = BoardSession(document=_doc(FULL))
+    result = session.place_component("U1", "dip-8", "e11", rotation=270)
+    assert result["ok"], result
+    assert session.document.components[0].anchor == HoleCoord(10, 11)
+    assert session.check_heights()["parts"][0]["at"] == "e11"
+    with pytest.raises(SessionError, match="row letter a-j"):
+        session.place_component("U2", "dip-8", "K12", rotation=270)

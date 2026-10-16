@@ -190,7 +190,9 @@ _FIELDS: dict[str, str] = {
     "netclass": r"signal|ground|power",
     "shape": r"line|rectangle|circle|text",
     "edge": r"left|right|top|bottom",
-    "hole": r"[A-Z]+\d+|\(col -?\d+, row -?\d+\)",
+    # A perfboard address, a breadboard's own ("e12", "T+12" -- geometry.format_hole), a
+    # breadboard position with no hole, or an off-board coordinate.
+    "hole": r"[A-Z]+\d+|[a-j]\d+|[TB][+-]\d+|column \d+ \(no hole\)|\(col -?\d+, row -?\d+\)",
     "what": r"Paste|Duplicate",
     "ref": r"[^\s]+",
     "pin": r"[^\s]+\.[^\s]+",

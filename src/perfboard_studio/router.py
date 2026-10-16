@@ -531,7 +531,7 @@ def route_connection(
                 ok=False,
                 alternatives=(),
                 reason=(
-                    f"{format_hole(endpoint)} has no pad to solder to — a mounting bore or "
+                    f"{format_hole(endpoint, doc.board)} has no pad to solder to — a mounting bore or "
                     f"an edge-connector finger is there. Move the part."
                 ),
             )
@@ -609,7 +609,7 @@ def route_connection(
         return RouteResult(
             ok=False,
             alternatives=(),
-            reason=f"No route found from {format_hole(from_)} to {format_hole(to)}.{refused}",
+            reason=f"No route found from {format_hole(from_, doc.board)} to {format_hole(to, doc.board)}.{refused}",
         )
     best = candidates[0]
     return RouteResult(ok=True, best=best, alternatives=tuple(candidates))
@@ -852,7 +852,7 @@ def _solder_trace_candidate(
     )
 
     parts: list[str] = [
-        f"{len(path)} pads from {format_hole(from_)} to {format_hole(to)}"
+        f"{len(path)} pads from {format_hole(from_, ctx.doc.board)} to {format_hole(to, ctx.doc.board)}"
     ]
     if needs_spine:
         parts.append(
@@ -861,7 +861,7 @@ def _solder_trace_candidate(
             "the joint repeatable"
         )
     if risk_holes:
-        holes_text = ", ".join(format_hole(hole) for hole in risk_holes)
+        holes_text = ", ".join(format_hole(hole, ctx.doc.board) for hole in risk_holes)
         parts.append(
             f"{len(risk_holes)} pad(s) sit next to a different net ({holes_text}) — check "
             "isolation there after soldering"
@@ -949,11 +949,11 @@ def _hopping_trace_candidate(
 
     trace_count = sum(1 for c in conductors if c.kind in ("solder-trace", "solder-trace-wired"))
     parts = [
-        f"solder trace from {format_hole(from_)} to {format_hole(to)} in {trace_count} run(s), "
+        f"solder trace from {format_hole(from_, ctx.doc.board)} to {format_hole(to, ctx.doc.board)} in {trace_count} run(s), "
         f"with {hops} insulated hop(s) over conductors it may not cross"
     ]
     if risk_holes:
-        holes_text = ", ".join(format_hole(hole) for hole in risk_holes)
+        holes_text = ", ".join(format_hole(hole, ctx.doc.board) for hole in risk_holes)
         parts.append(
             f"{len(risk_holes)} pad(s) sit next to a different net ({holes_text}) — check "
             "isolation there after soldering"
@@ -1454,7 +1454,7 @@ def _lead_bend_candidate(
         cost=ctx.opts.costs.lead_bend_fixed + length_mm * ctx.opts.costs.lead_bend_per_mm,
         explanation=(
             f"Lead bend: fold {pin_number}'s own leg {length_mm:.1f} mm from "
-            f"{format_hole(from_)} to {format_hole(to)} — no wire to cut, and it is "
+            f"{format_hole(from_, ctx.doc.board)} to {format_hole(to, ctx.doc.board)} — no wire to cut, and it is "
             "already soldered at one end."
         ),
         risk_holes=(),
@@ -1534,7 +1534,7 @@ def _straight_wire_candidate(
     # two different kinds of sentence rather than two entries in one list.
     explanation = (
         f"{kind.replace('-', ' ', 1).capitalize()}: {length_mm:.1f} mm from "
-        f"{format_hole(from_)} to {format_hole(to)} — {note}."
+        f"{format_hole(from_, ctx.doc.board)} to {format_hole(to, ctx.doc.board)} — {note}."
     )
 
     return RouteCandidate(
@@ -1605,7 +1605,7 @@ def _grid_wire_candidate(
         cost=fixed + laying,
         explanation=(
             f"{kind.replace('-', ' ', 1).capitalize()}: {length_mm:.1f} mm from "
-            f"{format_hole(from_)} to {format_hole(to)} with {bends} bend(s) — {note}."
+            f"{format_hole(from_, ctx.doc.board)} to {format_hole(to, ctx.doc.board)} with {bends} bend(s) — {note}."
         ),
         risk_holes=(),
     )

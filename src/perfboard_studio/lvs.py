@@ -41,7 +41,16 @@ from .connectivity import FootprintLookup, PhysicalNet, PhysicalPinRef, extract_
 # job is to report it -- so a strict encoder here means LVS crashes while describing the
 # very defect it exists to describe. See the note on geometry.format_hole.
 from .geometry import format_hole
-from .model import ComponentInstance, ConductorId, Net, NetClass, NetId, NetNode, PerfDocument
+from .model import (
+    Board,
+    ComponentInstance,
+    ConductorId,
+    Net,
+    NetClass,
+    NetId,
+    NetNode,
+    PerfDocument,
+)
 
 # ---------------------------------------------------------------------------
 # Public types
@@ -140,7 +149,7 @@ def _issue_sort_key(issue: LvsIssue) -> tuple[str, str, int, str, str]:
     return (issue.kind, net_name, 1, pin.component_ref, pin.pin)
 
 
-def _physical_net_label(id_: str | None, physical_net_by_id: dict[str, PhysicalNet]) -> str:
+def _physical_net_label(id_: str | None, physical_net_by_id: dict[str, PhysicalNet], *, board: Board | None) -> str:
     """Human label for a physical net group in an OPEN message: a hole ref, or "nowhere"."""
     if id_ is None:
         return "not connected to any other pin in this net"
@@ -151,7 +160,7 @@ def _physical_net_label(id_: str | None, physical_net_by_id: dict[str, PhysicalN
     # A physical net with no node has nothing addressable to offer, so say that instead.
     if lowest is None:
         return "an unaddressable connection"
-    return f"near {format_hole(lowest.hole)}"
+    return f"near {format_hole(lowest.hole, board)}"
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +220,7 @@ def run_lvs(doc: PerfDocument, lookup: FootprintLookup) -> LvsResult:
         if pn.pins:
             continue
 
-        hole_refs = sorted({format_hole(n.hole) for n in pn.nodes})
+        hole_refs = sorted({format_hole(n.hole, doc.board) for n in pn.nodes})
         issues.append(
             LvsIssue(
                 kind="floating-conductor",
@@ -259,7 +268,7 @@ def run_lvs(doc: PerfDocument, lookup: FootprintLookup) -> LvsResult:
         where = (
             "an unaddressable physical connection"
             if lowest is None
-            else f"the physical connection at {format_hole(lowest.hole)}"
+            else f"the physical connection at {format_hole(lowest.hole, doc.board)}"
         )
         prefix = "CRITICAL SHORT (power tied to ground): " if is_power_ground_short else "SHORT: "
         quoted_net_names = " and ".join(f"'{n}'" for n in net_names)
@@ -395,7 +404,7 @@ def run_lvs(doc: PerfDocument, lookup: FootprintLookup) -> LvsResult:
 
                 group_text = "; ".join(
                     f"{{{', '.join(_format_pin_ref(p) for p in g.pins)}}} "
-                    f"{_physical_net_label(g.physical_net_id, physical_net_by_id)}"
+                    f"{_physical_net_label(g.physical_net_id, physical_net_by_id, board=doc.board)}"
                     for g in group_list
                 )
 

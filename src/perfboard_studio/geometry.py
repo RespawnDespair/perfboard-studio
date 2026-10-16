@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from functools import cache
 from typing import Literal
 
-from .breadboard import missing_holes
+from .breadboard import hole_name, is_breadboard, missing_holes, parse_hole_name
 from .model import (
     Board,
     BoardEdge,
@@ -132,7 +132,29 @@ def hole_ref_to_coord(ref: HoleRef) -> HoleCoord:
     return HoleCoord(col=_column_index(match.group(1)), row=int(match.group(2)) - 1)
 
 
-def format_hole(c: HoleCoord) -> str:
+def parse_hole(text: str, board: Board | None = None) -> HoleCoord:
+    """Read a hole address somebody typed, in the language :func:`format_hole` writes.
+
+    On a breadboard that is the board's own names and ONLY those, in either case ("E12" is
+    "e12", "t+3" is "T+3"): everything this tool says about a breadboard is in them, and a
+    grid address accepted beside them would make "A1" mean two different holes. On every
+    other board it is :func:`hole_ref_to_coord`, in either case. Raises ValueError.
+    """
+    stripped = text.strip()
+    if board is not None and is_breadboard(board):
+        for spelling in (stripped, stripped.lower(), stripped.upper()):
+            found = parse_hole_name(board, spelling)
+            if found is not None:
+                return found
+        raise ValueError(
+            f"{text!r} is not a hole on this breadboard. Its holes are named as it prints "
+            f"them: a row letter a-j and a column, like 'e12', or a rail and the column "
+            f"beside it, like 'T+12' or 'B-3'."
+        )
+    return hole_ref_to_coord(stripped.upper())
+
+
+def format_hole(c: HoleCoord, board: Board | None = None) -> str:
     """Name a hole for a message, without ever raising.
 
     :func:`coord_to_hole_ref` is strict because its round-trip is a guarantee, so it
@@ -143,7 +165,20 @@ def format_hole(c: HoleCoord) -> str:
 
     Use ``coord_to_hole_ref`` when the value must round-trip, ``format_hole`` whenever
     the result goes into a message for a human.
+
+    THE BOARD IS PASSED BECAUSE A BREADBOARD PRINTS ITS OWN ADDRESSES: "e12", the row
+    letter and the column, and "T+12" on a rail (``breadboard.hole_name``). A message, a
+    guide step or a tooltip about a breadboard names the hole the builder can read off the
+    plastic, so every caller that has a board passes it; on every other board the answer
+    is exactly what it always was, which is why no golden moved. A breadboard position with
+    no hole has no printed name and is called by its column.
     """
+    if board is not None and is_breadboard(board):
+        name = hole_name(board, c)
+        if name is not None:
+            return name
+        if 0 <= c.col < board.cols and 0 <= c.row < board.rows:
+            return f"column {c.col + 1} (no hole)"
     try:
         return coord_to_hole_ref(c)
     except ValueError:

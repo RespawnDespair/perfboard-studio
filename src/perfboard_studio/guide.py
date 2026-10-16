@@ -659,7 +659,7 @@ def build_guide(
         doc, lookup, violations, conductor_steps, options, say, late_parts
     )
     track_cuts = _track_cuts(doc, say)
-    checkpoints[0].extend(_cut_checks(track_cuts, say))
+    checkpoints[0].extend(_cut_checks(track_cuts, say, board=doc.board))
 
     phases = tuple(
         GuidePhase(
@@ -737,7 +737,7 @@ def _phase_summary(
         count = len(doc.mounting_holes)
         sizes = ", ".join(f"{d:g} mm" for d in sorted({m.diameter for m in doc.mounting_holes}))
         where = ", ".join(
-            format_hole(m.at)
+            format_hole(m.at, board)
             for m in sorted(doc.mounting_holes, key=lambda m: (m.at.row, m.at.col))
         )
         # Parenthesised rather than run on with a dash: this clause sits inside a comma
@@ -868,7 +868,7 @@ def _part_notes_from_drc(
     for violation in violations:
         if violation.rule == "jumper-under-body" and violation.component_ids:
             wheres = [
-                _conductor_where(path_by_id.get(conductor_id), say)
+                _conductor_where(path_by_id.get(conductor_id), say, board=doc.board)
                 for conductor_id in violation.conductor_ids
             ]
             if len(wheres) > 1:
@@ -902,11 +902,11 @@ def _part_notes_from_drc(
     return {component_id: tuple(lines) for component_id, lines in notes.items()}
 
 
-def _conductor_where(path: tuple[HoleCoord, ...] | None, say: Phrasebook) -> str:
+def _conductor_where(path: tuple[HoleCoord, ...] | None, say: Phrasebook, *, board: Board | None) -> str:
     """A conductor named by its ends, for a message a person reads holding the board."""
     if not path:
         return say("on this board")
-    return say("from {start} to {end}", start=format_hole(path[0]), end=format_hole(path[-1]))
+    return say("from {start} to {end}", start=format_hole(path[0], board), end=format_hole(path[-1], board))
 
 
 def _part_step(
@@ -1013,13 +1013,13 @@ def _part_step(
         archetype=footprint.body.archetype,
         anchor=component.anchor,
         pin_holes=pin_holes,
-        span=_wires_span(pin_holes, say) if off_board else _span_of(pin_holes, say),
+        span=_wires_span(pin_holes, say, board=board) if off_board else _span_of(pin_holes, say, board=board),
         # Two pads in a row are not two leads to bend: the wires are cut, not formed.
         bend_template_mm=None if off_board else _bend_template(pin_holes, board),
         rotation=component.rotation,
         mirrored=component.mirrored,
         height_mm=footprint.body_height,
-        polarity=_polarity_note(footprint, pin_holes, component, say),
+        polarity=_polarity_note(footprint, pin_holes, component, say, board=board),
         notes=tuple(notes),
     )
 
@@ -1077,11 +1077,11 @@ def _flying_lead_notes(
         lead = lead_end(component.ref, pin.number, pin_name_of(component, pin), say)
         wire = wires.get(pin.number)
         if wire is None:
-            pairs.append(say("{hole} to {lead}", hole=format_hole(at), lead=lead))
+            pairs.append(say("{hole} to {lead}", hole=format_hole(at, board), lead=lead))
         else:
             pairs.append(say(
                 "{hole} to {lead} — {net}, {colour} wire",
-                hole=format_hole(at),
+                hole=format_hole(at, board),
                 lead=lead,
                 net=wire[0],
                 colour=say(wire[1]),
@@ -1104,23 +1104,23 @@ def _flying_lead_notes(
     return notes
 
 
-def _wires_span(pin_holes: tuple[tuple[str, HoleCoord], ...], say: Phrasebook) -> str:
+def _wires_span(pin_holes: tuple[tuple[str, HoleCoord], ...], say: Phrasebook, *, board: Board | None) -> str:
     """Where the wires to a part off the board land: their row, and how many there are.
 
     Not ``_span_of``: "B16 → A16, 1 holes apart" is the pitch to bend two leads to, and these
     are wires, cut rather than bent.
     """
     if len(pin_holes) == 1:
-        return say("{hole}, 1 wire", hole=format_hole(pin_holes[0][1]))
+        return say("{hole}, 1 wire", hole=format_hole(pin_holes[0][1], board))
     return say(
         "{start} → {end}, {count} wires",
-        start=format_hole(pin_holes[0][1]),
-        end=format_hole(pin_holes[-1][1]),
+        start=format_hole(pin_holes[0][1], board),
+        end=format_hole(pin_holes[-1][1], board),
         count=len(pin_holes),
     )
 
 
-def _span_of(pin_holes: tuple[tuple[str, HoleCoord], ...], say: Phrasebook = ENGLISH) -> str:
+def _span_of(pin_holes: tuple[tuple[str, HoleCoord], ...], say: Phrasebook = ENGLISH, *, board: Board | None) -> str:
     """Where the part sits, in the form that is useful for THAT part.
 
     Two leads get "C7 → C11, 4 holes apart", which is a thing you can set a pair of
@@ -1130,7 +1130,7 @@ def _span_of(pin_holes: tuple[tuple[str, HoleCoord], ...], say: Phrasebook = ENG
     if not pin_holes:
         return say("no pins")
     if len(pin_holes) == 1:
-        return format_hole(pin_holes[0][1])
+        return format_hole(pin_holes[0][1], board)
 
     cols = [at.col for _n, at in pin_holes]
     rows = [at.row for _n, at in pin_holes]
@@ -1139,7 +1139,7 @@ def _span_of(pin_holes: tuple[tuple[str, HoleCoord], ...], say: Phrasebook = ENG
         steps = max(max(cols) - min(cols), max(rows) - min(rows))
         return say(
             "{start} → {end}, {steps} holes apart",
-            start=format_hole(first), end=format_hole(last), steps=steps,
+            start=format_hole(first, board), end=format_hole(last, board), steps=steps,
         )
 
     corner_a = HoleCoord(min(cols), min(rows))
@@ -1148,12 +1148,12 @@ def _span_of(pin_holes: tuple[tuple[str, HoleCoord], ...], say: Phrasebook = ENG
     if pin_one is None:
         return say(
             "{start} → {end}, {count} pins",
-            start=format_hole(corner_a), end=format_hole(corner_b), count=len(pin_holes),
+            start=format_hole(corner_a, board), end=format_hole(corner_b, board), count=len(pin_holes),
         )
     return say(
         "{start} → {end}, {count} pins with pin 1 at {hole}",
-        start=format_hole(corner_a), end=format_hole(corner_b), count=len(pin_holes),
-        hole=format_hole(pin_one),
+        start=format_hole(corner_a, board), end=format_hole(corner_b, board), count=len(pin_holes),
+        hole=format_hole(pin_one, board),
     )
 
 
@@ -1204,7 +1204,7 @@ def _polarity_note(
     footprint: Footprint,
     pin_holes: tuple[tuple[str, HoleCoord], ...],
     component: ComponentInstance | None = None,
-    say: Phrasebook = ENGLISH,
+    say: Phrasebook = ENGLISH, *, board: Board | None,
 ) -> str | None:
     """How to orient this part, in words, or None if it does not matter.
 
@@ -1220,7 +1220,7 @@ def _polarity_note(
         name = pin_name_of(component, pin)
         if name in _PIN_NAME_MEANING and pin.number in by_number:
             lead_said = say(_PIN_NAME_MEANING[name])
-            where = format_hole(by_number[pin.number])
+            where = format_hole(by_number[pin.number], board)
             if off_board:
                 # Off the board the lead is not IN the hole -- the wire to it is.
                 named.append(say("{lead}: the wire in {hole}", lead=lead_said, hole=where))
@@ -1245,7 +1245,7 @@ def _polarity_note(
                 break
             meaning = _LEAD_NAME_MEANING.get(name)
             said = f"{name} ({say(meaning)})" if meaning else name
-            legs.append(say("{lead} in {hole}", lead=said, hole=format_hole(hole)))
+            legs.append(say("{lead} in {hole}", lead=said, hole=format_hole(hole, board)))
         if legs:
             return say("{legs} — check against the part's datasheet", legs="; ".join(legs))
 
@@ -1254,7 +1254,7 @@ def _polarity_note(
         if first is None:
             return None
         return say(
-            "Pin 1 (the notched end, marked with a dot) in {hole}", hole=format_hole(first)
+            "Pin 1 (the notched end, marked with a dot) in {hole}", hole=format_hole(first, board)
         )
 
     if footprint.body.archetype == "smd-adapter":
@@ -1265,7 +1265,7 @@ def _polarity_note(
             return None
         return say(
             "Pin 1 (the adapter's \"1\", beside the chip's dot) in {hole}",
-            hole=format_hole(first),
+            hole=format_hole(first, board),
         )
 
     if footprint.body.archetype == "box-header":
@@ -1277,7 +1277,7 @@ def _polarity_note(
             return say(
                 "Key slot on the side of the pin-1 row; pin 1 in {hole} "
                 "(the cable's red stripe goes to pin 1)",
-                hole=format_hole(first),
+                hole=format_hole(first, board),
             )
 
     if footprint.polarized:
@@ -1285,14 +1285,14 @@ def _polarity_note(
         # this registry and KiCad's DO-41 both follow.
         first = by_number.get("1")
         if first is not None:
-            return say("Cathode — the banded end — in {hole}", hole=format_hole(first))
+            return say("Cathode — the banded end — in {hole}", hole=format_hole(first, board))
 
     if footprint.body.archetype in ("to92", "to220"):
         first = by_number.get("1")
         if first is not None:
             return say(
                 "Pin 1 in {hole}; check the package outline against the board",
-                hole=format_hole(first),
+                hole=format_hole(first, board),
             )
     return None
 
@@ -1314,7 +1314,7 @@ def _conductor_steps(
     reason turned around: the rails are the connections everything else is measured
     against, so they want to exist and be verified first.
     """
-    risks_by_conductor = _risks_by_conductor(violations, say)
+    risks_by_conductor = _risks_by_conductor(violations, say, board=doc.board)
     trapped = trapped_jumper_ids(violations)
     class_order: dict[NetClass, int] = {"ground": 0, "power": 1, "signal": 2}
 
@@ -1471,7 +1471,7 @@ def _conductor_step(
         side=conductor.side,
         net_name=net_name,
         net_class=net_class,
-        span=_conductor_span(conductor.kind, path, pads, say),
+        span=_conductor_span(conductor.kind, path, pads, say, board=board),
         path=path,
         pads=pads,
         length_mm=length_mm,
@@ -1486,11 +1486,11 @@ def _conductor_step(
 
 
 def _conductor_span(
-    kind: ConductorKind, path: tuple[HoleCoord, ...], pads: int, say: Phrasebook
+    kind: ConductorKind, path: tuple[HoleCoord, ...], pads: int, say: Phrasebook, *, board: Board | None
 ) -> str:
     if not path:
         return say("(empty path)")
-    ends = f"{format_hole(path[0])} → {format_hole(path[-1])}"
+    ends = f"{format_hole(path[0], board)} → {format_hole(path[-1], board)}"
     if kind in ("solder-trace", "solder-trace-wired", "strip"):
         return say("{ends}, {pads} pads", ends=ends, pads=pads)
     return ends
@@ -1768,7 +1768,7 @@ def trapped_jumper_ids(violations: list[DrcViolation]) -> frozenset[ConductorId]
 
 
 def _risks_by_conductor(
-    violations: list[DrcViolation], say: Phrasebook
+    violations: list[DrcViolation], say: Phrasebook, *, board: Board | None
 ) -> dict[ConductorId, tuple[RiskNote, ...]]:
     """R5' proximity warnings, indexed by the trace that causes them.
 
@@ -1787,8 +1787,8 @@ def _risks_by_conductor(
                     message=say(
                         "{hole} sits about one pad gap from {neighbour}, which is on another "
                         "net. Do not let solder run across.",
-                        hole=format_hole(violation.holes[0]),
-                        neighbour=format_hole(violation.holes[1]),
+                        hole=format_hole(violation.holes[0], board),
+                        neighbour=format_hole(violation.holes[1], board),
                     ),
                 )
             )
@@ -1833,7 +1833,7 @@ def _track_cuts(doc: PerfDocument, say: Phrasebook) -> tuple[TrackCutJob, ...]:
     return tuple(jobs)
 
 
-def _cut_checks(cuts: tuple[TrackCutJob, ...], say: Phrasebook) -> list[Checkpoint]:
+def _cut_checks(cuts: tuple[TrackCutJob, ...], say: Phrasebook, *, board: Board | None) -> list[Checkpoint]:
     """One isolation probe per cut, before anything is soldered.
 
     Blocking, and the only checks in this guide that can be made on a bare board. A cut
@@ -1850,11 +1850,11 @@ def _cut_checks(cuts: tuple[TrackCutJob, ...], say: Phrasebook) -> list[Checkpoi
             Checkpoint(
                 kind="isolation",
                 title=say(
-                    "{a} ↔ {b} must be open", a=format_hole(left), b=format_hole(right)
+                    "{a} ↔ {b} must be open", a=format_hole(left, board), b=format_hole(right, board)
                 ),
                 instruction=say(
                     "After cutting the track at {cut}, measure resistance between {a} and {b}.",
-                    cut=format_hole(cut.at), a=format_hole(left), b=format_hole(right),
+                    cut=format_hole(cut.at, board), a=format_hole(left, board), b=format_hole(right, board),
                 ),
                 expected=say(
                     "Open circuit. Anything below a few hundred kΩ means copper is still "
@@ -1892,14 +1892,14 @@ def _checkpoints(
                     kind="isolation",
                     title=say(
                         "{a} ↔ {b} must be open",
-                        a=format_hole(risk.hole), b=format_hole(risk.neighbour),
+                        a=format_hole(risk.hole, doc.board), b=format_hole(risk.neighbour, doc.board),
                     ),
                     instruction=say(
                         "With the trace for {net} finished, measure resistance between {a} "
                         "and {b}.",
                         net=step.net_name,
-                        a=format_hole(risk.hole),
-                        b=format_hole(risk.neighbour),
+                        a=format_hole(risk.hole, doc.board),
+                        b=format_hole(risk.neighbour, doc.board),
                     ),
                     expected=say(
                         "Open circuit. Any reading at all means solder has bridged them."
@@ -1940,7 +1940,7 @@ def _checkpoints(
     for step, phase in conductor_steps:
         if step.resistance_ohm is None or step.pads < options.resistance_check_min_pads:
             continue
-        checks[phase].append(_resistance_check(step, options, say))
+        checks[phase].append(_resistance_check(step, options, say, board=doc.board))
 
     checks[8].extend(_closing_checks(doc, lookup, options, say))
     del violations
@@ -1948,7 +1948,7 @@ def _checkpoints(
 
 
 def _resistance_check(
-    step: ConductorStep, options: GuideOptions, say: Phrasebook
+    step: ConductorStep, options: GuideOptions, say: Phrasebook, *, board: Board | None
 ) -> Checkpoint:
     """The end-to-end check on one run, in the form the reader's meter can carry out.
 
@@ -1971,7 +1971,7 @@ def _resistance_check(
     precision: this is about what to ASK somebody to do, not about what is known.
     """
     milliohm = (step.resistance_ohm or 0.0) * 1000
-    span_from, span_to = format_hole(step.path[0]), format_hole(step.path[-1])
+    span_from, span_to = format_hole(step.path[0], board), format_hole(step.path[-1], board)
     if (step.resistance_ohm or 0.0) >= options.meter_resolution_ohm:
         band = options.resistance_tolerance
         return Checkpoint(
@@ -2306,7 +2306,7 @@ def _warnings(
                 "{count} fingers on the {edge} edge from {hole}",
                 count=connector.count,
                 edge=say(connector.edge),
-                hole=format_hole(edge_connector_holes(connector, doc.board)[0]),
+                hole=format_hole(edge_connector_holes(connector, doc.board)[0], doc.board),
             )
             for connector in doc.edge_connectors
             if edge_connector_holes(connector, doc.board)

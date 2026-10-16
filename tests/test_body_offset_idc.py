@@ -207,7 +207,7 @@ def test_the_guide_says_where_the_key_goes() -> None:
     pin lands on its neighbour across the row."""
     footprint = box_header_footprint(pins_per_row=8)
     holes = tuple((p.number, HoleCoord(2 + p.d_col, 2 + p.d_row)) for p in footprint.pins)
-    note = _polarity_note(footprint, holes)
+    note = _polarity_note(footprint, holes, board=None)
     assert note is not None
     assert "Key slot" in note and "pin 1 in C3" in note and "red stripe" in note
 

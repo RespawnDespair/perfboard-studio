@@ -419,11 +419,11 @@ def test_a_three_legged_part_is_oriented_leg_by_leg_when_it_names_them() -> None
     ).ok
     component = bus.document.components[0]
     holes = (("1", HoleCoord(2, 2)), ("2", HoleCoord(3, 2)), ("3", HoleCoord(4, 2)))
-    note = _polarity_note(footprint, holes, component)
+    note = _polarity_note(footprint, holes, component, board=None)
     assert note is not None
     assert note.startswith("G (gate) in C3; D (drain) in D3; S (source) in E3")
     # Unnamed, it is what it always was.
-    assert "check the package outline" in (_polarity_note(footprint, holes) or "")
+    assert "check the package outline" in (_polarity_note(footprint, holes, board=None) or "")
 
 
 def test_a_probe_names_the_pin_the_part_named() -> None:

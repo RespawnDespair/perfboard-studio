@@ -38,6 +38,7 @@ from perfboard_studio.autoroute import (
     plan_reroute,
 )
 from perfboard_studio.autoroute import describe as describe_route
+from perfboard_studio.breadboard import is_breadboard
 from perfboard_studio.catalog import (
     CATEGORY_ORDER,
     CatalogCategory,
@@ -99,8 +100,8 @@ from perfboard_studio.geometry import (
     edge_connector_holes,
     format_hole,
     hole_key,
-    hole_ref_to_coord,
     pad_edge_gap_mm,
+    parse_hole,
 )
 from perfboard_studio.guide import GuideOptions, build_guide
 from perfboard_studio.guide import describe as describe_guide
@@ -180,11 +181,17 @@ def _path_arg(path: str, tool: str) -> Path:
     return Path(path).expanduser()
 
 
-def _hole(ref: str) -> HoleCoord:
-    """Parse a hole address, or say clearly what was wrong with it."""
+def _hole(ref: str, board: Board) -> HoleCoord:
+    """Parse a hole address on this board, or say clearly what was wrong with it.
+
+    On a breadboard the board's own names ("e12", "T+12") -- the ones every result about
+    it is written in -- and the parser's refusal already says what they look like.
+    """
     try:
-        return hole_ref_to_coord(ref.strip().upper())
+        return parse_hole(ref, board)
     except Exception as err:
+        if is_breadboard(board):
+            raise SessionError(str(err)) from err
         raise SessionError(
             f"{ref!r} is not a hole address. They look like 'A1', 'C7' or 'AC12': "
             f"column letters then a 1-based row ({err})."
@@ -342,8 +349,8 @@ class BoardSession:
             # after DRC tells it off.
             "pad_gap_along_row_mm": round(pad_edge_gap_mm(board, "horizontal"), 3),
             "pad_gap_down_column_mm": round(pad_edge_gap_mm(board, "vertical"), 3),
-            "top_left_hole": format_hole(HoleCoord(0, 0)),
-            "bottom_right_hole": format_hole(HoleCoord(board.cols - 1, board.rows - 1)),
+            "top_left_hole": format_hole(HoleCoord(0, 0), board),
+            "bottom_right_hole": format_hole(HoleCoord(board.cols - 1, board.rows - 1), board),
         }
         if board.pad_shape == "oblong":
             info["pad_length_mm"] = board.pad_length
@@ -357,7 +364,7 @@ class BoardSession:
             info["mounting_holes"] = [
                 {
                     "id": mount.id,
-                    "at": format_hole(mount.at),
+                    "at": format_hole(mount.at, board),
                     "diameter_mm": mount.diameter,
                     "head_diameter_mm": mount.head_diameter,
                 }
@@ -367,7 +374,7 @@ class BoardSession:
             # on a hole with no copper and only finds out from DRC.
             consumed = consumed_holes(self.document)
             info["holes_without_pads"] = sorted(
-                format_hole(HoleCoord(col, row))
+                format_hole(HoleCoord(col, row), board)
                 for col in range(board.cols)
                 for row in range(board.rows)
                 if hole_key(HoleCoord(col, row)) in consumed
@@ -377,7 +384,7 @@ class BoardSession:
                 {
                     "id": note.id,
                     "text": note.text,
-                    "at": format_hole(note.at),
+                    "at": format_hole(note.at, board),
                     **(
                         {"offset_mm": [note.offset_x_mm, note.offset_y_mm]}
                         if note.offset_x_mm or note.offset_y_mm
@@ -393,7 +400,7 @@ class BoardSession:
                     "id": connector.id,
                     "edge": connector.edge,
                     "holes": [
-                        format_hole(hole)
+                        format_hole(hole, board)
                         for hole in edge_connector_holes(connector, board)
                     ],
                     "face": connector.face,
@@ -421,7 +428,7 @@ class BoardSession:
             parts.append(
                 {
                     "ref": component.ref,
-                    "at": format_hole(component.anchor),
+                    "at": format_hole(component.anchor, self.document.board),
                     "height_mm": footprint.body_height,
                     "archetype": footprint.body.archetype,
                 }
@@ -453,7 +460,7 @@ class BoardSession:
             "value": component.value,
             "footprint_id": component.footprint_id,
             "footprint_known": footprint is not None,
-            "anchor": format_hole(component.anchor),
+            "anchor": format_hole(component.anchor, self.document.board),
             "rotation": component.rotation,
             "mirrored": component.mirrored,
             "locked": component.locked,
@@ -473,7 +480,7 @@ class BoardSession:
             # The name the PART gives each lead, over the footprint's: a declared "GPIO21"
             # is what an agent wiring a module needs to read back, not "21".
             summary["pins"] = [
-                {"pin": pin.number, "name": pin_name_of(component, pin), "hole": format_hole(at)}
+                {"pin": pin.number, "name": pin_name_of(component, pin), "hole": format_hole(at, self.document.board)}
                 for pin, at in all_pin_holes(component, footprint)
             ]
         return summary
@@ -529,8 +536,8 @@ class BoardSession:
             "connected": len(groups) <= 1 and bool(groups),
             "remaining_connections": [
                 {
-                    "from": format_hole(link.from_),
-                    "to": format_hole(link.to),
+                    "from": format_hole(link.from_, self.document.board),
+                    "to": format_hole(link.to, self.document.board),
                     "length_mm": round(link.length_mm, 2),
                 }
                 for link in (entry.links if entry is not None else ())
@@ -712,7 +719,7 @@ class BoardSession:
                     result["place_missing"] = placed
                     return result
             result["placed"] = [
-                {"ref": p.ref, "at": format_hole(p.anchor), "rotation": p.rotation}
+                {"ref": p.ref, "at": format_hole(p.anchor, self.document.board), "rotation": p.rotation}
                 for p in placements
             ]
             if left_out:
@@ -972,7 +979,7 @@ class BoardSession:
             specs.append(
                 PartPlacement(
                     id=self._require_part(ref).id,
-                    anchor=_hole(at),
+                    anchor=_hole(at, self.document.board),
                     rotation=_rotation(int(entry.get("rotation", 0))),
                 )
             )
@@ -1102,7 +1109,7 @@ class BoardSession:
         return self._dispatch(
             "mounting-hole.add",
             AddMountingHolePayload(
-                at=_hole(hole), diameter=diameter, head_diameter=head_diameter
+                at=_hole(hole, self.document.board), diameter=diameter, head_diameter=head_diameter
             ),
         )
 
@@ -1134,7 +1141,7 @@ class BoardSession:
 
     def cut_track(self, hole: str) -> dict[str, Any]:
         """Break a stripboard track at a hole. The cut takes that hole's pad with it."""
-        return self._dispatch("cut.add", AddCutPayload(at=_hole(hole)))
+        return self._dispatch("cut.add", AddCutPayload(at=_hole(hole, self.document.board)))
 
     def add_board_label(
         self,
@@ -1153,7 +1160,7 @@ class BoardSession:
             "board.note.add",
             AddBoardNotePayload(
                 text=text,
-                at=_hole(hole),
+                at=_hole(hole, self.document.board),
                 offset_x_mm=offset_x_mm,
                 offset_y_mm=offset_y_mm,
                 size_mm=size_mm,
@@ -1211,7 +1218,7 @@ class BoardSession:
                 ref=ref,
                 value=value,
                 footprint_id=footprint_id,
-                anchor=_hole(hole),
+                anchor=_hole(hole, self.document.board),
                 rotation=_rotation(rotation),
                 pin_names=names,
                 symbol=cast(PartSymbol | None, symbol or None),
@@ -1221,7 +1228,7 @@ class BoardSession:
     def move_component(self, ref: str, hole: str) -> dict[str, Any]:
         component = self._require_component(ref)
         return self._dispatch(
-            "component.move", MoveComponentPayload(id=component.id, anchor=_hole(hole))
+            "component.move", MoveComponentPayload(id=component.id, anchor=_hole(hole, self.document.board))
         )
 
     def rotate_component(self, ref: str, rotation: int) -> dict[str, Any]:
@@ -1254,7 +1261,7 @@ class BoardSession:
             "conductor.add",
             AddConductorPayload(
                 conductor=NewWireConductor(
-                    path=(_hole(from_hole), _hole(to_hole)),
+                    path=(_hole(from_hole, self.document.board), _hole(to_hole, self.document.board)),
                     kind=kind,  # type: ignore[arg-type]
                     net_id=self._net_id(net),
                 )
@@ -1282,7 +1289,7 @@ class BoardSession:
             "conductor.add",
             AddConductorPayload(
                 conductor=NewSolderTraceConductor(
-                    path=tuple(_hole(h) for h in holes),
+                    path=tuple(_hole(h, self.document.board) for h in holes),
                     kind="solder-trace-wired" if spine is not None else "solder-trace",
                     spine=spine,
                     net_id=self._net_id(net),
@@ -1376,8 +1383,8 @@ class BoardSession:
             unrouted_detail=[
                 {
                     "net": item.link.net_name,
-                    "from": format_hole(item.link.from_),
-                    "to": format_hole(item.link.to),
+                    "from": format_hole(item.link.from_, self.document.board),
+                    "to": format_hole(item.link.to, self.document.board),
                     "reason": item.reason,
                 }
                 for outcome in plan.nets
@@ -1399,7 +1406,7 @@ class BoardSession:
             {
                 "code": problem.code,
                 "message": problem.message,
-                "holes": [format_hole(hole) for hole in problem.holes],
+                "holes": [format_hole(hole, self.document.board) for hole in problem.holes],
             }
             for problem in plan.problems
         ]
@@ -1425,12 +1432,12 @@ class BoardSession:
             summary=describe_strip_plan(plan),
             cut_count=len(plan.cuts),
             link_count=len(plan.links),
-            cuts=[format_hole(cut.at) for cut in plan.cuts],
+            cuts=[format_hole(cut.at, self.document.board) for cut in plan.cuts],
             links=[
                 {
                     "net": link.net_name,
-                    "from": format_hole(link.from_hole),
-                    "to": format_hole(link.to_hole),
+                    "from": format_hole(link.from_hole, self.document.board),
+                    "to": format_hole(link.to_hole, self.document.board),
                     "holes": link.holes,
                 }
                 for link in plan.links
@@ -1480,8 +1487,8 @@ class BoardSession:
             unrouted_detail=[
                 {
                     "net": item.link.net_name,
-                    "from": format_hole(item.link.from_),
-                    "to": format_hole(item.link.to),
+                    "from": format_hole(item.link.from_, self.document.board),
+                    "to": format_hole(item.link.to, self.document.board),
                     "reason": item.reason,
                 }
                 for outcome in plan.nets
@@ -1503,8 +1510,8 @@ class BoardSession:
             "moves": [
                 {
                     "ref": change.ref,
-                    "from": format_hole(change.from_anchor),
-                    "to": format_hole(change.to_anchor),
+                    "from": format_hole(change.from_anchor, self.document.board),
+                    "to": format_hole(change.to_anchor, self.document.board),
                     "rotation": change.to_rotation,
                 }
                 for change in plan.changes
@@ -1555,7 +1562,7 @@ class BoardSession:
                     "rule": v.rule,
                     "severity": v.severity,
                     "message": v.message,
-                    "holes": [format_hole(h) for h in v.holes],
+                    "holes": [format_hole(h, self.document.board) for h in v.holes],
                 }
                 for v in violations
             ],

@@ -1274,5 +1274,5 @@ def test_a_wire_laid_along_the_grid_is_soldered_at_its_two_ends() -> None:
     from perfboard_studio.guide_export import _html_conductor_step
 
     for step in bent:
-        card = _html_conductor_step(step, "s1")
+        card = _html_conductor_step(step, "s1", board=None)
         assert " pads" not in card and "Path:" in card, card

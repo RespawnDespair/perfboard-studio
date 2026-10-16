@@ -1175,7 +1175,7 @@ def describe_span(a: HoleCoord, b: HoleCoord, board: Board) -> str:
     Same hole twice is not an error and not a measurement; it says so instead.
     """
     if a == b:
-        return t("{hole} — the same hole.").format(hole=format_hole(a))
+        return t("{hole} — the same hole.").format(hole=format_hole(a, board))
     d_col, d_row = abs(b.col - a.col), abs(b.row - a.row)
     mm = path_length_mm((a, b), board)
     steps = manhattan(a, b)
@@ -1185,7 +1185,7 @@ def describe_span(a: HoleCoord, b: HoleCoord, board: Board) -> str:
         else f"{max(d_col, d_row) + 1} {t('holes')}"
     )
     return (
-        f"{format_hole(a)} → {format_hole(b)}   {span}   "
+        f"{format_hole(a, board)} → {format_hole(b, board)}   {span}   "
         f"{t('{mm:.2f} mm apart').format(mm=mm)}   "
         f"{t('{steps} step(s) by trace').format(steps=steps)}"
     )
@@ -1553,7 +1553,7 @@ class ConductorItem(QGraphicsItem):
         # -- and it was the one field the tooltip left out.
         net_note = f"\n{net_name}" if net_name else ""
         self.setToolTip(
-            f"{conductor.kind.replace('-', ' ')}  {format_hole(first)} → {format_hole(last)}{net_note}"
+            f"{conductor.kind.replace('-', ' ')}  {format_hole(first, board)} → {format_hole(last, board)}{net_note}"
         )
 
     def _points(self) -> list[QPointF]:
@@ -2570,7 +2570,7 @@ class ComponentItem(QGraphicsItem):
         self.setFlags(flags)
         self.setZValue(10)
         lock_note = f"  [{t('locked')}]" if comp.locked else ""
-        where = format_hole(comp.anchor)
+        where = format_hole(comp.anchor, board)
         if comp.rotation:
             where += f"  {comp.rotation}°"
         tip = f"{comp.ref}  {comp.value}\n{footprint_label(fp.name)}{lock_note}\n{where}"
@@ -2663,7 +2663,7 @@ class ComponentItem(QGraphicsItem):
         lines = []
         for pin, at in all_pin_holes(self.comp, self.fp):
             far_end = lead_end(self.comp.ref, pin.number, pin_name_of(self.comp, pin), say)
-            line = f"{format_hole(at)} → {far_end}"
+            line = f"{format_hole(at, self.board)} → {far_end}"
             wire = wires.get(pin.number)
             if wire is not None:
                 line += f" · {wire[0]} · {say(wire[1])}"
@@ -3806,7 +3806,7 @@ class BoardScene(QGraphicsScene):
 
         found = self._pin_at(at)
         if found is None:
-            self.netPinRejected.emit(t("No component pin at {hole}.").format(hole=format_hole(at)))
+            self.netPinRejected.emit(t("No component pin at {hole}.").format(hole=format_hole(at, self.document.board)))
             return
 
         ref, pin = found
@@ -3960,7 +3960,7 @@ class BoardScene(QGraphicsScene):
                 self._measure_item = PickedPinsItem(self.document.board, self.side)
                 self.addItem(self._measure_item)
             self._measure_item.set_holes([at])
-            self.measured.emit(t("From {hole} — click the second hole.").format(hole=format_hole(at)))
+            self.measured.emit(t("From {hole} — click the second hole.").format(hole=format_hole(at, self.document.board)))
             return
 
         if self._measure_item is not None:
@@ -4054,7 +4054,7 @@ class BoardScene(QGraphicsScene):
 
         found = self._pin_at(at)
         if found is None:
-            self.netPinRejected.emit(t("No component pin at {hole}.").format(hole=format_hole(at)))
+            self.netPinRejected.emit(t("No component pin at {hole}.").format(hole=format_hole(at, self.document.board)))
             return None
 
         first = self._connect_first
@@ -4775,7 +4775,7 @@ class BoardView(QGraphicsView):
         # Said while the pointer is still moving, because the whole question during a drag
         # is "which hole is this going into" and the answer is otherwise invisible.
         hole = self._hole_under(event.position().toPoint())
-        self.show_mode(f"{what} \u2192 {format_hole(hole)}")
+        self.show_mode(f"{what} \u2192 {format_hole(hole, self.board_scene.document.board)}")
         landing = self._landing_of(event)
         if landing is not None:
             footprint, rotation, mirrored, moving = landing

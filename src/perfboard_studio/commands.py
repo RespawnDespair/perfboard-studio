@@ -396,7 +396,7 @@ def assert_hole_on_board(hole: HoleCoord, board: Board, what: str) -> None:
     if not is_inside_board(hole, board):
         raise CommandError(
             "off-board",
-            f"{what} {format_hole(hole)} is outside the {board.cols}x{board.rows} board.",
+            f"{what} {format_hole(hole, board)} is outside the {board.cols}x{board.rows} board.",
         )
 
 
@@ -1223,7 +1223,7 @@ class _PlaceComponent:
         return dataclasses.replace(doc, components=(*doc.components, component))
 
     def describe(self, p: PlaceComponentPayload, doc: PerfDocument) -> str:
-        return f"Place {p.ref} at {format_hole(p.anchor)}"
+        return f"Place {p.ref} at {format_hole(p.anchor, doc.board)}"
 
 
 class _PlaceBlock:
@@ -1287,7 +1287,7 @@ class _MoveComponent:
     def describe(self, p: MoveComponentPayload, doc: PerfDocument) -> str:
         c = next((x for x in doc.components if x.id == p.id), None)
         ref = c.ref if c is not None else p.id
-        return f"Move {ref} to {format_hole(p.anchor)}"
+        return f"Move {ref} to {format_hole(p.anchor, doc.board)}"
 
 
 class _MoveComponents:
@@ -1665,7 +1665,7 @@ class _PlaceParts:
         if len(p.placements) == 1:
             spec = p.placements[0]
             part = by_id.get(spec.id)
-            return f"Place {part.ref if part is not None else spec.id} at {format_hole(spec.anchor)}"
+            return f"Place {part.ref if part is not None else spec.id} at {format_hole(spec.anchor, doc.board)}"
         return f"Place {len(p.placements)} part(s) on the board"
 
 
@@ -1755,7 +1755,7 @@ class _AddConductor:
 
     def describe(self, p: AddConductorPayload, doc: PerfDocument) -> str:
         path = p.conductor.path
-        span = f" {format_hole(path[0])} to {format_hole(path[-1])}" if path else ""
+        span = f" {format_hole(path[0], doc.board)} to {format_hole(path[-1], doc.board)}" if path else ""
         return f"Add {p.conductor.kind}{span}"
 
 
@@ -1947,7 +1947,7 @@ class _SetBoard:
         stranded_components = [c for c in doc.components if not is_inside_board(c.anchor, b)]
         if stranded_components:
             listed = ", ".join(
-                f"{c.ref} at {format_hole(c.anchor)}" for c in stranded_components[:8]
+                f"{c.ref} at {format_hole(c.anchor, doc.board)}" for c in stranded_components[:8]
             )
             more = f" and {len(stranded_components) - 8} more" if len(stranded_components) > 8 else ""
             raise CommandError(
@@ -1959,7 +1959,7 @@ class _SetBoard:
             if stranded is not None:
                 raise CommandError(
                     "would-strand-conductor",
-                    f"Conductor {cond.id} passes through {format_hole(stranded)}, "
+                    f"Conductor {cond.id} passes through {format_hole(stranded, doc.board)}, "
                     f"outside a {b.cols}x{b.rows} board.",
                 )
         for cut in doc.cuts:
@@ -1968,7 +1968,7 @@ class _SetBoard:
             if not is_inside_board(cut.at, b):
                 raise CommandError(
                     "would-strand-cut",
-                    f"The track cut at {format_hole(cut.at)} would fall outside a "
+                    f"The track cut at {format_hole(cut.at, doc.board)} would fall outside a "
                     f"{b.cols}x{b.rows} board.",
                 )
         for board_note in doc.board_notes:
@@ -1978,14 +1978,14 @@ class _SetBoard:
             ):
                 raise CommandError(
                     "would-strand-label",
-                    f"The label \u201c{board_note.text}\u201d at {format_hole(board_note.at)} "
+                    f"The label \u201c{board_note.text}\u201d at {format_hole(board_note.at, doc.board)} "
                     f"would fall outside a {b.cols}x{b.rows} board.",
                 )
         for mount in doc.mounting_holes:
             if not is_inside_board(mount.at, b):
                 raise CommandError(
                     "would-strand-mounting-hole",
-                    f"Mounting hole {mount.id} at {format_hole(mount.at)} would fall outside a "
+                    f"Mounting hole {mount.id} at {format_hole(mount.at, doc.board)} would fall outside a "
                     f"{b.cols}x{b.rows} board.",
                 )
         for connector in doc.edge_connectors:
@@ -2487,7 +2487,7 @@ def _check_board_note(
         # every view, printed off the sheet, and written on nothing.
         raise CommandError(
             "off-board",
-            f"A label {offset_x_mm:g} x {offset_y_mm:g} mm from {format_hole(at)} is past the "
+            f"A label {offset_x_mm:g} x {offset_y_mm:g} mm from {format_hole(at, board)} is past the "
             "edge of the board, where it would be written on nothing.",
         )
 
@@ -2517,7 +2517,7 @@ class _AddBoardNote:
         return dataclasses.replace(doc, board_notes=(*doc.board_notes, note))
 
     def describe(self, p: AddBoardNotePayload, doc: PerfDocument) -> str:
-        return f"Write \u201c{p.text.strip()}\u201d on the board at {format_hole(p.at)}"
+        return f"Write \u201c{p.text.strip()}\u201d on the board at {format_hole(p.at, doc.board)}"
 
 
 class _UpdateBoardNote:
@@ -2805,7 +2805,7 @@ class _AddCut:
         return dataclasses.replace(doc, cuts=(*doc.cuts, cut))
 
     def describe(self, p: AddCutPayload, doc: PerfDocument) -> str:
-        return f"Cut track at {format_hole(p.at)}"
+        return f"Cut track at {format_hole(p.at, doc.board)}"
 
 
 class _ApplyStripboardPlan:
@@ -2844,7 +2844,7 @@ class _ApplyStripboardPlan:
                 # Cutting a hole that is already cut is a no-op the caller did not mean:
                 # the plan was made against a different board than the one in front of it.
                 raise CommandError(
-                    "duplicate-cut", f"The track at {format_hole(at)} is already cut."
+                    "duplicate-cut", f"The track at {format_hole(at, doc.board)} is already cut."
                 )
             cut_at.add((at.col, at.row))
             id_ = p.cut_ids[index] if p.cut_ids is not None else ctx.next_id("cut")
@@ -2920,7 +2920,7 @@ class _AddMountingHole:
         if any(m.at == p.at for m in doc.mounting_holes):
             raise CommandError(
                 "duplicate-mounting-hole",
-                f"There is already a mounting hole at {format_hole(p.at)}.",
+                f"There is already a mounting hole at {format_hole(p.at, doc.board)}.",
             )
         hole = MountingHole(
             id=id_,
@@ -2933,7 +2933,7 @@ class _AddMountingHole:
         return dataclasses.replace(doc, mounting_holes=(*doc.mounting_holes, hole))
 
     def describe(self, p: AddMountingHolePayload, doc: PerfDocument) -> str:
-        return f"Drill {p.diameter} mm mounting hole at {format_hole(p.at)}"
+        return f"Drill {p.diameter} mm mounting hole at {format_hole(p.at, doc.board)}"
 
 
 class _AddMountingHoles:
@@ -2976,7 +2976,7 @@ class _AddMountingHoles:
             if (at.col, at.row) in taken_holes:
                 raise CommandError(
                     "duplicate-mounting-hole",
-                    f"There is already a mounting hole at {format_hole(at)}.",
+                    f"There is already a mounting hole at {format_hole(at, doc.board)}.",
                 )
             taken_holes.add((at.col, at.row))
             id_ = p.ids[index] if p.ids is not None else ctx.next_id("mh")
@@ -3091,7 +3091,7 @@ class _AddEdgeConnector:
         if clash is not None:
             raise CommandError(
                 "overlapping-edge-connector",
-                f"Another edge connector already has a finger at {format_hole(clash)}.",
+                f"Another edge connector already has a finger at {format_hole(clash, board)}.",
             )
         return dataclasses.replace(doc, edge_connectors=(*doc.edge_connectors, connector))
 

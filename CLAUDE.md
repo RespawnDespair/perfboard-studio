@@ -495,6 +495,13 @@ conversion:
 - `coord_to_hole_ref` is strict and round-trips with `hole_ref_to_coord`.
 - `format_hole` never raises — use it in any message, since off-board coordinates are
   negative by definition and that is exactly what the failing checker needs to print.
+- **`format_hole(c, board)` takes the board, and every caller that has one passes it**:
+  a breadboard prints its own addresses (below), so the answer depends on which board the
+  hole is on. On every other board it is exactly the grid address, which is why no golden
+  moved. A guide or export helper that names a hole takes `board` as a REQUIRED keyword
+  (`*, board: Board | None`), so a new caller that forgets it is a type error rather than
+  a breadboard guide quietly printing grid addresses. `parse_hole(text, board)` is the
+  inverse, for anything a person or an agent types.
 
 **`board_size_mm` vs `hole_span_mm` is a real trap.** The substrate extends half a pitch
 past the outermost hole centres — plus `board.border_x_mm` / `border_y_mm` on a board cut
@@ -1611,7 +1618,10 @@ Four decisions carry it, each with a test in `tests/test_breadboard.py`:
 
 A breadboard hole is named as the board prints it (`breadboard.hole_name`): the ROW letter
 and the column number, lower case — `e12` — the other way round from a perfboard address and
-never mistakable for one; a rail hole is the rail and the column beside it (`T+12`).
+never mistakable for one; a rail hole is the rail and the column beside it (`T+12`). DRC,
+LVS, the router, the guide and its exports, the MCP server and the window all say it through
+`format_hole(c, board)`, and `parse_hole` reads ONLY those names on a breadboard, in either
+case: a grid address accepted beside them would make `A1` two different holes.
 
 ### Layering
 

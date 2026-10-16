@@ -283,7 +283,7 @@ def _plan_cuts(
                         message=(
                             f"{first_ref.component_ref}.{first_ref.pin} ({wanted[net_a]}) and "
                             f"{second_ref.component_ref}.{second_ref.pin} ({wanted[net_b]}) share "
-                            f"the strip through {format_hole(first_hole)} and there is no free "
+                            f"the strip through {format_hole(first_hole, doc.board)} and there is no free "
                             f"hole between them to cut. Move one of the parts."
                         ),
                         holes=(first_hole, second_hole),

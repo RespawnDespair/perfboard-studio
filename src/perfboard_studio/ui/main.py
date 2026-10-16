@@ -1389,7 +1389,7 @@ class BoardFeaturesDialog(QDialog):
             item = QTreeWidgetItem(
                 [
                     t("Mounting hole"),
-                    format_hole(mount.at),
+                    format_hole(mount.at, doc.board),
                     f"⌀{mount.diameter:g} mm, {mount.head_diameter:g} mm head",
                 ]
             )
@@ -1398,7 +1398,7 @@ class BoardFeaturesDialog(QDialog):
         for conn in doc.edge_connectors:
             holes = edge_connector_holes(conn, doc.board)
             where = (
-                f"{format_hole(holes[0])}–{format_hole(holes[-1])}" if holes else conn.edge
+                f"{format_hole(holes[0], doc.board)}–{format_hole(holes[-1], doc.board)}" if holes else conn.edge
             )
             item = QTreeWidgetItem(
                 [
@@ -1829,6 +1829,7 @@ class ComponentDialog(QDialog):
         component: ComponentInstance,
         footprint: Footprint | None,
         parent: QWidget | None = None,
+        board: Board | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(t("Part Properties"))
@@ -1870,7 +1871,7 @@ class ComponentDialog(QDialog):
         for label, fact in (
             (t("Footprint"), f"{name}  ({component.footprint_id})"),
             (t("Pins"), pins),
-            (t("Pin 1 at"), f"{format_hole(component.anchor)}  ·  {component.rotation}°"),
+            (t("Pin 1 at"), f"{format_hole(component.anchor, board)}  ·  {component.rotation}°"),
             (t("Height"), height),
         ):
             shown = QLabel(fact)
@@ -1922,12 +1923,14 @@ class GoToPartDialog(QDialog):
         components: Sequence[ComponentInstance],
         lookup: FootprintLookup,
         parent: QWidget | None = None,
+        board: Board | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(t("Go to Part"))
         self.resize(460, 480)
         self._components = tuple(components)
         self._lookup = lookup
+        self._board = board
 
         self.filter = QLineEdit()
         self.filter.setPlaceholderText(t("Filter parts…  (R37, 10k, TO-220, C7)"))
@@ -1957,7 +1960,7 @@ class GoToPartDialog(QDialog):
             footprint_label(footprint.name) if footprint is not None else component.footprint_id
         )
         value = f"  {component.value}" if component.value else ""
-        return f"{component.ref}{value}  ·  {name}  ·  {format_hole(component.anchor)}"
+        return f"{component.ref}{value}  ·  {name}  ·  {format_hole(component.anchor, self._board)}"
 
     def _refilter(self, text: str) -> None:
         needle = text.strip().lower()
@@ -6086,7 +6089,7 @@ class MainWindow(QMainWindow):
         if self.scene.measure_armed:
             from_ = self.scene.measure_from()
             where = (
-                f"{t('from')} {format_hole(from_)}" if from_ is not None else t("click two holes")
+                f"{t('from')} {format_hole(from_, self.bus.document.board)}" if from_ is not None else t("click two holes")
             )
             return f"{t('Measuring')}  ·  {where}, {t('Esc ends')}"
 
@@ -7032,7 +7035,7 @@ class MainWindow(QMainWindow):
                 "part.place",
                 PlacePartsPayload(
                     placements=(PartPlacement(id=part.id, anchor=hole),),
-                    label=f"Place {ref} at {format_hole(hole)}",
+                    label=f"Place {ref} at {format_hole(hole, document.board)}",
                 ),
             )
         if not result.ok:
@@ -8574,7 +8577,7 @@ class MainWindow(QMainWindow):
         self._hovered_hole = HoleCoord(col, row)
         board = self.bus.document.board
         inside = 0 <= col < board.cols and 0 <= row < board.rows
-        text = format_hole(HoleCoord(col, row)) if inside else "—"
+        text = format_hole(HoleCoord(col, row), board) if inside else "—"
         self.label_hole.setText(
             f'<span style="color:{TEXT_DIM}">{t("hole")}</span> <b>{text}</b>'
         )
@@ -8793,7 +8796,7 @@ class MainWindow(QMainWindow):
             # generated string a user has never seen. The addresses are the vocabulary
             # every other message in this application already speaks.
             holes = tuple(hole for violation in group for hole in violation.holes)
-            span = f"{format_hole(group[0].holes[0])}–{format_hole(group[-1].holes[0])}"
+            span = f"{format_hole(group[0].holes[0], self.bus.document.board)}–{format_hole(group[-1].holes[0], self.bus.document.board)}"
             node = QTreeWidgetItem([span, f"{len(group)} {t('pads')}"])
             node.setData(0, ROLE_HOLES, holes)
             node.setData(0, ROLE_FINDING_KEY, f"drc:{rule}:{key}")
@@ -9038,7 +9041,7 @@ class MainWindow(QMainWindow):
             bits.append(
                 footprint_label(footprint.name) if footprint is not None else f"?{c.footprint_id}"
             )
-            bits.append(format_hole(c.anchor))
+            bits.append(format_hole(c.anchor, self.bus.document.board))
             if c.rotation:
                 bits.append(f"{c.rotation}°")
             if c.mirrored:
@@ -9677,8 +9680,8 @@ class MainWindow(QMainWindow):
         if not failures:
             return
         lines = [
-            f"{item.link.net_name}: {format_hole(item.link.from_)} → "
-            f"{format_hole(item.link.to)}\n    {item.reason}"
+            f"{item.link.net_name}: {format_hole(item.link.from_, self.bus.document.board)} → "
+            f"{format_hole(item.link.to, self.bus.document.board)}\n    {item.reason}"
             for item in failures[:12]
         ]
         if len(failures) > 12:
@@ -9860,7 +9863,7 @@ class MainWindow(QMainWindow):
         # has not moved yet -- it lands beside where the block was cut from.
         near = self._hovered_hole if self._pointer_is_on_board() else None
         at = paste_position(self.bus.document, block, near)
-        paste = paste_payload(self.bus.document, block, at, label=f"{what} at {format_hole(at)}")
+        paste = paste_payload(self.bus.document, block, at, label=f"{what} at {format_hole(at, self.bus.document.board)}")
         if paste.is_empty:
             self.statusBar().showMessage(t("That block does not fit on this board."), 6000)
             return
@@ -9875,7 +9878,7 @@ class MainWindow(QMainWindow):
         self.scene.select_components([spec.id for spec in paste.payload.components if spec.id])
         message = (
             f"{what}d {len(paste.payload.components)} part(s) and "
-            f"{len(paste.payload.conductors)} conductor(s) at {format_hole(at)}"
+            f"{len(paste.payload.conductors)} conductor(s) at {format_hole(at, self.bus.document.board)}"
         )
         if paste.dropped_conductors:
             message += f" — {paste.dropped_conductors} conductor(s) would have run off the board"
@@ -9892,7 +9895,7 @@ class MainWindow(QMainWindow):
         if not components:
             self.statusBar().showMessage(t("There are no parts on this board yet."), 6000)
             return
-        dialog = GoToPartDialog(components, self.lookup, self)
+        dialog = GoToPartDialog(components, self.lookup, self, board=self.bus.document.board)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         chosen = dialog.chosen_id()
@@ -9910,7 +9913,7 @@ class MainWindow(QMainWindow):
             hole_to_screen(component.anchor, self.bus.document.board, self.side)
         )
         self.statusBar().showMessage(
-            f"{component.ref} at {format_hole(component.anchor)}", 6000
+            f"{component.ref} at {format_hole(component.anchor, self.bus.document.board)}", 6000
         )
 
     def on_cut_mode(self, checked: bool) -> None:
@@ -10164,7 +10167,9 @@ class MainWindow(QMainWindow):
         if component is None:
             return
 
-        dialog = ComponentDialog(component, self.lookup(component.footprint_id), self)
+        dialog = ComponentDialog(
+            component, self.lookup(component.footprint_id), self, board=self.bus.document.board
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         ref, value, locked = dialog.values()

@@ -3437,7 +3437,7 @@ def _plan_from(
     )
 
 
-def summarize_changes(plan: PlacementPlan, limit: int = 12) -> list[str]:
+def summarize_changes(plan: PlacementPlan, limit: int = 12, *, board: Board | None = None) -> list[str]:
     """Human-readable moves, for a confirmation dialog or a log.
 
     Uses hole addresses (``B7``), not coordinates: that is the language the rest of the
@@ -3447,8 +3447,8 @@ def summarize_changes(plan: PlacementPlan, limit: int = 12) -> list[str]:
     for change in plan.changes[:limit]:
         turn = f", turned to {change.to_rotation} deg" if change.rotated else ""
         lines.append(
-            f"{change.ref}: {format_hole(change.from_anchor)} -> "
-            f"{format_hole(change.to_anchor)}{turn}"
+            f"{change.ref}: {format_hole(change.from_anchor, board)} -> "
+            f"{format_hole(change.to_anchor, board)}{turn}"
         )
     if len(plan.changes) > limit:
         lines.append(f"... and {len(plan.changes) - limit} more")

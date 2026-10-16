@@ -97,23 +97,23 @@ def guide_to_json(guide: Guide, indent: int = 2) -> str:
                 "material": guide.board.material,
                 "thickness_mm": guide.board.thickness,
             },
-            "iron": _plain(guide.iron),
+            "iron": _plain(guide.iron, board=guide.board),
             "tools": list(guide.tools),
-            "warnings": [_plain(w) for w in guide.warnings],
-            "bom": [_plain(line) for line in guide.bom],
-            "cut_list": [_plain(cut) for cut in guide.cut_list],
-            "spine_list": [_plain(spine) for spine in guide.spine_list],
-            "track_cuts": [_plain(cut) for cut in guide.track_cuts],
+            "warnings": [_plain(w, board=guide.board) for w in guide.warnings],
+            "bom": [_plain(line, board=guide.board) for line in guide.bom],
+            "cut_list": [_plain(cut, board=guide.board) for cut in guide.cut_list],
+            "spine_list": [_plain(spine, board=guide.board) for spine in guide.spine_list],
+            "track_cuts": [_plain(cut, board=guide.board) for cut in guide.track_cuts],
             # Only when there are any, for the reason ``language`` is: a guide with no part
             # off the board is byte for byte the guide it always was.
-            **({"lead_list": [_plain(lead) for lead in guide.lead_list]} if guide.lead_list else {}),
+            **({"lead_list": [_plain(lead, board=guide.board) for lead in guide.lead_list]} if guide.lead_list else {}),
             "phases": [
                 {
                     "number": phase.number,
                     "title": phase.title,
                     "summary": phase.summary,
-                    "steps": [_plain(step) for step in phase.steps],
-                    "checkpoints": [_plain(check) for check in phase.checkpoints],
+                    "steps": [_plain(step, board=guide.board) for step in phase.steps],
+                    "checkpoints": [_plain(check, board=guide.board) for check in phase.checkpoints],
                 }
                 for phase in guide.phases
             ],
@@ -128,7 +128,7 @@ def guide_to_json(guide: Guide, indent: int = 2) -> str:
     )
 
 
-def _plain(value: Any) -> Any:
+def _plain(value: Any, *, board: Board | None) -> Any:
     """Dataclasses to dicts, with every HoleCoord carrying its own address.
 
     Walks the fields itself rather than calling ``dataclasses.asdict``, which recurses
@@ -136,13 +136,13 @@ def _plain(value: Any) -> Any:
     address would be silently missing from every nested step.
     """
     if isinstance(value, HoleCoord):
-        return {"col": value.col, "row": value.row, "ref": format_hole(value)}
+        return {"col": value.col, "row": value.row, "ref": format_hole(value, board)}
     if is_dataclass(value) and not isinstance(value, type):
-        return {f.name: _plain(getattr(value, f.name)) for f in fields(value)}
+        return {f.name: _plain(getattr(value, f.name), board=board) for f in fields(value)}
     if isinstance(value, dict):
-        return {key: _plain(item) for key, item in value.items()}
+        return {key: _plain(item, board=board) for key, item in value.items()}
     if isinstance(value, list | tuple):
-        return [_plain(item) for item in value]
+        return [_plain(item, board=board) for item in value]
     return value
 
 
@@ -174,8 +174,8 @@ def cut_list_to_csv(guide: Guide) -> str:
             [
                 _wire_type(cut.insulated, say),
                 cut.net_name,
-                format_hole(cut.from_hole),
-                format_hole(cut.to_hole),
+                format_hole(cut.from_hole, guide.board),
+                format_hole(cut.to_hole, guide.board),
                 f"{cut.path_mm:.1f}",
                 f"{cut.cut_mm:.1f}",
                 f"{cut.strip_mm:.1f}",
@@ -189,7 +189,7 @@ def cut_list_to_csv(guide: Guide) -> str:
             [
                 say("wire off the board"),
                 lead.net_name,
-                format_hole(lead.hole),
+                format_hole(lead.hole, guide.board),
                 lead_end(lead.ref, lead.pin, lead.pin_name, say),
                 "",
                 "" if lead.cut_mm is None else f"{lead.cut_mm:.1f}",
@@ -217,12 +217,12 @@ def cut_list_to_csv(guide: Guide) -> str:
     return out.getvalue()
 
 
-def _html_lead_row(lead: LeadCut, say: Phrasebook) -> str:
+def _html_lead_row(lead: LeadCut, say: Phrasebook, *, board: Board | None) -> str:
     """A wire to a part off the board, in the cut list's table: one hole, and the lug."""
     cut = say("cut to fit") if lead.cut_mm is None else f"{lead.cut_mm:.0f} mm"
     return (
         f"<tr><td>{say('wire off the board')}</td><td>{escape(lead.net_name)}</td>"
-        f"<td>{_hole(lead.hole)}</td>"
+        f"<td>{_hole(lead.hole, board=board)}</td>"
         f"<td>{escape(lead_end(lead.ref, lead.pin, lead.pin_name, say))}</td>"
         f"<td>{escape(cut)}</td><td>{lead.awg}</td><td>{escape(say(lead.colour))}</td></tr>"
     )
@@ -461,7 +461,7 @@ def guide_to_html(guide: Guide, step_images: Mapping[str, bytes] | None = None) 
             parts.append("<h3>" + say("Check before moving on") + "</h3>")
             for check in phase.checkpoints:
                 step_id += 1
-                parts.append(_html_check(check, f"s{step_id}", say))
+                parts.append(_html_check(check, f"s{step_id}", say, board=guide.board))
         parts.append("</section>")
 
     parts.append(_html_tables(guide, say))
@@ -480,8 +480,8 @@ def guide_to_html(guide: Guide, step_images: Mapping[str, bytes] | None = None) 
     return "\n".join(parts)
 
 
-def _hole(at: HoleCoord) -> str:
-    return f'<span class="hole">{escape(format_hole(at))}</span>'
+def _hole(at: HoleCoord, *, board: Board | None) -> str:
+    return f'<span class="hole">{escape(format_hole(at, board))}</span>'
 
 
 def _html_cuts(guide: Guide, say: Phrasebook) -> str:
@@ -494,10 +494,10 @@ def _html_cuts(guide: Guide, say: Phrasebook) -> str:
     if not guide.track_cuts:
         return ""
     rows = "".join(
-        f"<tr><td>{_hole(cut.at)}</td><td>{escape(cut.strip)}</td>"
-        f"<td>{_hole(cut.separates[0])} ↔ {_hole(cut.separates[1])}</td></tr>"
+        f"<tr><td>{_hole(cut.at, board=guide.board)}</td><td>{escape(cut.strip)}</td>"
+        f"<td>{_hole(cut.separates[0], board=guide.board)} ↔ {_hole(cut.separates[1], board=guide.board)}</td></tr>"
         if cut.separates is not None
-        else f"<tr><td>{_hole(cut.at)}</td><td>{escape(cut.strip)}</td><td>—</td></tr>"
+        else f"<tr><td>{_hole(cut.at, board=guide.board)}</td><td>{escape(cut.strip)}</td><td>—</td></tr>"
         for cut in guide.track_cuts
     )
     return (
@@ -525,7 +525,7 @@ def _html_preparation(guide: Guide, say: Phrasebook) -> str:
     phase = guide.phases[0]
     rows = "".join(f"<li>{escape(tool)}</li>" for tool in guide.tools)
     checks = "".join(
-        _html_check(check, f"p0-{n}", say) for n, check in enumerate(phase.checkpoints)
+        _html_check(check, f"p0-{n}", say, board=guide.board) for n, check in enumerate(phase.checkpoints)
     )
     return (
         '<section class="phase"><h2><span class="phase-num">'
@@ -563,8 +563,8 @@ def _html_step(
 ) -> str:
     picture = _html_step_image(step, images)
     if isinstance(step, PartStep):
-        return _html_part_step(step, dom_id, picture, say)
-    return _html_conductor_step(step, dom_id, picture, say, wire_template(step, board))
+        return _html_part_step(step, dom_id, picture, say, board=board)
+    return _html_conductor_step(step, dom_id, picture, say, wire_template(step, board), board=board)
 
 
 #: Magic bytes to media type, longest signature first. A data URI carries its own type,
@@ -612,10 +612,10 @@ def _html_step_image(step: GuideStep, images: Mapping[str, bytes]) -> str:
 
 
 def _html_part_step(
-    step: PartStep, dom_id: str, picture: str = "", say: Phrasebook | None = None
+    step: PartStep, dom_id: str, picture: str = "", say: Phrasebook | None = None, *, board: Board | None
 ) -> str:
     say = say or phrasebook("en")
-    holes = " ".join(f"{escape(number)}:{_hole(at)}" for number, at in step.pin_holes)
+    holes = " ".join(f"{escape(number)}:{_hole(at, board=board)}" for number, at in step.pin_holes)
     bits = [
         f'<div class="title">{escape(step.title)}</div>',
         '<div class="meta">'
@@ -655,12 +655,12 @@ def _html_conductor_step(
     dom_id: str,
     picture: str = "",
     say: Phrasebook | None = None,
-    template: WireTemplate | None = None,
+    template: WireTemplate | None = None, *, board: Board | None,
 ) -> str:
     say = say or phrasebook("en")
     bits = [
         f'<div class="title">{escape(step.net_name)}: '
-        f"{_hole(step.path[0])} → {_hole(step.path[-1])}</div>"
+        f"{_hole(step.path[0], board=board)} → {_hole(step.path[-1], board=board)}</div>"
         if step.path
         else f'<div class="title">{escape(step.title)}</div>',
         f'<div class="meta">{escape(_conductor_word(step, say))} · '
@@ -683,7 +683,7 @@ def _html_conductor_step(
     if len(step.path) > 2:
         bits.append(
             '<div class="meta">'
-            + say("Path: {holes}", holes=" → ".join(_hole(at) for at in step.path))
+            + say("Path: {holes}", holes=" → ".join(_hole(at, board=board) for at in step.path))
             + "</div>"
         )
     if step.cut is not None:
@@ -710,7 +710,7 @@ def _html_conductor_step(
             # "1:1" is a smudge beside its instructions. Paper gets the real size at the end.
             bits.append(
                 '<div class="tpl-preview">'
-                + _template_pair(template, step, step.cut, TEMPLATE_PREVIEW_SCALE)
+                + _template_pair(template, step, step.cut, TEMPLATE_PREVIEW_SCALE, board=board)
                 + "</div>"
             )
     if step.spine is not None:
@@ -737,12 +737,12 @@ def _html_conductor_step(
     )
 
 
-def _html_check(check: Checkpoint, dom_id: str, say: Phrasebook | None = None) -> str:
+def _html_check(check: Checkpoint, dom_id: str, say: Phrasebook | None = None, *, board: Board | None) -> str:
     say = say or phrasebook("en")
     classes = f"check {check.kind}" + (" blocking" if check.blocking else "")
     holes = (
         '<div class="meta">'
-        + say("Probe {holes}", holes=say.joined([_hole(at) for at in check.holes]))
+        + say("Probe {holes}", holes=say.joined([_hole(at, board=board) for at in check.holes]))
         + "</div>"
         if check.holes
         else ""
@@ -828,7 +828,7 @@ def _label(x: float, y: float, text: str, anchor: str = "middle", size: float = 
     )
 
 
-def _shape_svg(template: WireTemplate, step: ConductorStep, cut: WireCut, scale: float) -> str:
+def _shape_svg(template: WireTemplate, step: ConductorStep, cut: WireCut, scale: float, *, board: Board | None) -> str:
     """The wire's shape over the board's holes: lay the bent wire on it to check it."""
     ink, width = _wire_ink(cut)
     shape = list(template.shape)
@@ -862,7 +862,7 @@ def _shape_svg(template: WireTemplate, step: ConductorStep, cut: WireCut, scale:
     # its tips the same way, which is what says which end its marks are measured from.
     box = [0.0, 0.0, template.width_mm, template.height_mm]
     for tip, inner, at in ((shape[0], shape[1], step.path[0]), (shape[-1], shape[-2], step.path[-1])):
-        name = format_hole(at)
+        name = format_hole(at, board)
         run = math.dist(tip, inner)
         ux, uy = (tip[0] - inner[0]) / run, (tip[1] - inner[1]) / run
         half_w, half_h = len(name) * _CHAR_MM * 0.45, _LABEL_MM / 2
@@ -882,7 +882,7 @@ def _shape_svg(template: WireTemplate, step: ConductorStep, cut: WireCut, scale:
 _MARK_INK: dict[WireMarkKind, str] = {"strip": "#333333", "through": _BEND_INK, "turn": _BEND_INK}
 
 
-def _straight_svg(template: WireTemplate, step: ConductorStep, cut: WireCut, scale: float) -> str:
+def _straight_svg(template: WireTemplate, step: ConductorStep, cut: WireCut, scale: float, *, board: Board | None) -> str:
     """The same wire straight, at 1:1: what is cut and marked before anything is bent.
 
     Each mark's distance from the left-hand tip is printed under it, so a whole wire is
@@ -899,8 +899,8 @@ def _straight_svg(template: WireTemplate, step: ConductorStep, cut: WireCut, sca
                 f'<line x1="{m + start:.2f}" y1="{y}" x2="{m + start + template.strip_mm:.2f}" '
                 f'y2="{y}" stroke="{_COPPER_INK}" stroke-width="{width + .3:.2f}"/>'
             )
-    body.append(_label(m, y - 2.2, format_hole(step.path[0]), "start"))
-    body.append(_label(m + length, y - 2.2, format_hole(step.path[-1]), "end"))
+    body.append(_label(m, y - 2.2, format_hole(step.path[0], board), "start"))
+    body.append(_label(m + length, y - 2.2, format_hole(step.path[-1], board), "end"))
     # A number drops to the second row when it would touch the last one on the first: a
     # corner one pitch from a bend puts two distances 2.54 mm apart. The tip's own number,
     # last, is the whole length -- the cut list's figure, where the wire is cut.
@@ -923,12 +923,12 @@ def _straight_svg(template: WireTemplate, step: ConductorStep, cut: WireCut, sca
 
 
 def _template_pair(
-    template: WireTemplate, step: ConductorStep, cut: WireCut, scale: float = 1.0
+    template: WireTemplate, step: ConductorStep, cut: WireCut, scale: float = 1.0, *, board: Board | None
 ) -> str:
     return (
         '<div class="tpl-pair">'
-        + _shape_svg(template, step, cut, scale)
-        + _straight_svg(template, step, cut, scale)
+        + _shape_svg(template, step, cut, scale, board=board)
+        + _straight_svg(template, step, cut, scale, board=board)
         + "</div>"
     )
 
@@ -977,9 +977,9 @@ def _html_templates(guide: Guide, say: Phrasebook) -> str:
         turned = " · " + say("turned to fit the page") if template.turned else ""
         items.append(
             f'<div class="tpl"><div class="title">{escape(step.net_name)}: '
-            f"{_hole(step.path[0])} → {_hole(step.path[-1])}</div>"
+            f"{_hole(step.path[0], board=guide.board)} → {_hole(step.path[-1], board=guide.board)}</div>"
             f'<div class="meta">{meta} · {face}{turned}</div>'
-            f"{_template_pair(template, step, step.cut)}</div>"
+            f"{_template_pair(template, step, step.cut, board=guide.board)}</div>"
         )
     if not items:
         return ""
@@ -1031,12 +1031,12 @@ def _html_tables(guide: Guide, say: Phrasebook) -> str:
         for cut in guide.cut_list:
             parts.append(
                 f"<tr><td>{_wire_type(cut.insulated, say)}</td>"
-                f"<td>{escape(cut.net_name)}</td><td>{_hole(cut.from_hole)}</td>"
-                f"<td>{_hole(cut.to_hole)}</td><td>{cut.cut_mm:.0f} mm</td>"
+                f"<td>{escape(cut.net_name)}</td><td>{_hole(cut.from_hole, board=guide.board)}</td>"
+                f"<td>{_hole(cut.to_hole, board=guide.board)}</td><td>{cut.cut_mm:.0f} mm</td>"
                 f"<td>{cut.awg}</td><td>{escape(say(cut.colour))}</td></tr>"
             )
         for lead in guide.lead_list:
-            parts.append(_html_lead_row(lead, say))
+            parts.append(_html_lead_row(lead, say, board=guide.board))
         for spine in guide.spine_list:
             parts.append(
                 f"<tr><td>{say('trace spine')}</td><td>{escape(spine.net_name)}</td>"

@@ -255,7 +255,7 @@ _safe_hole = format_hole
 MATERIAL_LABELS: dict[BoardMaterial, str] = {"FR4": "FR-4", "FR2": "FR-2", "FR1": "FR-1"}
 
 
-def _conductor_ends(path: Sequence[HoleCoord]) -> str:
+def _conductor_ends(path: Sequence[HoleCoord], *, board: Board | None) -> str:
     """``"(C7 to H7)"`` -- how a conductor is named in a message.
 
     Every other DRC message names what it is about by its ADDRESS. A bare conductor id
@@ -496,8 +496,8 @@ def _check_component_body_overlap(doc: PerfDocument, lookup: FootprintLookup) ->
                 rule="component-body-overlap",
                 severity="error",
                 message=(
-                    f"Component {a_component.ref} (anchored at {_safe_hole(a_component.anchor)}) and "
-                    f"{b_component.ref} (anchored at {_safe_hole(b_component.anchor)}) have overlapping "
+                    f"Component {a_component.ref} (anchored at {_safe_hole(a_component.anchor, doc.board)}) and "
+                    f"{b_component.ref} (anchored at {_safe_hole(b_component.anchor, doc.board)}) have overlapping "
                     f"body outlines."
                 ),
                 holes=(a_component.anchor, b_component.anchor),
@@ -534,7 +534,7 @@ def _check_components_off_board(doc: PerfDocument, lookup: FootprintLookup) -> l
                 message=(
                     f"Component {component.ref} is {'entirely' if whole else 'partly'} off the board: "
                     f"{len(off_board)} of its {len(check_holes)} pin hole(s) fall outside the "
-                    f"{doc.board.cols}x{doc.board.rows} grid (e.g. {_safe_hole(first)})."
+                    f"{doc.board.cols}x{doc.board.rows} grid (e.g. {_safe_hole(first, doc.board)})."
                 ),
                 holes=tuple(off_board),
                 component_ids=(component.id,),
@@ -572,11 +572,11 @@ def _check_conductors_off_board(doc: PerfDocument) -> list[DrcViolation]:
                 rule="conductor-off-board",
                 severity="error",
                 message=(
-                    f"Conductor {conductor.id} {_conductor_ends(path)} is "
+                    f"Conductor {conductor.id} {_conductor_ends(path, board=doc.board)} is "
                     f"{'entirely' if whole else 'partly'} off the board: {len(off_board)} "
                     f"of its {len(path)} hole(s) fall outside the "
                     f"{doc.board.cols}x{doc.board.rows} grid "
-                    f"(e.g. {_safe_hole(off_board[0])})."
+                    f"(e.g. {_safe_hole(off_board[0], doc.board)})."
                 ),
                 holes=tuple(off_board),
                 conductor_ids=(conductor.id,),
@@ -699,7 +699,7 @@ def _check_body_overhang(doc: PerfDocument, lookup: FootprintLookup) -> list[Drc
                 rule="component-overhangs-edge",
                 severity="warning",
                 message=(
-                    f"Component {component.ref} (anchored at {_safe_hole(component.anchor)}) "
+                    f"Component {component.ref} (anchored at {_safe_hole(component.anchor, board)}) "
                     f"hangs {worst:.1f} mm past the {edge_words} of the board: its pins are "
                     f"in holes but part of its body is over nothing. {advice}"
                 ),
@@ -804,7 +804,7 @@ def _check_wire_entries(doc: PerfDocument, lookup: FootprintLookup) -> list[DrcV
                     severity="warning",
                     message=(
                         f"Screw terminal {component.ref} (anchored at "
-                        f"{_safe_hole(component.anchor)}) stands on the {on} "
+                        f"{_safe_hole(component.anchor, board)}) stands on the {on} "
                         f"edge{'s' if len(away_from) > 1 else ''} of the board but takes "
                         f"its wires in from the {side}: every wire has to come in from "
                         f"outside and double back over the board to reach it. Turn "
@@ -844,7 +844,7 @@ def _check_wire_entries(doc: PerfDocument, lookup: FootprintLookup) -> list[DrcV
                 severity="warning",
                 message=(
                     f"Screw terminal {component.ref} (anchored at "
-                    f"{_safe_hole(component.anchor)}) takes its wires in from the {side}, and "
+                    f"{_safe_hole(component.anchor, board)}) takes its wires in from the {side}, and "
                     f"{names} {verb} in front of the entries ({nearest.ref} "
                     f"{max(0.0, gap_to(nearest)):.1f} mm from them; a wire needs "
                     f"{WIRE_ENTRY_CLEARANCE_MM:g} mm clear to go in straight). Turn "
@@ -895,7 +895,7 @@ def _check_duplicate_pin_holes(doc: PerfDocument, lookup: FootprintLookup) -> li
                 rule="duplicate-pin-hole",
                 severity="error",
                 message=(
-                    f"Hole {_safe_hole(first.hole)} has more than one component pin landing on it: "
+                    f"Hole {_safe_hole(first.hole, doc.board)} has more than one component pin landing on it: "
                     f"{names}."
                 ),
                 holes=(first.hole,),
@@ -953,7 +953,7 @@ def _check_crossing_conductors(
                     severity="error",
                     message=(
                         f"Conductor {a.id} ({a.kind}) and conductor {b.id} ({b.kind}) both occupy hole "
-                        f"{_safe_hole(h)} on the {a.side} side without being part of the same electrical "
+                        f"{_safe_hole(h, doc.board)} on the {a.side} side without being part of the same electrical "
                         f"net — this is a physical short. Reroute one of them, or replace it with an "
                         f"insulated conductor that can safely cross."
                     ),
@@ -1013,7 +1013,7 @@ def _check_conductor_geometry_crossings(
                 severity="error",
                 message=(
                     f"Conductor {a.id} ({a.kind}) and conductor {b.id} ({b.kind}) cross each "
-                    f"other near {_safe_hole(at)} on the {a.side} side, between holes rather "
+                    f"other near {_safe_hole(at, doc.board)} on the {a.side} side, between holes rather "
                     f"than at one. Neither kind can cross: on perfboard they would touch and "
                     f"short. Reroute one of them, or make it an insulated wire — which may "
                     f"cross — or let the router lay an insulated hop just over the crossing."
@@ -1099,11 +1099,11 @@ def _check_wire_over_joint(
                         rule="wire-over-joint",
                         severity="error",
                         message=(
-                            f"{kind} {conductor.id} {_conductor_ends(path)} lies across "
-                            f"{_safe_hole(hole)}, where {soldered} is soldered on another "
+                            f"{kind} {conductor.id} {_conductor_ends(path, board=doc.board)} lies across "
+                            f"{_safe_hole(hole, doc.board)}, where {soldered} is soldered on another "
                             f"net. The netlist joins a wire only at its ends, but bare copper "
                             f"resting on a solder joint is a short at the bench. Route it "
-                            f"clear of {_safe_hole(hole)}, or use insulated wire, which may "
+                            f"clear of {_safe_hole(hole, doc.board)}, or use insulated wire, which may "
                             f"pass over."
                         ),
                         holes=(hole,),
@@ -1137,7 +1137,7 @@ def _check_solder_trace_paths(doc: PerfDocument) -> list[DrcViolation]:
                 rule="solder-trace-invalid-path",
                 severity="error",
                 message=(
-                    f"Solder trace {conductor.id} {_conductor_ends(path)} has an invalid "
+                    f"Solder trace {conductor.id} {_conductor_ends(path, board=doc.board)} has an invalid "
                     f"path: {result.reason}"
                 ),
                 holes=holes if holes else tuple(path),
@@ -1249,12 +1249,12 @@ def _check_solder_trace_proximity(
                         rule="solder-trace-proximity",
                         severity="warning",
                         message=(
-                            f"Solder trace {conductor.id} passes through {_safe_hole(hole)}, whose "
-                            f"orthogonal neighbour {_safe_hole(neighbor)} belongs to a different net "
+                            f"Solder trace {conductor.id} passes through {_safe_hole(hole, doc.board)}, whose "
+                            f"orthogonal neighbour {_safe_hole(neighbor, doc.board)} belongs to a different net "
                             f"(~{gap_mm:.2f} mm of copper-to-copper gap {direction} on this board). "
                             f"Dragging solder along the trace risks bridging the two nets — the most "
                             f"common way a perfboard build fails. Verify clearance between "
-                            f"{_safe_hole(hole)} and {_safe_hole(neighbor)} before soldering."
+                            f"{_safe_hole(hole, doc.board)} and {_safe_hole(neighbor, doc.board)} before soldering."
                         ),
                         holes=(hole, neighbor),
                         conductor_ids=(conductor.id,),
@@ -1314,7 +1314,7 @@ def _check_mounting_hole_conflicts(
                     rule="mounting-hole-conflict",
                     severity="error",
                     message=(
-                        f"{component.ref} pin {pin.number} sits at {_safe_hole(hole)}, where "
+                        f"{component.ref} pin {pin.number} sits at {_safe_hole(hole, doc.board)}, where "
                         f"mounting hole {blame(hole)} has removed the pad. There is nothing there "
                         f"to solder to — "
                         f"move the part, or move the mounting hole."
@@ -1341,7 +1341,7 @@ def _check_mounting_hole_conflicts(
                     rule="mounting-hole-conflict",
                     severity="error",
                     message=(
-                        f"Conductor {conductor.id} is soldered at {_safe_hole(hole)}, where "
+                        f"Conductor {conductor.id} is soldered at {_safe_hole(hole, doc.board)}, where "
                         f"mounting hole {blame(hole)} has removed the pad."
                     ),
                     holes=(hole,),
@@ -1391,7 +1391,7 @@ def _check_edge_connector_conflicts(
                     rule="edge-connector-conflict",
                     severity="error",
                     message=(
-                        f"{component.ref} pin {pin.number} sits at {_safe_hole(hole)}, which is "
+                        f"{component.ref} pin {pin.number} sits at {_safe_hole(hole, doc.board)}, which is "
                         f"part of edge connector {blame(hole)}. A finger is solid copper with no "
                         f"hole through it, so the lead cannot be fitted there — move the part, or "
                         f"shorten the connector."
@@ -1417,7 +1417,7 @@ def _check_edge_connector_conflicts(
                     rule="edge-connector-conflict",
                     severity="error",
                     message=(
-                        f"Conductor {conductor.id} is soldered at {_safe_hole(hole)}, which is "
+                        f"Conductor {conductor.id} is soldered at {_safe_hole(hole, doc.board)}, which is "
                         f"part of edge connector {blame(hole)} and has no hole through it."
                     ),
                     holes=(hole,),
@@ -1452,7 +1452,7 @@ def _check_holeless_positions(doc: PerfDocument, lookup: FootprintLookup) -> lis
                     rule="no-hole",
                     severity="error",
                     message=(
-                        f"{component.ref} pin {pin.number} is at {_safe_hole(hole)}, where the "
+                        f"{component.ref} pin {pin.number} is at {_safe_hole(hole, doc.board)}, where the "
                         f"breadboard has no hole — move the part onto the holes."
                     ),
                     holes=(hole,),
@@ -1468,7 +1468,7 @@ def _check_holeless_positions(doc: PerfDocument, lookup: FootprintLookup) -> lis
                     rule="no-hole",
                     severity="error",
                     message=(
-                        f"Conductor {conductor.id} ends at {_safe_hole(hole)}, where the "
+                        f"Conductor {conductor.id} ends at {_safe_hole(hole, doc.board)}, where the "
                         f"breadboard has no hole."
                     ),
                     holes=(hole,),
@@ -1541,7 +1541,7 @@ def _check_cut_track_conflicts(doc: PerfDocument, lookup: FootprintLookup) -> li
                     rule="cut-track-conflict",
                     severity="error",
                     message=(
-                        f"{component.ref} pin {pin.number} sits at {_safe_hole(hole)}, where the "
+                        f"{component.ref} pin {pin.number} sits at {_safe_hole(hole, doc.board)}, where the "
                         f"track has been cut. The cut took the pad with it, so there is nothing "
                         f"there to solder to — move the part, or move the cut."
                     ),
@@ -1564,7 +1564,7 @@ def _check_cut_track_conflicts(doc: PerfDocument, lookup: FootprintLookup) -> li
                     rule="cut-track-conflict",
                     severity="error",
                     message=(
-                        f"Conductor {conductor.id} is soldered at {_safe_hole(hole)}, where the "
+                        f"Conductor {conductor.id} is soldered at {_safe_hole(hole, doc.board)}, where the "
                         f"track has been cut and the pad is gone."
                     ),
                     holes=(hole,),
@@ -1609,7 +1609,7 @@ def _check_mounting_hole_clearance(
                     severity="warning",
                     message=(
                         f"{component.ref} extends under the {mount.head_diameter} mm screw head of "
-                        f"mounting hole {mount.id} at {_safe_hole(mount.at)}. The screw cannot be "
+                        f"mounting hole {mount.id} at {_safe_hole(mount.at, doc.board)}. The screw cannot be "
                         f"fitted without pressing on the part."
                     ),
                     holes=(mount.at, component.anchor),
@@ -1640,7 +1640,7 @@ def _check_pad_lifting_risk(doc: PerfDocument, options: DrcOptions) -> list[DrcV
                 rule="pad-lifting-risk",
                 severity="warning",
                 message=(
-                    f"Pure solder trace {conductor.id} {_conductor_ends(conductor.path)} "
+                    f"Pure solder trace {conductor.id} {_conductor_ends(conductor.path, board=doc.board)} "
                     f"spans {len(conductor.path)} pads on "
                     f"{MATERIAL_LABELS[doc.board.material]} (phenolic) board — beyond the "
                     f"{options.pad_lifting_max_solder_trace_pads}-pad threshold. Phenolic pads lift "
@@ -1672,7 +1672,7 @@ def _check_solder_trace_feasibility(doc: PerfDocument, options: DrcOptions) -> l
                 rule="solder-trace-too-long",
                 severity="warning",
                 message=(
-                    f"Pure solder trace {conductor.id} {_conductor_ends(conductor.path)} "
+                    f"Pure solder trace {conductor.id} {_conductor_ends(conductor.path, board=doc.board)} "
                     f"spans {len(conductor.path)} pads, beyond the "
                     f"{options.solder_trace_feasibility_max_pads}-pad feasibility threshold. Long "
                     f"pure-solder runs are mechanically unreliable and hard to reflow evenly; consider "
@@ -1744,7 +1744,7 @@ def _check_current_capacity(doc: PerfDocument, options: DrcOptions) -> list[DrcV
                 severity="warning",
                 message=(
                     f"Net '{net.name}' declares {current_a} A but solder trace {conductor.id} "
-                    f"{_conductor_ends(conductor.path)} "
+                    f"{_conductor_ends(conductor.path, board=doc.board)} "
                     f"({conductor.buildup} buildup{spine_note}) has an estimated cross-section of "
                     f"{cross_section_mm2:.3f} mm² (~{capacity_a:.2f} A capacity at "
                     f"{options.max_current_density_a_per_mm2} A/mm²) — inadequate. Estimated resistance "
@@ -1816,7 +1816,7 @@ def _wire_current_violation(
         severity="warning",
         message=(
             f"Net '{net.name}' declares {current_a} A but {_wire_kind_label(conductor)} "
-            f"{conductor.id} {_conductor_ends(conductor.path)} {stated} "
+            f"{conductor.id} {_conductor_ends(conductor.path, board=board)} {stated} "
             f"{awg_area_mm2(awg):.3f} mm² (~{capacity_a:.2f} A capacity at {density:g} "
             f"A/mm²) — inadequate.{advice}"
         ),
@@ -1867,7 +1867,7 @@ def _check_wire_hole_fit(doc: PerfDocument, options: DrcOptions) -> list[DrcViol
                 severity="warning",
                 message=(
                     f"{_wire_kind_label(conductor).capitalize()} {conductor.id} "
-                    f"{_conductor_ends(conductor.path)} is AWG {awg}{why}, "
+                    f"{_conductor_ends(conductor.path, board=doc.board)} is AWG {awg}{why}, "
                     f"{awg_diameter_mm(awg):.2f} mm of copper, and this board's holes are "
                     f"drilled {drill:g} mm: its ends will not go through them. Lap-solder it "
                     "onto the pad faces instead, or bring this current onto the board on a "
@@ -1930,7 +1930,7 @@ def _check_creepage(
                         severity="warning",
                         message=(
                             f"High voltage: net '{net.name}' ({voltage_v} V) conductor {conductor.id} "
-                            f"runs through {_safe_hole(hole)}, directly next to {_safe_hole(neighbor)} on "
+                            f"runs through {_safe_hole(hole, doc.board)}, directly next to {_safe_hole(neighbor, doc.board)} on "
                             f"a different net. 2.54 mm hole spacing is near the practical creepage limit "
                             f"above {options.creepage_voltage_threshold_v} V — increase clearance (skip a "
                             f"row/column) or reroute before building."
@@ -1967,7 +1967,7 @@ def _check_lead_bend_length(doc: PerfDocument, options: DrcOptions) -> list[DrcV
                 severity="warning",
                 message=(
                     f"Lead bend on {conductor.component_id} pin {conductor.pin_number} spans {length} "
-                    f"holes ({_safe_hole(first)} to {_safe_hole(last)}), beyond the "
+                    f"holes ({_safe_hole(first, doc.board)} to {_safe_hole(last, doc.board)}), beyond the "
                     f"{options.max_lead_bend_holes}-hole reliability threshold. A long bent lead is "
                     f"mechanically fragile — use a wire instead."
                 ),
@@ -2093,9 +2093,9 @@ def _check_heat_proximity(
                 rule="heat-proximity",
                 severity="warning",
                 message=(
-                    f"{victim.ref} ({victim_archetype}, at {_safe_hole(victim.anchor)}) sits "
+                    f"{victim.ref} ({victim_archetype}, at {_safe_hole(victim.anchor, doc.board)}) sits "
                     f"{distance:.1f} mm from {source.ref} ({source_archetype}, at "
-                    f"{_safe_hole(source.anchor)}), inside the "
+                    f"{_safe_hole(source.anchor, doc.board)}), inside the "
                     f"{options.heat_clearance_mm:g} mm heat clearance. An electrolytic loses "
                     f"roughly half its rated life for every 10 °C it runs hotter — move it, "
                     f"turn the tab away, or expect to replace it."
@@ -2141,7 +2141,7 @@ def _check_component_height(doc: PerfDocument, lookup: FootprintLookup) -> list[
                 rule="component-too-tall",
                 severity="warning",
                 message=(
-                    f"{component.ref} ({footprint.name}, at {_safe_hole(component.anchor)}) stands "
+                    f"{component.ref} ({footprint.name}, at {_safe_hole(component.anchor, doc.board)}) stands "
                     f"{footprint.body_height:g} mm above the board, over the {limit:g} mm of clear "
                     f"height this build declares. Lay it down, choose a lower-profile part, or "
                     f"raise the limit if the case turned out to be deeper."
@@ -2218,9 +2218,9 @@ def _check_jumper_under_body(doc: PerfDocument, lookup: FootprintLookup) -> list
                     rule="jumper-under-body",
                     severity="warning",
                     message=(
-                        f"Top jumper {conductor.id} ({_safe_hole(path[0])} to "
-                        f"{_safe_hole(path[-1])}) passes under {crossed_part.ref}, which is "
-                        f"{height_note} and covers {_safe_hole(hole)} [axis-aligned "
+                        f"Top jumper {conductor.id} ({_safe_hole(path[0], doc.board)} to "
+                        f"{_safe_hole(path[-1], doc.board)}) passes under {crossed_part.ref}, which is "
+                        f"{height_note} and covers {_safe_hole(hole, doc.board)} [axis-aligned "
                         f"bounding-box check]. Solder the jumper before fitting "
                         f"{crossed_part.ref}, or the part has to come off to reach it."
                     ),

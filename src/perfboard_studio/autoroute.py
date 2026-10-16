@@ -65,7 +65,7 @@ from .commands import (
 )
 from .connectivity import FootprintLookup, PhysicalPinRef
 from .geometry import format_hole, path_length_mm
-from .model import ConductorId, HoleCoord, NetClass, NetId, PerfDocument
+from .model import Board, ConductorId, HoleCoord, NetClass, NetId, PerfDocument
 from .ratsnest import NetRatsnest, RatsnestLink, net_ratsnest, ratsnest
 from .router import (
     DEFAULT_ROUTER_OPTIONS,
@@ -942,15 +942,15 @@ def _rail_link(
         net_id=entry.net_id,
         net_name=entry.net_name,
         net_class=entry.net_class,
-        a=_pin_label(entry, start),
-        b=_pin_label(entry, end),
+        a=_pin_label(entry, start, board=doc.board),
+        b=_pin_label(entry, end, board=doc.board),
         from_=start,
         to=end,
         length_mm=path_length_mm((start, end), doc.board),
     )
 
 
-def _pin_label(entry: NetRatsnest, hole: HoleCoord) -> PhysicalPinRef:
+def _pin_label(entry: NetRatsnest, hole: HoleCoord, *, board: Board | None) -> PhysicalPinRef:
     """Which pin sits at a rail end, for reporting.
 
     The ratsnest carries holes and, separately, the pins of each link, so a pin name is
@@ -963,7 +963,7 @@ def _pin_label(entry: NetRatsnest, hole: HoleCoord) -> PhysicalPinRef:
             return link.a
         if link.to == hole:
             return link.b
-    return PhysicalPinRef(component_ref=format_hole(hole), pin="")
+    return PhysicalPinRef(component_ref=format_hole(hole, board), pin="")
 
 
 # ---------------------------------------------------------------------------
