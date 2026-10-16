@@ -115,6 +115,9 @@ BODY_STYLES: dict[BodyArchetype, BodyStyle] = {
     # Hookup-wire jacket, for the icon and anything else that asks: on the board the wires
     # are drawn in their nets' colours, and there is no body here to fill.
     "flying-leads": BodyStyle(fill="#4a515c", edge="#22262d", accent="#e6e8ec"),
+    # The adapter's board, in a module's blue and white: it is a small board on header pins
+    # too. The chip on it is drawn in the DIP's black, which is the colour of the package.
+    "smd-adapter": BodyStyle(fill="#1f4f86", edge="#0e2b4d", accent="#eef2f7"),
 }
 
 #: A polarized axial part is a diode, not a resistor. Same archetype, different object.
@@ -273,6 +276,7 @@ _SILHOUETTES: dict[BodyArchetype, Silhouette] = {
     "screw-terminal-vertical": "rect",
     "module-board": "rect",
     "flying-leads": "rounded",
+    "smd-adapter": "rect",
 }
 
 #: Nothing is drawn thinner than this. The engine's floor for a body's width, re-exported
@@ -366,8 +370,9 @@ def leads_for(footprint: Footprint, placement: BodyPlacement, pitch: float) -> t
 
 #: Archetypes that are keyed even though the registry does not call them polarized. A DIP
 #: has no electrical polarity -- which is what ``Footprint.polarized`` records -- and fitting
-#: one backwards still destroys it, so its pin-1 dot must be drawn regardless.
-_ALWAYS_KEYED: frozenset[BodyArchetype] = frozenset({"dip"})
+#: one backwards still destroys it, so its pin-1 dot must be drawn regardless. A chip on an
+#: adapter is the same chip, one board further up.
+_ALWAYS_KEYED: frozenset[BodyArchetype] = frozenset({"dip", "smd-adapter"})
 
 
 def polarity_pin_offset(footprint: Footprint, pitch: float) -> tuple[float, float] | None:

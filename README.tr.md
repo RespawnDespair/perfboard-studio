@@ -394,7 +394,10 @@ ve üç ölçü ister, karşılığında bunları kendi taşıyan bir kimlik ver
 `box-4x2-p1-r3-15x10x8` dört çarpı iki pinlik bir ızgara, sıralar arası üç delik,
 15 × 10 × 8 mm gövde demektir. Hiçbir yere bir şey kaydedilmez — kimliğin kendisi tanımdır
 — dolayısıyla başka kimsede olmayan bir parçayı kullanan bir kart, karşı tarafta da aynı
-parçayla açılır: kurulacak bir kütüphane ve kaybolacak bir dosya yoktur.
+parçayla açılır: kurulacak bir kütüphane ve kaybolacak bir dosya yoktur. Yüzey montaj bir
+çip de aynı biçimde tarif edilir: `adp-soic-8`, yerini tuttuğu DIP-8 gibi numaralanmış, DIP
+adaptörü üzerinde bir SOIC-8'dir; bir KiCad netlist'indeki SOIC, SSOP, TSSOP ve MSOP
+footprint'leri de böyle gelir.
 
 ## Nereye gidiyor
 

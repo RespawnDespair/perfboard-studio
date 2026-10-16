@@ -389,7 +389,9 @@ pin grid and three dimensions and hands back an identifier that carries them:
 `box-4x2-p1-r3-15x10x8` is a four-by-two pin grid, three holes between the rows, in a
 15 × 10 × 8 mm body. Nothing is stored — the identifier *is* the definition — so a board
 using a part nobody else has still opens as that part on their machine, with no library to
-install and nothing to go missing.
+install and nothing to go missing. A surface-mount chip is described the same way:
+`adp-soic-8` is a SOIC-8 on a DIP adapter, numbered as the DIP-8 it stands in for, and a
+KiCad netlist's SOIC, SSOP, TSSOP and MSOP footprints arrive as one.
 
 ## Where it is going
 

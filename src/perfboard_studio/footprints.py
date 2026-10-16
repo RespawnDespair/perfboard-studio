@@ -1362,6 +1362,206 @@ def module_footprint(
 
 
 # ---------------------------------------------------------------------------
+# A surface-mount chip on a DIP adapter
+# ---------------------------------------------------------------------------
+#
+# A PERFBOARD CANNOT TAKE A SOIC, AND NEARLY EVERY NEW CHIP IS ONE. The answer every
+# hobbyist reaches for is a small adapter board: the chip soldered onto it, two rows of
+# header pins under it, numbered as the DIP of the same pin count -- "pin connection 1:1",
+# as one maker puts it, which is what lets a netlist drawn for the SOIC land on the board
+# without a pin moving.
+#
+# The board is not a module's, and the difference is measured rather than chosen. Five
+# makers' adapters were read, and two rules hold across them:
+#
+#   - ROWS: 0.3 inch for eight pins, 0.6 inch above. SparkFun's BOB-13655 and ProtoSupplies'
+#     SOIC/MSOP/TSSOP-8 board are 0.3 inch, as is Adafruit's 8-pin breakout (1212); Adafruit's
+#     14-, 16- and 20-pin breakouts (1210, 1207, 1206) and Gotronik's 28-pin PCB-124 (15.28 mm)
+#     are 0.6 inch.
+#   - OUTLINE: one pitch along per pin pair, and one pitch more than the rows across --
+#     half a pitch of board past every hole. SparkFun's 8-pin is 10.16 x 10.16 mm and
+#     Gotronik's 28-pin 17.78 x 35.56 mm, exactly; Adafruit's 20-pin is 17.79 x 25.63 mm,
+#     a quarter of a millimetre long. ProtoSupplies' 11 x 10 mm is the outlier, by 0.8 mm.
+#
+# Boards are 1.6 mm thick (ProtoSupplies, Adafruit's 20-pin; Adafruit's 8-pin is half
+# that), and stand on a male header's 2.5 mm plastic as a soldered-in module does.
+#
+# The chip is drawn and measured from JEDEC's outlines -- MS-012 (SOIC), MS-013 (SOIC over
+# 16 pins, which is wide-body only), MO-150 (SSOP), MO-153 (TSSOP), MO-187 (MSOP). Its
+# height is the outline's maximum, so the part is never shorter than the one in a hand;
+# its length is ``ADAPTER_CHIP_END_MM`` past the end pins, within a millimetre of every
+# common size, which is all a drawing needs. A SOIC-16 can also be wide-body; it is drawn
+# narrow, 0.9 mm too low, because the narrow one is by far the commoner.
+
+SmdPackage = Literal["soic", "ssop", "tssop", "msop"]
+SMD_PACKAGES: tuple[SmdPackage, ...] = ("soic", "ssop", "tssop", "msop")
+
+
+@dataclass(frozen=True, slots=True)
+class _ChipOutline:
+    #: Lead pitch along each side.
+    pitch: Mm
+    #: The moulded body's width across its two rows of legs.
+    body: Mm
+    #: Leg tip to leg tip, across.
+    span: Mm
+    #: Seated height, the outline's maximum.
+    height: Mm
+
+
+_CHIP_OUTLINES: dict[SmdPackage, _ChipOutline] = {
+    "soic": _ChipOutline(pitch=1.27, body=3.9, span=6.0, height=1.75),
+    "ssop": _ChipOutline(pitch=0.65, body=5.3, span=7.8, height=2.0),
+    "tssop": _ChipOutline(pitch=0.65, body=4.4, span=6.4, height=1.2),
+    "msop": _ChipOutline(pitch=0.65, body=3.0, span=4.9, height=1.1),
+}
+#: SOIC over 16 pins is made wide-body only (MS-013); MSOP over 8 pins is 0.5 mm pitch.
+_WIDE_SOIC = _ChipOutline(pitch=1.27, body=7.5, span=10.3, height=2.65)
+_FINE_MSOP = _ChipOutline(pitch=0.5, body=3.0, span=4.9, height=1.1)
+
+#: How far the moulding runs past the outermost pins' centres, at each end together.
+ADAPTER_CHIP_END_MM: Mm = 1.2
+#: The adapter's own board, and how high it stands on its header pins' plastic.
+ADAPTER_PCB_MM: Mm = MODULE_PCB_MM
+ADAPTER_SEAT_MM: Mm = MODULE_SEAT_SOLDERED_MM
+#: How far a male header's short tail stands above its plastic: 3 mm on the common
+#: 2.5 / 3 / 6 mm strip. Through a 1.6 mm board it stands 1.4 mm proud -- taller than a
+#: TSSOP or an MSOP, so on those it is the pins and not the chip that sets the height.
+ADAPTER_PIN_TAIL_MM: Mm = 3.0
+#: The leg tips stay at least half this inside the hole centres on either side: a chip
+#: wider than that cannot sit between the rows, which is why an SSOP-8 needs 0.6 inch.
+ADAPTER_ROW_CLEARANCE_MM: Mm = 1.0
+_ADAPTER_MIN_PINS = 8
+_ADAPTER_MAX_PINS = 56
+
+
+def _chip_outline(package: SmdPackage, pin_count: int) -> _ChipOutline:
+    if package == "soic" and pin_count > 16:
+        return _WIDE_SOIC
+    if package == "msop" and pin_count > 8:
+        return _FINE_MSOP
+    return _CHIP_OUTLINES[package]
+
+
+def adapter_row_holes(package: SmdPackage, pin_count: int) -> int:
+    """The rows' spacing, in grid steps, of the adapter a chip is usually sold for.
+
+    Three (0.3 inch) for eight pins and fewer, six (0.6 inch) above -- and six for an
+    eight-pin chip too wide to sit between rows three steps apart.
+    """
+    outline = _chip_outline(package, pin_count)
+    narrow = 3
+    if pin_count <= 8 and outline.span <= narrow * STANDARD_PITCH_MM - ADAPTER_ROW_CLEARANCE_MM:
+        return narrow
+    return 6
+
+
+def smd_adapter_footprint(
+    *,
+    package: SmdPackage,
+    pin_count: int,
+    row_holes: int | None = None,
+    id: str | None = None,
+    name: str | None = None,
+) -> Footprint:
+    """A ``package`` chip of ``pin_count`` legs on a DIP adapter. Pin 1 is the anchor.
+
+    The header pins are laid out and numbered exactly as ``dip_footprint`` lays out a DIP:
+    1 to n/2 down the first column, the rest back up the second, ``row_holes`` grid steps
+    across (``adapter_row_holes`` when not given). The chip's own pin N is the header's
+    pin N, which is what every adapter in the section comment does.
+    """
+    if package not in _CHIP_OUTLINES:
+        raise ValueError(f"smd_adapter_footprint: no package {package!r}")
+    if (
+        not isinstance(pin_count, int)
+        or pin_count % 2 != 0
+        or not _ADAPTER_MIN_PINS <= pin_count <= _ADAPTER_MAX_PINS
+    ):
+        raise ValueError(
+            f"smd_adapter_footprint: pin_count must be even, {_ADAPTER_MIN_PINS}.."
+            f"{_ADAPTER_MAX_PINS} (got {pin_count})."
+        )
+    default_rows = adapter_row_holes(package, pin_count)
+    rows = default_rows if row_holes is None else row_holes
+    if not 3 <= rows <= _MAX_STEP_HOLES:
+        raise ValueError(f"smd_adapter_footprint: rows must be 3..{_MAX_STEP_HOLES} steps apart")
+    chip = _chip_outline(package, pin_count)
+    row_spacing_mm = rows * STANDARD_PITCH_MM
+    if chip.span > row_spacing_mm - ADAPTER_ROW_CLEARANCE_MM:
+        raise ValueError(
+            f"smd_adapter_footprint: a {chip.span} mm {package.upper()} does not fit between "
+            f"rows {row_spacing_mm:g} mm apart"
+        )
+
+    per_side = pin_count // 2
+    pins: list[FootprintPin] = [_make_pin(str(i + 1), 0, i) for i in range(per_side)]
+    pins.extend(
+        _make_pin(str(per_side + i + 1), rows, per_side - 1 - i) for i in range(per_side)
+    )
+    pins_t = tuple(pins)
+
+    # Half a pitch of board past every hole, which is the outline rule above.
+    width_mm = row_spacing_mm + STANDARD_PITCH_MM
+    length_mm = per_side * STANDARD_PITCH_MM
+    outline = _rect_outline(_to_mm(pins_t), width_mm, length_mm, COURTYARD_MARGIN_MM)
+
+    family = package.upper()
+    fp_id = id if id is not None else (
+        f"adp-{package}-{pin_count}{'' if rows == default_rows else f'-r{rows}'}"
+    )
+    if name is None:
+        name = f"{family}-{pin_count} on a DIP adapter"
+        if rows == 6:
+            name += ' (0.6" wide)'
+        elif rows != 3:
+            name += f", rows {rows} holes apart"
+    return Footprint(
+        id=fp_id,
+        name=name,
+        pins=pins_t,
+        body_outline=outline,
+        body_height=ADAPTER_SEAT_MM + max(ADAPTER_PCB_MM + chip.height, ADAPTER_PIN_TAIL_MM),
+        body=BodySpec(
+            archetype="smd-adapter",
+            dims={
+                "width": width_mm,
+                "length": length_mm,
+                "rowSpacing": row_spacing_mm,
+                "seat": ADAPTER_SEAT_MM,
+                "chipLength": (per_side - 1) * chip.pitch + ADAPTER_CHIP_END_MM,
+                "chipWidth": chip.body,
+                "chipSpan": chip.span,
+                "chipHeight": chip.height,
+                "chipPitch": chip.pitch,
+            },
+        ),
+        # A header pin, as a module stands on.
+        lead_diameter=0.64,
+        polarized=False,
+    )
+
+
+def adapter_package(footprint: Footprint) -> str | None:
+    """"SOIC-8" for a chip on an adapter -- what to buy and what is soldered onto it --
+    and None for every other footprint. Read off the id, which is the one place it is."""
+    match = _ADAPTER_ID.match(footprint.id)
+    if match is None or footprint.body.archetype != "smd-adapter":
+        return None
+    return f"{match[1].upper()}-{match[2]}"
+
+
+_ADAPTER_ID = re.compile(r"^adp-(soic|ssop|tssop|msop)-(\d+)(?:-r(\d+))?$")
+
+
+def _smd_package(text: str) -> SmdPackage:
+    for package in SMD_PACKAGES:
+        if package == text:
+            return package
+    raise ValueError(f"no package {text!r}")
+
+
+# ---------------------------------------------------------------------------
 # Standard registry
 # ---------------------------------------------------------------------------
 
@@ -1577,6 +1777,10 @@ most two decimals and are written without units.
                                                         and its board seated S mm up (8.5 in
                                                         a female header, 2.5 soldered in)
   idc-2x<n>                                             an IDC box header, 2 rows of n
+  adp-<package>-<pins>[-r<rowStep>]                     a surface-mount chip on a DIP
+                                                        adapter: soic, ssop, tssop or msop;
+                                                        numbered as the DIP, rows 0.3 inch
+                                                        apart for 8 pins and 0.6 above
   screw-terminal-<ways>[-v]                             a screw terminal; -v takes its
                                                         wires from above (pluggable, on a
                                                         vertical header)
@@ -1674,6 +1878,16 @@ _GENERATED: tuple[tuple[re.Pattern[str], Callable[[re.Match[str]], Footprint]], 
     (
         re.compile(r"^idc-2x(\d+)$"),
         lambda m: box_header_footprint(pins_per_row=_grid(m[1])),
+    ),
+    (
+        _ADAPTER_ID,
+        lambda m: smd_adapter_footprint(
+            package=_smd_package(m[1]),
+            pin_count=_grid(m[2]),
+            # "-r3" on an eight-pin SOIC builds the default and is then refused by the id
+            # comparison in generated_footprint: the usual rows are spelled by leaving them out.
+            row_holes=_step(m[3]) if m[3] is not None else None,
+        ),
     ),
     (
         re.compile(r"^dip-(\d+)(-wide)?$"),
@@ -1862,6 +2076,8 @@ BODY_DIM_KEYS: dict[BodyArchetype, tuple[str, str, Literal["x", "y"]]] = {
     "module-board": ("width", "depth", "x"),
     # The row of pads and a pitch round them, as a single-row header's moulding is.
     "flying-leads": ("length", "width", "x"),
+    # The adapter's board: across the two rows, and along them -- a DIP's way round.
+    "smd-adapter": ("width", "length", "y"),
 }
 
 

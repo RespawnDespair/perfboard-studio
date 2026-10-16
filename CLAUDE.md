@@ -472,6 +472,18 @@ Three things hold it together:
   edge-seeking) then has to say what it does with one; the completeness tests enforce that.
   The 3D builder finds the keyed wall from the direction pin 2 -> pin 1, not from a local
   axis, so it cannot disagree with the pins however the part is turned.
+- **`adp-<package>-<pins>[-r<n>]` is a surface-mount chip on a DIP adapter**, archetype
+  `smd-adapter`: numbered EXACTLY as `dip_footprint` numbers the DIP of that pin count,
+  because every adapter brings chip pin N out on DIP pin N -- that is what lets a netlist
+  drawn for the SOIC land unchanged. It goes in like a DIP (phase 2, keyed, an `ic` symbol)
+  and is built like a module (a board on a male header's 2.5 mm plastic). Rows and outline
+  are measured off five makers' boards (cited in `footprints.py`); the chip is JEDEC's
+  outline, kept in `dims` so the 2D and 3D views draw one chip. Its height is the chip's
+  top or the header's 3 mm tail, whichever is higher -- on a TSSOP it is the tail.
+  `parsers/kicad_parts._ADAPTED` maps KiCad's gull-wing names to it, and leaves out every
+  `-1EP` part on purpose: no adapter brings an exposed pad out. A catalog part keeps its
+  names on the adapter only when the pin counts agree (`_same_chip`) -- an L293D is a DIP-16
+  and the SO-20 sold under nearly its name is pinned differently.
 
 ### Hole addressing
 

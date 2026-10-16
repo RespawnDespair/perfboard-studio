@@ -57,6 +57,25 @@ closed without a bump.
 - **Two more symbols a part can declare**: a potentiometer, and an LED once its leads are
   named A and K. In the part's properties, and as `potentiometer` and `led` for an agent.
 
+- **A surface-mount chip goes on the board on a DIP adapter.** A SOIC, SSOP, TSSOP or MSOP
+  is soldered onto a small adapter board that stands on two rows of header pins, numbered as
+  the DIP of the same pin count -- so the netlist drawn for the SOIC lands on the board
+  without a pin moving. Asked for as `adp-soic-8`, `adp-tssop-20` and so on, or from
+  **Custom Part**. The board is the size the makers sell (rows 0.3 inch apart for eight pins
+  and 0.6 above, half a pitch of board round the holes), and the part is as tall as the chip
+  on it or the header's tails, whichever stands higher. Both views draw the chip on its
+  adapter, legs and pin-1 dot included.
+
+- **A KiCad netlist's SOIC, SSOP, TSSOP and MSOP footprints import on an adapter** instead
+  of being refused as surface-mount, and a part the catalog knows keeps its pin names in the
+  smaller package: an LM358 in a SOIC-8 is the catalog's LM358. A footprint with an exposed
+  pad, a SOT-23 or a QFN is still refused, because no DIP adapter brings it out pin for pin.
+
+- **The build guide has the chips soldered onto their adapters first**, in phase 0 while the
+  bench is clear and the legs can still be reached, and then fits each adapter as the DIP it
+  stands in for: a socket in phase 2 if there is one, the adapter with the other ICs at the
+  end. The bench list counts the header pins and asks for a magnifier.
+
 ### Changed
 
 - **The phenolic board is a quieter orange.** Still the hue of the boards in the photographs

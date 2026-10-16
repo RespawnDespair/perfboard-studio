@@ -215,7 +215,11 @@ guide and the schematic, and `get_status` reports it as `document`.
 **A module whose pins run along one edge** is `box-...-o<X>x<Y>`: the body sits that many
 millimetres off the pins' centre, so a breakout board is measured where it is rather than
 centred on its header. **A ribbon-cable box header** is `idc-2x<n>`, numbered like
-`hdr-2x<n>` and keyed on the pin-1 row.
+`hdr-2x<n>` and keyed on the pin-1 row. **A surface-mount chip** goes on the board on a DIP
+adapter, `adp-<package>-<pins>` (`soic`, `ssop`, `tssop` or `msop`), numbered exactly as the
+DIP of the same pin count, so a netlist drawn for the SOIC needs no pin moved; rows are 0.3
+inch apart for eight pins and 0.6 above, and `-r<steps>` asks for other rows. A KiCad
+netlist's SOIC, SSOP, TSSOP and MSOP footprints import as one.
 
 **A part can say what its package cannot.** `add_part`, `update_part` and `place_component`
 take `pin_names` — `{"1": "G", "2": "D", "3": "S"}`, or a module's `{"1": "3V3", "2": "EN",

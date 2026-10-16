@@ -174,6 +174,7 @@ from perfboard_studio.drc import DrcViolation, run_drc
 from perfboard_studio.footprints import (
     MODULE_SEAT_SOCKETED_MM,
     MODULE_SEAT_SOLDERED_MM,
+    SMD_PACKAGES,
     axial_footprint,
     box_film_capacitor_footprint,
     box_header_footprint,
@@ -189,6 +190,7 @@ from perfboard_studio.footprints import (
     pin_header_footprint,
     radial_electrolytic_footprint,
     screw_terminal_footprint,
+    smd_adapter_footprint,
     standard_footprints,
     vertical_screw_terminal_footprint,
 )
@@ -609,6 +611,7 @@ def _archetype_headings() -> dict[BodyArchetype, str]:
         "to92": t("TO-92 packages"),
         "to220": t("TO-220 packages"),
         "dip": t("DIP packages"),
+        "smd-adapter": t("SMD chips on DIP adapters"),
         "pin-header": t("Pin headers"),
         "box-header": t("IDC box headers"),
         "screw-terminal": t("Screw terminals"),
@@ -1985,10 +1988,12 @@ class _CustomField:
 
     key: str
     label: str
-    kind: Literal["int", "mm", "bool"]
+    kind: Literal["int", "mm", "bool", "choice"]
     minimum: float
     maximum: float
     default: float
+    #: What a ``choice`` offers, in order; its value is the index of the one picked.
+    options: tuple[str, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -2086,6 +2091,26 @@ def _custom_families() -> tuple[_CustomFamily, ...]:
             ),
             build=lambda v: dip_footprint(
                 pin_count=whole(v, "pins"), wide=bool(round(v["wide"]))
+            ),
+        ),
+        _CustomFamily(
+            # The package names are the tool's vocabulary in every language, as a hole
+            # address is: they are what is printed on the bag the chip came in.
+            label=t("Surface-mount chip on a DIP adapter"),
+            fields=(
+                _CustomField(
+                    "package", t("Package"), "choice", 0, len(SMD_PACKAGES) - 1, 0,
+                    options=tuple(package.upper() for package in SMD_PACKAGES),
+                ),
+                _CustomField("pins", t("Pins"), "int", 8, 56, 8),
+                # Zero is the adapter the chip is usually sold for: 0.3 inch for eight pins,
+                # 0.6 above -- and an id that does not spell its rows out.
+                _CustomField("rows", t("Holes between rows (0 for the usual)"), "int", 0, 20, 0),
+            ),
+            build=lambda v: smd_adapter_footprint(
+                package=SMD_PACKAGES[whole(v, "package")],
+                pin_count=whole(v, "pins"),
+                row_holes=whole(v, "rows") or None,
             ),
         ),
         _CustomFamily(
@@ -2291,6 +2316,12 @@ class CustomPartDialog(QDialog):
                 box.setChecked(bool(round(field.default)))
                 box.toggled.connect(self._refresh)
                 widget = box
+            elif field.kind == "choice":
+                combo = QComboBox()
+                combo.addItems(list(field.options))
+                combo.setCurrentIndex(int(field.default))
+                combo.currentIndexChanged.connect(self._refresh)
+                widget = combo
             elif field.kind == "int":
                 spin = QSpinBox()
                 spin.setRange(int(field.minimum), int(field.maximum))
@@ -2314,6 +2345,8 @@ class CustomPartDialog(QDialog):
         for key, widget in self._widgets.items():
             if isinstance(widget, QCheckBox):
                 values[key] = 1.0 if widget.isChecked() else 0.0
+            elif isinstance(widget, QComboBox):
+                values[key] = float(widget.currentIndex())
             elif isinstance(widget, QSpinBox):
                 values[key] = float(widget.value())
             elif isinstance(widget, QDoubleSpinBox):

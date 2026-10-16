@@ -1139,6 +1139,7 @@ TURKISH: Mapping[str, str] = {
     "Tactile switches": "Tact butonlar",
     "Relays": "Röleler",
     "Module boards": "Modül kartları",
+    "SMD chips on DIP adapters": "DIP adaptöründe SMD çipler",
     "Boxes of any size": "Her boyutta kutular",
     "Any rectangular part": "Herhangi bir dikdörtgen parça",
     "DIP (dual in-line)": "DIP (çift sıra)",
@@ -1543,6 +1544,10 @@ TURKISH: Mapping[str, str] = {
     "Body offset along the pins (mm)": "Gövde kayması, pin sırası boyunca (mm)",
     "Body offset across the pins (mm)": "Gövde kayması, pin sırasına dik (mm)",
     "IDC box header (ribbon cable)": "IDC kutu başlık (şerit kablo)",
+    # -- custom part: a surface-mount chip on a DIP adapter --------------------------------
+    "Surface-mount chip on a DIP adapter": "DIP adaptöründe yüzey montaj çip",
+    "Package": "Kılıf",
+    "Holes between rows (0 for the usual)": "Sıralar arası delik (olağanı için 0)",
     # -- what a part says about itself (PinoutEditor) -------------------------------------
     "From the package": "Gövdeden",
     "NPN transistor (names B, C, E)": "NPN transistör (adlar B, C, E)",

@@ -56,7 +56,7 @@ from typing import Literal
 
 from .connectivity import FootprintLookup, PhysicalPinRef
 from .drc import DEFAULT_DRC_OPTIONS, DrcOptions, DrcViolation, run_drc, trace_electrical
-from .footprints import flying_lead_length_mm, wire_entry
+from .footprints import adapter_package, flying_lead_length_mm, wire_entry
 from .geometry import (
     all_pin_holes,
     column_label,
@@ -159,6 +159,9 @@ PHASE_BY_ARCHETYPE: dict[BodyArchetype, PhaseNumber] = {
     "box-header": 5,
     "screw-terminal-vertical": 5,
     "module-board": 5,
+    # It goes in as the DIP it stands in for: a socket in phase 2 if there is one, and the
+    # chip -- already on its adapter -- with the other ICs at the end.
+    "smd-adapter": 2,
     # The wires to a part off the board are long insulated wires, and go in with them: after
     # every part is down, so they are not in the way of the iron, and before the closing
     # checks, which power the board up through the very jack and switch they reach.
@@ -645,6 +648,7 @@ def build_guide(
         step.ref: phase for step, phase in part_steps if step.archetype == "flying-leads"
     }
 
+    adapters = _adapters(doc, lookup)
     by_phase: dict[PhaseNumber, list[GuideStep]] = {n: [] for n in PHASE_TITLES}
     for part_step, part_phase in part_steps:
         by_phase[part_phase].append(part_step)
@@ -661,7 +665,9 @@ def build_guide(
         GuidePhase(
             number=number,
             title=say(PHASE_TITLES[number]),
-            summary=_phase_summary(number, doc, say, off_board=bool(lead_list)),
+            summary=_phase_summary(
+                number, doc, say, off_board=bool(lead_list), adapters=adapters
+            ),
             steps=tuple(by_phase[number]),
             checkpoints=tuple(checkpoints.get(number, ())),
         )
@@ -679,7 +685,7 @@ def build_guide(
         spine_list=tuple(spine_list),
         track_cuts=track_cuts,
         iron=dataclasses.replace(iron, note=say(iron.note)),
-        tools=_tools(doc, cut_list, spine_list, say, lead_list),
+        tools=_tools(doc, cut_list, spine_list, say, lead_list, adapters),
         warnings=_warnings(doc, lookup, violations, say),
         part_steps=len(part_steps),
         conductor_steps=len(conductor_steps),
@@ -689,8 +695,23 @@ def build_guide(
     )
 
 
+def _adapters(doc: PerfDocument, lookup: FootprintLookup) -> tuple[tuple[str, str, int], ...]:
+    """Every chip on a DIP adapter, as (reference, package, header pins), by reference."""
+    found: list[tuple[str, str, int]] = []
+    for component in doc.components:
+        footprint = lookup(component.footprint_id)
+        package = adapter_package(footprint) if footprint is not None else None
+        if footprint is not None and package is not None:
+            found.append((component.ref, package, len(footprint.pins)))
+    return tuple(sorted(found))
+
+
 def _phase_summary(
-    number: PhaseNumber, doc: PerfDocument, say: Phrasebook, off_board: bool = False
+    number: PhaseNumber,
+    doc: PerfDocument,
+    say: Phrasebook,
+    off_board: bool = False,
+    adapters: tuple[tuple[str, str, int], ...] = (),
 ) -> str:
     """The phase's standing summary, with what the BOARD changes about it folded in.
 
@@ -747,6 +768,22 @@ def _phase_summary(
         summary += " " + say(
             "Drill before anything is soldered — the board can still go in a vice, and "
             "swarf brushes off a bare board instead of having to be picked out of a built one."
+        )
+
+    if adapters:
+        # Here and not at the part's own step, which is in phase 2: soldering a 1.27 mm
+        # pitch chip wants a clear bench and the finest tip, and a bridge between two of
+        # its legs can only be seen and fixed while the adapter is still loose in the hand.
+        summary += " " + say(
+            "Solder the surface-mount chips onto their adapters first: {chips}. Line each "
+            "chip's pin-1 dot up with the adapter's pin 1, tack one corner leg, check it "
+            "is square, then do the rest with plenty of flux — and look along every leg "
+            "under a magnifier for a bridge. Once the adapter is on the board, nobody can "
+            "reach those legs.",
+            chips=say.joined([
+                say("{ref} ({package})", ref=ref, package=package)
+                for ref, package, _ in adapters
+            ]),
         )
 
     if board.pad_shape == "oblong" and board.pad_length is not None:
@@ -899,6 +936,18 @@ def _part_step(
             "Fit a socket here if you have one — this phase is the sockets. The IC "
             "itself does not go in until the closing checks in phase 8, socket or no "
             "socket: it is the last thing on the board that should meet an iron."
+        ))
+    package = adapter_package(footprint)
+    if package is not None:
+        # The chip went onto its adapter in phase 0 (``_phase_summary``); what is left is the
+        # header, which is where an adapter goes crooked, and then it is a DIP like any other.
+        notes.append(say(
+            "A {package} on its DIP adapter, which should already carry the chip (phase 0). "
+            "Solder the header pins to the adapter with their long ends pushed into a "
+            "breadboard or into these holes, so they come out square and the right distance "
+            "apart. From here on it is a DIP: fit a socket here if you have one, and the "
+            "adapter itself goes in with the other ICs in phase 8.",
+            package=package,
         ))
     if component.mirrored:
         notes.append(say(
@@ -1206,6 +1255,17 @@ def _polarity_note(
             return None
         return say(
             "Pin 1 (the notched end, marked with a dot) in {hole}", hole=format_hole(first)
+        )
+
+    if footprint.body.archetype == "smd-adapter":
+        # Two marks to line up, not one: the chip's dot on the adapter's pin 1 was the
+        # phase-0 job; this is the adapter's own "1" on the board's hole.
+        first = by_number.get("1")
+        if first is None:
+            return None
+        return say(
+            "Pin 1 (the adapter's \"1\", beside the chip's dot) in {hole}",
+            hole=format_hole(first),
         )
 
     if footprint.body.archetype == "box-header":
@@ -2125,6 +2185,7 @@ def _tools(
     spines: list[SpineCut],
     say: Phrasebook,
     leads: list[LeadCut] | None = None,
+    adapters: tuple[tuple[str, str, int], ...] = (),
 ) -> tuple[str, ...]:
     """What to have on the bench, derived from what the board actually needs."""
     iron = IRON_BY_MATERIAL[doc.board.material]
@@ -2202,6 +2263,12 @@ def _tools(
             "(component lead offcuts do the job just as well)",
             gauges=", ".join(f"{g:g} mm" for g in spine_gauges),
             length=total_spine,
+        ))
+    if adapters:
+        tools.append(say(
+            "For the chips on adapters: the adapter boards, {pins} male header pins "
+            "(2.54 mm), and a magnifier to check the chips' legs for bridges",
+            pins=sum(pins for _, _, pins in adapters),
         ))
     return tuple(tools)
 

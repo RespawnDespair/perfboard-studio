@@ -30,10 +30,12 @@ from vtkmodules.util import numpy_support
 
 from perfboard_studio.connectivity import FootprintLookup
 from perfboard_studio.footprints import (
+    ADAPTER_PIN_TAIL_MM,
     LEAD_RADIUS_MM,
     LEAD_TRIM_MM,
     MODULE_PCB_MM,
     MODULE_SEAT_SOCKETED_MM,
+    MODULE_SEAT_SOLDERED_MM,
     wire_entry,
 )
 from perfboard_studio.geometry import (
@@ -3005,6 +3007,9 @@ _BUILDERS: dict[str, Any] = {
     # the BOARD's edge and are their nets' colours, and a builder here sees only the body.
     # Its leads alone, should anything ask for it here.
     "flying-leads": lambda body: _through_hole_pieces(body, 0.15, radius=WIRE_CORE_RADIUS_MM),
+    # Drawn by ``_adapter_pieces`` from ``_pieces_for``, because the chip on it is in the
+    # footprint's ``dims`` and a builder here sees only the body.
+    "smd-adapter": _box_pieces,
 }
 
 
@@ -3406,6 +3411,8 @@ def _pieces_for(
     """
     if footprint.body.archetype == "module-board":
         return _module_pieces(body, footprint, comp, board)
+    if footprint.body.archetype == "smd-adapter":
+        return _adapter_pieces(body, footprint)
     if footprint.body.archetype == "screw-terminal-vertical":
         # The header is KiCad's, sliced like a terminal block; the plug is ours. Without the
         # slices the header is drawn from its measured sizes, and the plug is the same.
@@ -3565,6 +3572,135 @@ def _module_pieces(body: _WorldBody, footprint: Any, comp: Any, board: Board) ->
             )
         )
 
+    return pieces + _through_hole_pieces(body, 0.0, blade=(_MODULE_PIN_MM, _MODULE_PIN_MM))
+
+
+def _adapter_pieces(body: _WorldBody, footprint: Any) -> list[_Piece]:
+    """A chip on its DIP adapter: two header strips, the adapter's board on them, the pins
+    through it, and the chip -- its moulding, its gull-wing legs and its pin-1 dot.
+
+    Built as a module is built, because it IS one: a small board standing on a male
+    header's plastic. The chip is drawn from the footprint's ``dims``, the JEDEC outline
+    the 2D view reads too, so the two views draw one chip.
+    """
+    dims = footprint.body.dims
+    seat = float(dims.get("seat", MODULE_SEAT_SOLDERED_MM))
+    pcb_top = seat + MODULE_PCB_MM
+    along_x = body.axis == "x"
+
+    def at(along: float, across: float, z: float) -> tuple[float, float, float]:
+        return (body.x + along, body.y + across, z) if along_x else (body.x + across, body.y + along, z)
+
+    def size(along: float, across: float, z: float) -> Any:
+        return _box(along, across, z) if along_x else _box(across, along, z)
+
+    pieces: list[_Piece] = [
+        _Piece(
+            source=_box(body.size_x, body.size_y, MODULE_PCB_MM),
+            rgb=_rgb(body.style.fill),
+            position=(body.x, body.y, seat + MODULE_PCB_MM / 2),
+            material=MASK,
+        )
+    ]
+
+    # One header strip under each row, as long as the row: the plastic that holds it up.
+    rows: dict[float, list[float]] = {}
+    for px, py in body.pins:
+        across, along = (py - body.y, px - body.x) if along_x else (px - body.x, py - body.y)
+        rows.setdefault(round(across, 3), []).append(along)
+    pitch = body.along / max(1, len(body.pins) // 2)
+    for across, positions in rows.items():
+        middle = (min(positions) + max(positions)) / 2
+        length = max(positions) - min(positions) + pitch
+        pieces.append(
+            _Piece(
+                source=size(length, pitch, seat),
+                rgb=_HEADER_PLASTIC_RGB,
+                position=at(middle, across, seat / 2),
+                material=MOULDED,
+            )
+        )
+    # The header's short tails, through the adapter and as far past it as the footprint's
+    # height allows for -- the same number, so the envelope DRC measures is the one drawn.
+    pieces.append(
+        _Piece(
+            source=_box(_MODULE_PIN_MM, _MODULE_PIN_MM, ADAPTER_PIN_TAIL_MM),
+            rgb=LEAD_RGB,
+            position=(0.0, 0.0, 0.0),
+            material=TINNED,
+            instances=tuple((px, py, seat + ADAPTER_PIN_TAIL_MM / 2) for px, py in body.pins),
+        )
+    )
+    pieces.append(
+        _Piece(
+            source=_cylinder(_MODULE_PAD_RADIUS_MM, 0.06, resolution=20),
+            rgb=LEAD_RGB,
+            position=(0.0, 0.0, 0.0),
+            orientation=_ALONG_Z,
+            material=TINNED,
+            instances=tuple((px, py, pcb_top + 0.03) for px, py in body.pins),
+        )
+    )
+
+    length = float(dims.get("chipLength", body.along * 0.5))
+    width = float(dims.get("chipWidth", body.across * 0.4))
+    span = float(dims.get("chipSpan", width * 1.5))
+    height = float(dims.get("chipHeight", 1.5))
+    leg_pitch = float(dims.get("chipPitch", 1.27))
+    standoff = 0.1
+    # The dot is printed proud of the moulding, so the moulding stops that much short of the
+    # outline's height and the dot's top is the envelope's -- not 0.05 mm over it.
+    dot_proud = 0.03
+    moulding = height - standoff - dot_proud
+    pieces.append(
+        _Piece(
+            source=_moulded_box(length, width, moulding) if along_x else _moulded_box(width, length, moulding),
+            rgb=_ART_EPOXY_RGB,
+            position=at(0.0, 0.0, pcb_top + standoff + moulding / 2),
+            material=MOULDED,
+        )
+    )
+    # Each leg in three straight runs, as ``_art_soic8`` draws an SO-8's: out of the body,
+    # down, and the foot on its pad -- one instanced actor per run for every leg.
+    per_side = max(1, len(footprint.pins) // 2)
+    legs = [(index - (per_side - 1) / 2) * leg_pitch for index in range(per_side)]
+    reach = (span - width) / 2
+    leg = leg_pitch * 0.33
+    shoulder = standoff + moulding * 0.45
+    for run, out, z, tall in (
+        (reach * 0.5, width / 2 + reach * 0.2, shoulder, 0.2),
+        (reach * 0.2, width / 2 + reach * 0.45, (shoulder + 0.1) / 2, shoulder),
+        (reach * 0.6, width / 2 + reach * 0.7, 0.1, 0.2),
+    ):
+        pieces.append(
+            _Piece(
+                source=size(leg, run, tall),
+                rgb=LEAD_RGB,
+                position=(0.0, 0.0, 0.0),
+                material=TINNED,
+                instances=tuple(
+                    at(along, side * out, pcb_top + z) for side in (-1.0, 1.0) for along in legs
+                ),
+            )
+        )
+    if body.polarity is not None:
+        # The dot in the chip's pin-1 corner: towards pin 1's row and pin 1's end.
+        px, py = body.polarity
+        pin_along, pin_across = (px - body.x, py - body.y) if along_x else (py - body.y, px - body.x)
+        dot = min(0.4, width * 0.1)
+        pieces.append(
+            _Piece(
+                source=_cylinder(dot, 0.05, resolution=16),
+                rgb=_ART_DOT_RGB,
+                position=at(
+                    math.copysign(length / 2 - dot * 2.2, pin_along),
+                    math.copysign(width / 2 - dot * 2.2, pin_across),
+                    pcb_top + height - 0.025,
+                ),
+                orientation=_ALONG_Z,
+                material=MOULDED,
+            )
+        )
     return pieces + _through_hole_pieces(body, 0.0, blade=(_MODULE_PIN_MM, _MODULE_PIN_MM))
 
 

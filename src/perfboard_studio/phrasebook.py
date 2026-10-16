@@ -122,6 +122,9 @@ NAME_TEMPLATES: tuple[str, ...] = (
     "Film capacitor, {0} mm, {1}-hole pitch",
     "Film capacitor, {0}-hole pitch",
     'DIP-{0} (0.6" wide)',
+    '{0} on a DIP adapter (0.6" wide)',
+    "{0} on a DIP adapter, rows {1} holes apart",
+    "{0} on a DIP adapter",
     "TO-92 (inline, on-grid)",
     "LED, {0} mm round",
     "Pin header, {0}",
@@ -368,6 +371,30 @@ TURKISH: dict[str, str] = {
     "Pin 1 (the notched end, marked with a dot) in {hole}": (
         "1. pin (çentikli, noktayla işaretli uç): {hole} deliğine"
     ),
+    'Pin 1 (the adapter\'s "1", beside the chip\'s dot) in {hole}': (
+        '1. pin (adaptörün üzerindeki "1", çipin noktasının yanında): {hole} deliğine'
+    ),
+    "A {package} on its DIP adapter, which should already carry the chip (phase 0). Solder "
+    "the header pins to the adapter with their long ends pushed into a breadboard or into "
+    "these holes, so they come out square and the right distance apart. From here on it is "
+    "a DIP: fit a socket here if you have one, and the adapter itself goes in with the other "
+    "ICs in phase 8.": (
+        "DIP adaptörü üzerinde bir {package}; çip adaptöre 0. aşamada lehimlenmiş olmalı. Pin "
+        "başlığını adaptöre, uzun uçları bir breadboard'a ya da bu deliklere takılıyken "
+        "lehimle: pinler böylece dik ve doğru aralıkla çıkar. Bundan sonrası bir DIP gibi: "
+        "varsa buraya bir soket tak; adaptörün kendisi diğer entegrelerle birlikte 8. "
+        "aşamada takılır."
+    ),
+    "Solder the surface-mount chips onto their adapters first: {chips}. Line each chip's "
+    "pin-1 dot up with the adapter's pin 1, tack one corner leg, check it is square, then do "
+    "the rest with plenty of flux — and look along every leg under a magnifier for a bridge. "
+    "Once the adapter is on the board, nobody can reach those legs.": (
+        "Önce yüzey montaj çipleri adaptörlerine lehimle: {chips}. Her çipin 1. pin noktasını "
+        "adaptörün 1. piniyle hizala, bir köşe bacağını puntala, düz durduğunu kontrol et, "
+        "sonra kalanını bol flux ile lehimle — ve her bacağı büyüteçle köprü var mı diye "
+        "kontrol et. Adaptör karta takıldıktan sonra o bacaklara kimse ulaşamaz."
+    ),
+    "{ref} ({package})": "{ref} ({package})",
     "Key slot on the side of the pin-1 row; pin 1 in {hole} (the cable's red stripe goes "
     "to pin 1)": (
         "Kilit yuvası 1. pin sırası tarafında; 1. pin {hole} deliğine (kablonun kırmızı "
@@ -553,6 +580,11 @@ TURKISH: dict[str, str] = {
         "Çıplak kalaylı bakır tel, AWG {gauges} — toplam yaklaşık {metres:.2f} m"
     ),
     "Wire strippers": "Tel sıyırıcı",
+    "For the chips on adapters: the adapter boards, {pins} male header pins (2.54 mm), and a "
+    "magnifier to check the chips' legs for bridges": (
+        "Adaptör üzerindeki çipler için: adaptör kartları, {pins} erkek pin (2.54 mm) ve "
+        "çiplerin bacaklarında köprü olup olmadığına bakmak için bir büyüteç"
+    ),
     "A drill and {sizes} bits for the mounting holes, plus a deburring tool or a larger "
     "bit turned by hand": (
         "Montaj delikleri için bir matkap ve {sizes} uçlar, ayrıca bir çapak alma aleti ya "
@@ -787,6 +819,7 @@ TURKISH: dict[str, str] = {
     "screw-terminal-vertical": "dik klemens",
     "module-board": "modül",
     "flying-leads": "kart dışı parça",
+    "smd-adapter": "SMD adaptör",
     # -- footprint names (NAME_TEMPLATES) -------------------------------------------------
     "Flying leads, {0} wires to a part off the board, {1} mm": (
         "Kart dışındaki bir parçaya {0} tel, {1} mm"
@@ -809,6 +842,9 @@ TURKISH: dict[str, str] = {
     "Film capacitor, {0} mm, {1}-hole pitch": "Film kondansatör, {0} mm, {1} delik aralık",
     "Film capacitor, {0}-hole pitch": "Film kondansatör, {0} delik aralık",
     'DIP-{0} (0.6" wide)': 'DIP-{0} (0.6" geniş)',
+    '{0} on a DIP adapter (0.6" wide)': '{0}, DIP adaptöründe (0.6" geniş)',
+    "{0} on a DIP adapter, rows {1} holes apart": "{0}, DIP adaptöründe, sıralar {1} delik arayla",
+    "{0} on a DIP adapter": "{0}, DIP adaptöründe",
     "TO-92 (inline, on-grid)": "TO-92 (sıralı, ızgaraya oturan)",
     "LED, {0} mm round": "LED, {0} mm yuvarlak",
     "Pin header, {0}": "Pin başlığı, {0}",

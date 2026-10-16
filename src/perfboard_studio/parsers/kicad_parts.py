@@ -306,6 +306,49 @@ _UNMAPPED: tuple[tuple[re.Pattern[str], str], ...] = (
 
 
 _SMD_NOTE = "its footprint is surface-mount, which a perfboard cannot take"
+_ADAPTER_NOTE = (
+    "its footprint is surface-mount, so it goes on a DIP adapter, numbered pin for pin"
+)
+
+#: The gull-wing packages a DIP adapter takes, by KiCad's name: the pin count, then -- with
+#: nothing between, which leaves out every ``-1EP`` part, whose exposed pad no adapter
+#: brings out -- the body's size and the pitch. ``W`` is KiCad's wide-body SOIC.
+_ADAPTED = re.compile(
+    r"^(?:SOIC|SOP|SO|SSOP|TSSOP|MSOP|VSSOP)-(?P<pins>\d+)W?_"
+    r"(?P<body>[\d.]+)x[\d.]+mm_P(?P<pitch>[\d.]+)mm"
+)
+
+
+def _on_adapter(m: re.Match[str]) -> list[str]:
+    """The same chip on a DIP adapter (``footprints.smd_adapter_footprint``).
+
+    Which outline it is drawn as is read off the pitch and the body's width, not the name's
+    prefix, because KiCad files a 0.635 mm QSOP under SSOP and a 3 mm VSSOP is an MSOP by
+    every measure: 1.27 mm is a SOIC; finer, a 5.3 mm body is an SSOP, a 4.4 mm one a TSSOP
+    and anything narrower an MSOP. Only the drawing and the height depend on it -- the pins
+    are the adapter's, and every adapter numbers them as the chip does.
+    """
+    pitch, body = float(m["pitch"]), float(m["body"])
+    if pitch >= 1.0:
+        package = "soic"
+    elif body >= 5.0:
+        package = "ssop"
+    elif body >= 3.5:
+        package = "tssop"
+    else:
+        package = "msop"
+    return [f"adp-{package}-{int(m['pins'])}"]
+
+
+#: A catalog part's DIP and the adapter of the same pin count are one chip in two packages,
+#: and the catalog's pin names are the DIP's: the same die, bonded out in the same order.
+_DIP_ID = re.compile(r"^dip-(\d+)(?:-wide)?$")
+_ADAPTER_PINS = re.compile(r"^adp-[a-z]+-(\d+)")
+
+
+def _same_chip(catalog_footprint: str, adapter: str) -> bool:
+    dip, adapted = _DIP_ID.match(catalog_footprint), _ADAPTER_PINS.match(adapter)
+    return dip is not None and adapted is not None and dip[1] == adapted[1]
 
 
 def kicad_footprint_ids(kicad_footprint: str) -> tuple[list[str], str]:
@@ -316,6 +359,9 @@ def kicad_footprint_ids(kicad_footprint: str) -> tuple[list[str], str]:
     mapped, or is surface-mount; no ids and no note means nothing here knows the name.
     """
     name = kicad_footprint.split(":", 1)[-1]
+    adapted = _ADAPTED.match(name)
+    if adapted is not None:
+        return _on_adapter(adapted), _ADAPTER_NOTE
     if _SMD.search(kicad_footprint):
         return [], _SMD_NOTE
     for pattern, build in _KICAD_NAMES:
@@ -526,20 +572,27 @@ def _suggest(
     if component.footprint:
         candidates, note = kicad_footprint_ids(component.footprint)
         from_kicad = next((fid for fid in candidates if lookup(fid) is not None), None)
+    if note == _ADAPTER_NOTE and from_kicad is None:
+        # An adapter nobody makes -- a SOIC-4, a SOIC-6 -- is a surface-mount part like any.
+        note = _SMD_NOTE
     part = catalog_part_for(component.value, component.lib_part)
-    if part is not None and from_kicad is not None and from_kicad != part.footprint_id:
+    adapted = (
+        part is not None and from_kicad is not None and _same_chip(part.footprint_id, from_kicad)
+    )
+    if part is not None and from_kicad is not None and from_kicad != part.footprint_id and not adapted:
         # "BC547" on a TO-220 is not the catalog's BC547, and its pin names would be for the
-        # wrong package: the footprint wins.
+        # wrong package: the footprint wins. An LM358 in a SOIC-8 IS the catalog's LM358,
+        # on an adapter that numbers it as the DIP.
         part = None
     # Why the footprint was not mapped -- unless the catalog part the value names is the
     # answer to it, as it is for a module. Surface-mount is said either way.
-    if note and (part is None or note == _SMD_NOTE):
+    if note and (part is None or note in (_SMD_NOTE, _ADAPTER_NOTE)):
         notes.append(note)
     if part is not None:
         return (
             PartSuggestion(
                 ref=component.ref,
-                footprint_id=part.footprint_id,
+                footprint_id=from_kicad if adapted and from_kicad is not None else part.footprint_id,
                 value=component.value or part.placed_value,
                 source="catalog",
                 part_id=part.id,

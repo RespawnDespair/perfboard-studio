@@ -1715,6 +1715,8 @@ _KIND_BY_ARCHETYPE: dict[BodyArchetype, SymbolKind] = {
     # with its lugs named otherwise: the pads are not the part, and a connector symbol would
     # draw a jack and a footswitch as the same row of pins.
     "flying-leads": "box",
+    # Numbered as the DIP it stands in for, which is all an IC symbol reads.
+    "smd-adapter": "ic",
 }
 
 _TWO_TERMINAL_KINDS: frozenset[SymbolKind] = frozenset(

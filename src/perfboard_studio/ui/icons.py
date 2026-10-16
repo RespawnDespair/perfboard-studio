@@ -699,6 +699,28 @@ def _module(p: QPainter, style: Any) -> None:
         p.drawPoint(QPointF(72, y))
 
 
+def _smd_adapter(p: QPainter, style: Any) -> None:
+    """A small square board with a header pin at each corner of its two rows and a chip
+    on it with its gull-wing legs out sideways -- smaller than the board, which is the
+    difference between this and a DIP at a glance."""
+    _fill(p, style)
+    p.drawRect(QRectF(14, 14, 72, 72))
+    p.setPen(_pen(LEAD, 5))
+    for y in (38, 50, 62):
+        p.drawLine(QPointF(30, y), QPointF(40, y))
+        p.drawLine(QPointF(60, y), QPointF(70, y))
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor("#24262d"))
+    p.drawRect(QRectF(38, 30, 24, 40))
+    p.setPen(_pen("#d8b45a", 8))
+    for y in (24, 38, 52, 66, 78):
+        p.drawPoint(QPointF(22, y))
+        p.drawPoint(QPointF(78, y))
+    # The pin-1 dot on the chip, and the corner it belongs to.
+    p.setPen(_pen(style.accent, 5))
+    p.drawPoint(QPointF(43, 35))
+
+
 def _flying_leads(p: QPainter, style: Any) -> None:
     """A row of pads, each with a wire rising out of it and curving away off the board --
     the only part of a panel pot or a jack the board ever has."""
@@ -742,6 +764,7 @@ PART_DRAWINGS: dict[str, Callable[[QPainter, Any], None]] = {
     "screw-terminal-vertical": _screw_terminal,
     "module-board": _module,
     "flying-leads": _flying_leads,
+    "smd-adapter": _smd_adapter,
 }
 
 

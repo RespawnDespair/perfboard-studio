@@ -1119,6 +1119,7 @@ REF_PREFIXES: dict[str, str] = {
     "module-board": "U",
     # Whatever it is on the panel; "J" until it is given its own letter, as a jack would be.
     "flying-leads": "J",
+    "smd-adapter": "U",
 }
 
 
@@ -2145,6 +2146,9 @@ def _paint_body(
         _paint_pin_marks(painter, footprint, pitch, accent, square=False)
         _paint_wire_entries(painter, footprint, rect, pitch)
 
+    elif archetype == "smd-adapter":
+        _paint_adapter(painter, footprint, rect, keyed)
+
     elif archetype == "module-board" and art:
         _paint_module_art(painter, art)
 
@@ -2177,6 +2181,48 @@ def _paint_body(
         painter.setPen(QPen(QColor(style.edge), 0.14))
         painter.setBrush(QBrush(accent))
         painter.drawEllipse(rect.center(), radius, radius)
+
+
+def _paint_adapter(
+    painter: QPainter,
+    footprint: Footprint,
+    rect: QRectF,
+    keyed: tuple[float, float] | None,
+) -> None:
+    """A chip on its adapter, from above: its legs out to either side, its moulding, and the
+    dot by pin 1. The header pins need nothing here -- the item draws every pin over the
+    body, pin 1 ringed, as it does for a module.
+
+    In the footprint's frame, where the legs run along y as the DIP's pins do, and from the
+    footprint's own ``dims`` -- the chip's JEDEC outline -- so a TSSOP-20 is drawn finer
+    than a SOIC-8 rather than as one picture of "a chip". The 3D view reads the same keys.
+    """
+    dims = footprint.body.dims
+    cx, cy = rect.center().x(), rect.center().y()
+    length = dims.get("chipLength", rect.height() * 0.5)
+    body = dims.get("chipWidth", rect.width() * 0.4)
+    span = dims.get("chipSpan", body * 1.5)
+    leg_pitch = dims.get("chipPitch", 1.27)
+    per_side = max(1, len(footprint.pins) // 2)
+    leg = leg_pitch * 0.45
+    painter.setPen(QPen(QColor("#0c0d10"), 0.03))
+    painter.setBrush(QBrush(LEAD))
+    for index in range(per_side):
+        y = cy + (index - (per_side - 1) / 2) * leg_pitch
+        painter.drawRect(QRectF(cx - span / 2, y - leg / 2, (span - body) / 2, leg))
+        painter.drawRect(QRectF(cx + body / 2, y - leg / 2, (span - body) / 2, leg))
+    painter.setBrush(QBrush(_art_colour("epoxy")))
+    painter.drawRect(QRectF(cx - body / 2, cy - length / 2, body, length))
+    if keyed is not None:
+        # The dot in the chip's pin-1 corner: towards pin 1's column and pin 1's end.
+        dot = min(0.4, body * 0.1)
+        inset = dot * 2.2
+        sx = -1.0 if keyed[0] < cx else 1.0
+        sy = -1.0 if keyed[1] < cy else 1.0
+        painter.setBrush(QBrush(QColor(BODY_STYLES["smd-adapter"].accent)))
+        painter.drawEllipse(
+            QPointF(cx + sx * (body / 2 - inset), cy + sy * (length / 2 - inset)), dot, dot
+        )
 
 
 # -- what stands on a recognised module, from above ---------------------------------------

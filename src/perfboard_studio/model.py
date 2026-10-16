@@ -316,6 +316,10 @@ BodyArchetype: TypeAlias = Literal[  # noqa: UP040
     # pins (connectivity, LVS, the router, the placer, DRC) takes it as it takes any part.
     # What it IS lives on the part, in its value, its pin names and its declared symbol.
     "flying-leads",
+    # A surface-mount chip soldered onto a small SOIC/SSOP/TSSOP/MSOP-to-DIP adapter board,
+    # which stands on two rows of header pins numbered as the DIP it imitates. It goes in
+    # like a DIP and is built like a module: the chip first, on the bench, then the board.
+    "smd-adapter",
 ]
 
 #: Archetypes that get hot enough to matter to a neighbour.
