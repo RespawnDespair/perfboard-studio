@@ -20,6 +20,46 @@ closed without a bump.
 
 ## [Unreleased]
 
+### Added
+
+- **A solderless breadboard is a board type.** File ▸ Board Setup ▸ Type ▸ Breadboard, in
+  the three sizes they are sold in: full (830 points), half (400) and mini (170, no rails).
+  The pattern is the real one -- five holes to a clip up each half of a column, a groove down
+  the middle for a DIP to straddle, and on the larger two a + and a − rail along each long
+  edge -- and it is the board's shape rather than anything new in the file, so a `.perf` from
+  an earlier release opens exactly as it did. Two parts of different nets in one clip are a
+  short, and LVS says so; a pin where the board has no hole is a DRC error.
+
+- **Every hole on a breadboard is named as the board prints it**: `e12`, the row letter and
+  then the column, and `T+12` or `B-3` for a hole on a rail. The guide, DRC, LVS, the
+  router's explanations, the window and the MCP server all say it that way, and an agent
+  addresses a breadboard's holes the same way.
+
+- **Place on the Board and Autoroute work on one.** The placer keeps two nets out of one
+  clip, puts a chip across the groove because nowhere else separates its pins, and keeps
+  everything but ground off a − rail and everything but power off a + rail. Autoroute plans
+  jumpers into free holes -- one lead to a hole -- runs ground and power down the rails with a
+  short jumper from each clip that needs them, bridges a rail pair once at the end of the
+  board when both halves carry a net, and reports anything it cannot do. All six examples
+  place and wire on a full-size breadboard with LVS clean.
+
+- **It looks like one, in both views and in STEP**: white plastic with square openings, the
+  groove, a blue line beside each ground rail and a red one beside each power rail, and the
+  column numbers and row letters it prints. Leads go into the plastic and stop there; nothing
+  is soldered underneath.
+
+- **Its build guide is a building guide.** No iron, no solder and no flux on the bench --
+  unless a chip has to go onto its adapter first -- and solid-core wire, because a stranded
+  end frays in a clip. The jumpers go in first, flat on the plastic, cut to their length and
+  two 6 mm stripped ends; then the flat parts; then each IC across the groove, pin 1 named by
+  the hole; then everything else, shortest first. Each continuity check comes once the parts
+  it probes are in. In Turkish too.
+
+- **File ▸ New Board from This Design** takes the circuit to another board as a new
+  document -- every part back in the design, the nets and the schematic carried, nothing of
+  the old board's -- and asks which board to put it on. A circuit tried on a breadboard goes
+  on to perfboard this way, and the breadboard's own file stays as it was.
+
 ## [0.18.0] - 2026-10-16
 
 ### Added

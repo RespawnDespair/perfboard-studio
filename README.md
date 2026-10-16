@@ -359,6 +359,8 @@ src/perfboard_studio/boardfit.py which stock board to buy, by building the desig
 src/perfboard_studio/step_export.py  the board as STEP solids, the bodies DRC measured
 src/perfboard_studio/stripboard.py  the board whose copper arrives joined, and striproute.py
                            for the cuts-and-links planner that designs on one
+src/perfboard_studio/breadboard.py  the solderless breadboard's fixed pattern, and breadroute.py
+                           for the jumpers and rails that wire one
 src/perfboard_studio/parsers/    KiCad netlist importer, and kicad_parts.py: which part each
                            component is, and which of its legs is which
 src/perfboard_studio/ui/         Qt application: 2D editor, VTK 3D view, 1:1 PDF export,
@@ -403,7 +405,8 @@ with T's and labels and the sheet export beside it, board, schematic and 3D side
 with one selection between them, a catalog of real parts with their pin names printed on
 the board, modules on header strips drawn as what is on them, labels written on the board,
 KiCad netlists read part by part, parts described by their own measurements when the
-library does not have them, parts on the panel wired to the board, crash recovery, the MCP server, TR/EN localisation, the
+library does not have them, parts on the panel wired to the board, solderless breadboards —
+the circuit tried on one and then taken to perfboard —, crash recovery, the MCP server, TR/EN localisation, the
 three-platform packaging that a `v*` tag runs, and the update check that tells you a release exists and fetches it (**Help ▸ Check
 for Updates**; it verifies the download against the release's `SHA256SUMS` and then hands
 it to you — running it stays your click).

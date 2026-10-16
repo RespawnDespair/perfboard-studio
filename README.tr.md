@@ -364,6 +364,8 @@ src/perfboard_studio/boardfit.py hangi hazır kartın alınacağı, tasarım her
 src/perfboard_studio/step_export.py  STEP katıları olarak kart: DRC'nin ölçtüğü gövdeler
 src/perfboard_studio/stripboard.py  bakırı baştan bağlı gelen kart; striproute.py onun üstünde
                            tasarım yapan kes-ve-bağla planlayıcısı
+src/perfboard_studio/breadboard.py  lehimsiz breadboard'un sabit deseni; breadroute.py onu
+                           kablolayan jumper ve ray planlayıcısı
 src/perfboard_studio/parsers/    KiCad netlist içe aktarıcı; kicad_parts.py: her bileşenin hangi
                            parça olduğu ve hangi bacağının hangisi olduğu
 src/perfboard_studio/ui/         Qt uygulaması: 2D editör, VTK 3D görünüm, 1:1 PDF çıktısı,
@@ -409,7 +411,8 @@ paneli ve yanındaki sayfa dışa aktarımı, aralarında tek bir seçimle yan y
 3D, pin adları kartta basılan gerçek parça kataloğu, üzerinde ne varsa o olarak çizilen pin
 başlıklarındaki modüller, karta yazılan etiketler, parça parça okunan KiCad netlist'leri,
 kütüphanede olmayan parçaların kendi ölçüleriyle tarif edilmesi, karta tellerle bağlanan
-panel parçaları, çökme kurtarma, MCP
+panel parçaları, lehimsiz breadboard'lar — devre önce onda denenip sonra perfboard'a taşınır —,
+çökme kurtarma, MCP
 sunucusu, TR/EN yerelleştirme, bir `v*` etiketiyle çalışan üç platformluk paketleme, ve
 yeni sürümü haber verip indiren güncelleme denetimi
 (**Yardım ▸ Güncellemeleri Denetle**; indirdiğini sürümün `SHA256SUMS` dosyasıyla
