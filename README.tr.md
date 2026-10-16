@@ -3,10 +3,10 @@
 </p>
 
 <p align="center">
-  Bir şema netlist'ini alan, onu delik-başına-pad plaket üzerine yerleştiren,<br>
-  bağlantıları router'a çözdüren, sonucun şemayla birebir örtüştüğünü kanıtlayan<br>
-  ve ölçüm kontrol noktaları içeren adım adım bir montaj rehberi yazan bir<br>
-  masaüstü uygulaması.
+  Devreyi çizdiğiniz, onu plakete — ya da şeritli karta, ya da önce lehimsiz bir<br>
+  breadboard'a — yerleştirdiğiniz, bağlantıları router'a çözdürdüğünüz, kartın şemayla<br>
+  birebir örtüştüğünü kanıtlayan ve ölçüm kontrol noktaları içeren adım adım bir montaj<br>
+  rehberi yazan bir masaüstü uygulaması.
 </p>
 
 <p align="center">
@@ -46,19 +46,22 @@
   çıplak tel, izoleli tel ve üstten jumper — altısının da maliyeti, sınırı ve
   bozulma biçimi farklı, ve router altısını da fiyatlandırıyor. Gerçekten
   lehimlenmesi keyifli bir yerleşimi çıkaran şey bu.
+- **Önce breadboard, sonra plaket.** Lehimsiz breadboard da bir kart tipi: yerleştirilir,
+  jumper'larla ve raylardan gelen güçle kablolanır, içinde havya olmayan bir kurulum
+  rehberi alır. Devre çalışınca aynı tasarım plakete geçer.
 - **Yalnızca üçüncü boyutun görebildiği üç kural.** Kutuya sığmayan bir parça,
   üstüne parça lehimlenecek bir jumper, ve sıcak bir parçanın fazla yakınında
   duran ısıya duyarlı bir parça. 3D görünüm bir resim değil, kontrol aracı — ve kart,
   aynı gövdelerden oluşan bir STEP modeli olarak da çıkar, kutusu etrafına çizilsin diye.
-- **KiCad netlist'inden gerçek parçalar.** Değer bir katalog parçasını adlandırır —
-  BC547, 7805, Arduino Nano — KiCad footprint'i de bir kılıfı. Şemadaki sembol pinleri
-  elinizdeki parçadan farklı numaralıyorsa pinler adlarıyla yeniden numaralanır; kart,
-  gerçekten lehimleyeceğiniz parçaya göre kablolanır.
+- **Gerçek parçalar, adlarıyla.** Katalogdan bir BC547, 7805 ya da Arduino Nano seçin;
+  veri sayfasının her bacağa verdiği adla gelir. Elinizde bir KiCad netlist'i varsa o da
+  aynı yoldan girer — sembolü pinleri elinizdeki parçadan farklı numaralıyorsa pinler
+  adlarıyla yeniden numaralanır, kart gerçekten lehimleyeceğiniz parçaya göre kablolanır.
 - **Ajan-dostu.** MCP sunucusu, headless CLI ve git ile diff alınabilen proje
   dosyası; hepsi GUI ile aynı komut veri yolunu kullanır — yani bir insanın ve
   bir modelin aynı oturumda birlikte çalıştığı bir kartta geri alma çalışır.
 
-> **Durum: pre-alpha, ve uçtan uca çalışıyor.** Netlist giriyor, lehimleme
+> **Durum: pre-alpha, ve uçtan uca çalışıyor.** Devre giriyor, lehimleme
 > rehberi çıkıyor. Eksik olan tek şey dogfood testi — henüz kimse üretilen bir
 > rehberi takip ederek gerçek bir kart lehimlemedi ve [PLAN.md](./PLAN.md) §11'e
 > göre bu olmadan M5 kapanmıyor. Gerisi çalışıyor; her sürüm üç masaüstü
@@ -92,6 +95,15 @@ Komşu pad'e olan 0,6 mm'lik boşluk, lehim yollarını hem bu kadar kullanışl
 kadar kolay yanlış yapılır kılan şeydir. Perfboard Studio bu riski router'ın maliyet
 fonksiyonuna işler ve işaretlenen her noktayı montaj rehberinde bir ölçüm adımına
 dönüştürür.
+
+**Ya da hiç lehimsiz.** Lehimsiz breadboard da bir kart tipi; satıldığı üç boyutta, ve
+delikleri tahtanın bastığı gibi adlandırılır — `e12`, önce sıra harfi. Yerleştirici iki
+neti aynı klibe koymaz ve her entegreyi oluğun üstüne oturtur, router jumper'ları boş
+deliklere, toprağı ve gücü raylara taşır, rehber de bir kurulum rehberine dönüşür: önce
+plastiğin üstüne düz yatan jumper'lar, hiçbir yerde havya yok. Devre çalışınca *Dosya ▸ Bu
+Tasarımdan Yeni Kart Oluştur* onu plakete taşır; breadboard'un dosyası olduğu gibi kalır.
+
+![Yarım boy breadboard'a yerleştirilip kablolanmış NE555 astable](./docs/images/breadboard-3d.png)
 
 <a id="iki-yuz"></a>
 
@@ -327,7 +339,8 @@ claude mcp add perfboard-studio -- uvx --from "perfboard-studio[mcp]" perfboard-
 `claude mcp add perfboard-studio -- perfboard-studio-mcp`.
 
 Elli dört tool, ve her delik insanların perfboard'dan bahsederken kullandığı adresle
-(`A1`, `C7`, `AC12`) — hiçbir yerde ham koordinat yok; bitmiş kartı kutusunun çizildiği CAD
+(`A1`, `C7`, `AC12`) — breadboard'da ise tahtanın bastığı gibi (`e12`, `T+12`) — hiçbir
+yerde ham koordinat yok; bitmiş kartı kutusunun çizildiği CAD
 programına teslim eden `export_step` de dahil. Tool listesi, diğer istemcilerin
 istediği JSON yapılandırması ve kurulumun geri kalanı için [docs/MCP.md](./docs/MCP.md).
 
@@ -373,7 +386,7 @@ src/perfboard_studio/ui/         Qt uygulaması: 2D editör, VTK 3D görünüm, 
 src/perfboard_studio/mcp/        MCP sunucusu (docs/MCP.md)
 src/perfboard_studio/catalog.py  gerçek parçalar, adlarıyla ve veri sayfalarıyla
 examples/                  içe aktarılacak netlist'ler ve çıktıkları kartlar
-tests/                     ~3950 test; motor mypy --strict temiz
+tests/                     ~4250 test; motor mypy --strict temiz
 packages/                  Python portunun karşısında kanıtlandığı referans olarak
                            saklanan orijinal TypeScript motoru
 ```

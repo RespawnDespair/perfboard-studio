@@ -40,6 +40,7 @@ height of the screen it opens on, and at 125 % a 1080-line screen is 864 lines t
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import sys
 from pathlib import Path
@@ -59,8 +60,11 @@ from PySide6.QtGui import QPixmap  # noqa: E402
 from PySide6.QtWidgets import QApplication, QMainWindow  # noqa: E402
 
 from perfboard_studio import persist  # noqa: E402
+from perfboard_studio.breadboard import breadboard  # noqa: E402
+from perfboard_studio.breadroute import plan_breadboard  # noqa: E402
+from perfboard_studio.commands import design_on_a_new_board  # noqa: E402
 from perfboard_studio.footprints import footprint_lookup  # noqa: E402
-from perfboard_studio.placer import PlacementOptions, plan_placement  # noqa: E402
+from perfboard_studio.placer import PlacementOptions, place_design, plan_placement  # noqa: E402
 from perfboard_studio.ui import view3d  # noqa: E402
 from perfboard_studio.ui.main import MainWindow  # noqa: E402
 
@@ -217,6 +221,8 @@ def main() -> int:
     view3d.render_offscreen(document, lookup, str(OUT_DIR / "board-3d.png"), width=1400, height=950)
     shots.append(("board-3d.png", "3D view, component side"))
 
+    if not _breadboard_shot(shots):
+        return 1
     if not _nano_relay_shots(app, shots):
         return 1
     # Last, because it opens the 3D view and the guide, and every window after it would
@@ -228,6 +234,42 @@ def main() -> int:
         size = (OUT_DIR / name).stat().st_size
         print(f"{name:32} {size // 1024:5} KB   {what}")
     return 0
+
+
+#: The 555 again, tried on a half-size breadboard before it goes on to perfboard.
+BREADBOARD_EXAMPLE = REPO_ROOT / "examples" / "ne555-astable.perf"
+
+
+def _breadboard_shot(shots: list[tuple[str, str]]) -> bool:
+    """The 555 on a solderless breadboard, in 3D.
+
+    Taken to the breadboard the way the window takes a design to a new board
+    (``design_on_a_new_board``), then placed and wired by the very calls Place on the Board
+    and Autoroute make -- seeded, so the picture comes out the same every time -- and
+    rendered offscreen, like ``board-3d.png``.
+    """
+    result = persist.deserialize_document(BREADBOARD_EXAMPLE.read_text(encoding="utf-8"))
+    if not result.ok:
+        print(f"LOAD FAILED [{result.code}] {result.message}")
+        return False
+    lookup = footprint_lookup()
+    design = design_on_a_new_board(result.document, result.document.meta)
+    on_breadboard = dataclasses.replace(
+        design, board=breadboard("400"), edge_connectors=(), mounting_holes=()
+    )
+    placed = place_design(on_breadboard, lookup)
+    if placed.unplaced:
+        print(f"BREADBOARD PLACEMENT LEFT {placed.unplaced} IN THE DESIGN")
+        return False
+    plan = plan_breadboard(placed.document, lookup)
+    if plan.problems:
+        print(f"BREADBOARD WIRING: {[problem.code for problem in plan.problems]}")
+        return False
+    view3d.render_offscreen(
+        plan.document, lookup, str(OUT_DIR / "breadboard-3d.png"), width=1400, height=950
+    )
+    shots.append(("breadboard-3d.png", "the 555 on a solderless breadboard, in 3D"))
+    return True
 
 
 #: The example that is a real part list rather than a textbook circuit: an Arduino Nano on

@@ -3,9 +3,9 @@
 </p>
 
 <p align="center">
-  A desktop app that takes a schematic netlist, lays it out on pad-per-hole<br>
-  perfboard, lets the router work out the connections, proves the board matches<br>
-  the schematic, and writes a step-by-step build guide with measurement<br>
+  A desktop app where you draw a circuit, lay it out on perfboard — or on stripboard,<br>
+  or on a solderless breadboard first — let the router work out the connections, prove<br>
+  the board matches the schematic, and get a step-by-step build guide with measurement<br>
   checkpoints.
 </p>
 
@@ -46,20 +46,24 @@
   solder trace, bare wire, insulated wire and a top jumper have different costs,
   limits and failure modes, and the router prices all six — which is what makes
   a layout that is pleasant to actually solder.
+- **A breadboard first, then the perfboard.** A solderless breadboard is a board type
+  too: placed, wired with jumpers and power down the rails, and given a building guide
+  with no iron in it. When the circuit works, the same design goes on to perfboard.
 - **Three rules only the third dimension can see.** A part too tall for the case,
   a jumper trapped under a body that gets soldered down on top of it, and a
   heat-sensitive part sitting too close to a hot one. The 3D view is a checking
   tool, not a picture — and the board leaves as a STEP model of the same bodies, to
   draw its case round.
-- **Real parts, read out of a KiCad netlist.** A value names a catalog part — a
-  BC547, a 7805, an Arduino Nano — and a KiCad footprint names a package. Where the
-  schematic's symbol numbers the pins differently from the part in your hand, they are
-  renumbered by name, so the board is wired for the part you actually solder.
+- **Real parts, by name.** Pick a BC547, a 7805 or an Arduino Nano out of the catalog
+  and it arrives with what its datasheet calls every lead. A KiCad netlist, if you have
+  one, comes in the same way — and where its symbol numbers the pins differently from the
+  part in your hand, they are renumbered by name, so the board is wired for the part you
+  actually solder.
 - **Agent-native.** An MCP server, a headless CLI and a git-diffable project
   file, all driving the same command bus as the GUI — so undo works across a
   session where a human and a model both edit the board.
 
-> **Status: pre-alpha, and end to end.** A netlist goes in and a soldering guide
+> **Status: pre-alpha, and end to end.** A circuit goes in and a soldering guide
 > comes out. What is missing is the dogfood test — nobody has yet built a real
 > board by following a generated guide, and [PLAN.md](https://github.com/medinstech/perfboard-studio/blob/main/PLAN.md) §11
 > says M5 does not close until somebody has. Everything else runs, and every
@@ -94,6 +98,16 @@ actually solder:
 The 0.6 mm gap to the neighbouring pad is why solder traces are both so useful and so
 easy to get wrong. Perfboard Studio scores that risk into the router's cost function, and turns
 every flagged spot into a measurement step in the build guide.
+
+**Or no solder at all.** A solderless breadboard is a board type too, in the three sizes it
+is sold in, and its holes are named the way it prints them — `e12`, row letter first. The
+placer keeps two nets out of one clip and puts each chip across the groove, the router runs
+jumpers into free holes and ground and power down the rails, and the guide becomes a
+building guide: jumpers first, flat on the plastic, and no iron anywhere. When the circuit
+works, *File ▸ New Board from This Design* takes it on to perfboard, and the breadboard's
+file stays as it was.
+
+![The NE555 astable on a half-size breadboard, placed and wired](https://raw.githubusercontent.com/medinstech/perfboard-studio/main/docs/images/breadboard-3d.png)
 
 ## Both faces, and the third dimension
 
@@ -322,7 +336,8 @@ Nothing has to be installed first — `uvx` fetches the package into its own cac
 clone it is `pip install -e ".[mcp]"` and then `claude mcp add perfboard-studio -- perfboard-studio-mcp`.
 
 Fifty-four tools, every hole addressed the way people talk about perfboard (`A1`, `C7`,
-`AC12`) and never as raw coordinates — down to `export_step`, which hands the finished board
+`AC12`) — or, on a breadboard, the way it prints them (`e12`, `T+12`) — and never as raw
+coordinates — down to `export_step`, which hands the finished board
 to the CAD program its case is drawn in. See [docs/MCP.md](https://github.com/medinstech/perfboard-studio/blob/main/docs/MCP.md) for the tool list,
 the JSON config other clients want, and the rest of the setup.
 
@@ -368,7 +383,7 @@ src/perfboard_studio/ui/         Qt application: 2D editor, VTK 3D view, 1:1 PDF
 src/perfboard_studio/mcp/        the MCP server (docs/MCP.md)
 src/perfboard_studio/catalog.py  the real parts, by name, each with its datasheet
 examples/                  netlists to import, and the boards they become
-tests/                     ~3950 tests; the engine is mypy --strict clean
+tests/                     ~4250 tests; the engine is mypy --strict clean
 packages/                  the original TypeScript engine, kept as the reference the
                            Python port is proved against
 ```
