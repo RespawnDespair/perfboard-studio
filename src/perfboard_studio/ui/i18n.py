@@ -1492,6 +1492,11 @@ TURKISH: Mapping[str, str] = {
     "Routing…": "Yönlendiriliyor…",
     "Planning cuts and links…": "Kesikler ve bağlantılar planlanıyor…",
     "Planning jumpers…": "Jumper'lar planlanıyor…",
+    "Breadboard — solderless; five holes to a clip, power on the rails": "Breadboard — lehimsiz; bir klipte beş delik, güç raylarda",
+    "Full size · 830 points · 63 columns": "Tam boy · 830 nokta · 63 kolon",
+    "Half size · 400 points · 30 columns": "Yarım boy · 400 nokta · 30 kolon",
+    "Mini · 170 points · 17 columns, no rails": "Mini · 170 nokta · 17 kolon, raysız",
+    "Nothing is soldered on a breadboard: use a jumper or an insulated wire.": "Breadboard'da lehim yapılmaz: jumper ya da izoleli kablo kullanın.",
     "Stopping, and keeping the best found so far…": (
         "Durduruluyor; şimdiye kadar bulunan en iyisi tutuluyor…"
     ),

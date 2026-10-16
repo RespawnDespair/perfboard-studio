@@ -2857,7 +2857,13 @@ def suggest_boards(
     corner screws take are reserved, as they are when the design is placed on it for real.
     They used to be ignored here, so the arrangement counted a strip of holes nothing can be
     soldered into as room.
+
+    Nothing is offered for a breadboard: a stock perfboard is not one, and resizing one to a
+    perfboard's grid is a breadboard ``board.set`` refuses. Its sizes are its pattern, and
+    are chosen as such in Board Setup.
     """
+    if is_breadboard(base):
+        return ()
     suggestions: list[BoardSuggestion] = []
     for preset in sorted(presets, key=lambda p: (p.width_mm * p.height_mm, p.name)):
         if preset.single_sided != base.single_sided:

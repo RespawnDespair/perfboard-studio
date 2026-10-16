@@ -1657,6 +1657,17 @@ what every caller asks of a board that joins its own holes. Four rules, each wit
 length is a lower bound, so the answer is the exhaustive one, and walking every jumper's holes
 for the parts it passes under was nearly all of a placement trial on a breadboard.
 
+**In the window a breadboard is plastic, not copper.** `view2d.BreadboardItem` replaces the
+pad grid, the strips and the legend: one moulded opening rasterised once and blitted per
+hole (`PadGridItem`'s rule, for its reason), the groove a DIP straddles, a line beside each
+rail in the ink of the class it is for, and the board's own print -- column numbers every
+five and the row letters at both ends, in millimetres, as silkscreen is. Because the board
+names its own holes, `legend_is_readable` is true on its face and the grid ruler stands
+down. Board Setup asks a breadboard only its size (`BREADBOARD_SIZES`); `suggest_boards`
+offers no stock perfboard for one, so the Board step goes to Board Setup. Solder, spine and
+bare-wire tools are greyed out on it (`drc.BREADBOARD_CONDUCTOR_KINDS`), and a wire drawn by
+hand goes on its top side -- the default bottom is `not-on-breadboard`.
+
 ### Layering
 
 ```

@@ -53,6 +53,14 @@ from PySide6.QtWidgets import (
     QLabel,
 )
 
+from perfboard_studio.breadboard import (
+    RAIL_CLASS,
+    has_hole,
+    has_rails,
+    is_breadboard,
+    rail_of,
+    strip_letter,
+)
 from perfboard_studio.command import CommandBus, DispatchResult
 from perfboard_studio.commands import (
     AddConductorPayload,
@@ -87,6 +95,7 @@ from perfboard_studio.geometry import (
     format_hole,
     hole_key,
     hole_span_mm,
+    holeless_positions,
     holes_without_grid_pad,
     is_inside_board,
     legend_strip_mm,
@@ -1009,6 +1018,185 @@ class StripGridItem(QGraphicsItem):
                 continue
             radius = min(extent_x, extent_y) / 2
             painter.drawRoundedRect(rect, radius, radius)
+
+
+#: A solderless breadboard, as it looks: white plastic, square openings, a groove down the
+#: middle, a red and a blue line beside the rails and grey print. Its own colours rather than
+#: a board scheme, because a scheme is a solder mask and this board has none.
+BREADBOARD_BODY = "#f3f2ee"
+BREADBOARD_EDGE = "#cbc8c0"
+BREADBOARD_HOLE = "#2e2d2b"
+BREADBOARD_HOLE_RIM = "#d9d6ce"
+BREADBOARD_GROOVE = "#dedbd3"
+BREADBOARD_PRINT = "#77746c"
+#: The rail lines: what each rail's class looks like printed beside it.
+BREADBOARD_RAIL_INK: dict[str, str] = {"ground": "#2f63c0", "power": "#d4373a"}
+
+#: The opening a lead goes into, across, in mm -- a square, as moulded.
+BREADBOARD_HOLE_MM = 1.1
+#: How wide the groove down the middle is drawn.
+BREADBOARD_GROOVE_MM = 1.6
+#: Print heights, in mm of plastic.
+BREADBOARD_NUMBER_MM = 1.3
+BREADBOARD_LETTER_MM = 1.5
+
+
+class BreadboardItem(QGraphicsItem):
+    """A solderless breadboard: its holes, the groove a DIP straddles, the rail lines and
+    the print -- in place of the pads, the strips and the legend of a copper board.
+
+    The holes follow ``PadGridItem``'s rule and for its reason: ONE opening rasterised once
+    and blitted per hole, culled to what is exposed. The print is the board's own -- the
+    column numbers every five and the row letters at each end, as an MB102 prints them --
+    so it is drawn as silkscreen is, in millimetres that scale with the board, and it is
+    what a builder reads "e12" off. From underneath there is no print to read and none is
+    drawn; the rail lines stay, because they are what says which rail is which.
+    """
+
+    _SIZE_BUCKET_PX = 4
+
+    def __init__(self, board: Board, side: BoardSide) -> None:
+        super().__init__()
+        self.board = board
+        self.side = side
+        self.drawn = 0
+        self._hole_pixmap: QPixmap | None = None
+        self._hole_pixmap_px = 0
+        self.setZValue(-90)
+
+    def boundingRect(self) -> QRectF:
+        return _outline_rect(self.board)
+
+    def _hole_for(self, px: float) -> QPixmap:
+        bucket = max(self._SIZE_BUCKET_PX, round(px / self._SIZE_BUCKET_PX) * self._SIZE_BUCKET_PX)
+        side = min(128, max(4, bucket * 2))
+        if self._hole_pixmap is not None and self._hole_pixmap_px == side:
+            return self._hole_pixmap
+        pixmap = QPixmap(side, side)
+        pixmap.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # A moulded opening: a pale chamfer round a dark square, so it reads as a hole in
+        # the plastic rather than a dot printed on it.
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor(BREADBOARD_HOLE_RIM)))
+        painter.drawRoundedRect(QRectF(0, 0, side, side), side * 0.18, side * 0.18)
+        inset = side * 0.16
+        painter.setBrush(QBrush(QColor(BREADBOARD_HOLE)))
+        painter.drawRect(QRectF(inset, inset, side - 2 * inset, side - 2 * inset))
+        painter.end()
+        self._hole_pixmap = pixmap
+        self._hole_pixmap_px = side
+        return pixmap
+
+    def _row_y(self, row: float) -> float:
+        """A row position on screen, fractional rows included."""
+        return hole_to_screen(HoleCoord(0, 0), self.board, self.side).y() + row * self.board.pitch
+
+    def _col_x(self, col: float) -> float:
+        """A column position on screen, mirrored with the board when it is turned over."""
+        first = hole_to_screen(HoleCoord(0, 0), self.board, self.side).x()
+        step = hole_to_screen(HoleCoord(1, 0), self.board, self.side).x() - first
+        return first + col * step
+
+    def paint(self, painter: QPainter, option: Any, widget: Any = None) -> None:
+        b = self.board
+        pitch = b.pitch
+        outline = _outline_rect(b)
+        rows = range(b.rows)
+        letters = {row: strip_letter(b, row) for row in rows}
+        strip_rows = [row for row in rows if letters[row] is not None]
+
+        # The groove down the middle: between the last upper row (f) and the first lower (e).
+        upper = max(row for row in strip_rows if (letters[row] or "") >= "f")
+        lower = min(row for row in strip_rows if (letters[row] or "") <= "e")
+        middle = (self._row_y(upper) + self._row_y(lower)) / 2
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QBrush(QColor(BREADBOARD_GROOVE)))
+        painter.drawRect(
+            QRectF(outline.left(), middle - BREADBOARD_GROOVE_MM / 2, outline.width(), BREADBOARD_GROOVE_MM)
+        )
+
+        # A line beside each rail: outside the outer rail of a pair, inside the inner one,
+        # so the two lines frame the pair as on Fritzing's MB102.
+        if has_rails(b):
+            left, right = sorted((self._col_x(0) - pitch * 0.4, self._col_x(b.cols - 1) + pitch * 0.4))
+            rail_rows = [row for row in rows if rail_of(b, row) is not None]
+            for row in rail_rows:
+                rail = rail_of(b, row)
+                assert rail is not None
+                pair = [r for r in rail_rows if (r < b.rows / 2) == (row < b.rows / 2)]
+                away = -1 if row == min(pair) else 1
+                y = self._row_y(row + away * 0.62)
+                painter.setPen(QPen(QColor(BREADBOARD_RAIL_INK[RAIL_CLASS[rail]]), 0.35))
+                painter.drawLine(QPointF(left, y), QPointF(right, y))
+
+        # The openings.
+        area = option.exposedRect
+        px_per_mm = abs(painter.transform().m11()) or 1.0
+        pixmap = self._hole_for(BREADBOARD_HOLE_MM * px_per_mm)
+        source = QRectF(0, 0, pixmap.width(), pixmap.height())
+        half = BREADBOARD_HOLE_MM / 2
+        count = 0
+        for row in rows:
+            y = self._row_y(row)
+            if y + half < area.top() or y - half > area.bottom():
+                continue
+            for col in range(b.cols):
+                if not has_hole(b, HoleCoord(col, row)):
+                    continue
+                x = self._col_x(col)
+                if x + half < area.left() or x - half > area.right():
+                    continue
+                painter.drawPixmap(
+                    QRectF(x - half, y - half, BREADBOARD_HOLE_MM, BREADBOARD_HOLE_MM), pixmap, source
+                )
+                count += 1
+        self.drawn = count
+
+        if self.side != "top":
+            return
+        # The print: column numbers above the top strip row and below the bottom one,
+        # every five as the board has them, and the row letters at both ends.
+        painter.save()
+        painter.setPen(QColor(BREADBOARD_PRINT))
+        number_rows = (min(strip_rows) - 1.05, max(strip_rows) + 1.05)
+        for col in range(b.cols):
+            number = col + 1
+            if number != 1 and number % 5:
+                continue
+            for at_row in number_rows:
+                draw_physical_label(
+                    painter,
+                    QPointF(self._col_x(col), self._row_y(at_row)),
+                    str(number),
+                    BREADBOARD_NUMBER_MM,
+                    bold=False,
+                    max_width_mm=pitch * 1.6,
+                )
+        ends = (-1.15, b.cols - 1 + 1.15)
+        for row in strip_rows:
+            for at_col in ends:
+                draw_physical_label(
+                    painter,
+                    QPointF(self._col_x(at_col), self._row_y(row)),
+                    letters[row] or "",
+                    BREADBOARD_LETTER_MM,
+                    bold=False,
+                )
+        for row in rows:
+            rail = rail_of(b, row)
+            if rail is None:
+                continue
+            painter.setPen(QColor(BREADBOARD_RAIL_INK[RAIL_CLASS[rail]]))
+            for at_col in ends:
+                draw_physical_label(
+                    painter,
+                    QPointF(self._col_x(at_col), self._row_y(row)),
+                    "+" if rail.endswith("+") else "\u2212",
+                    BREADBOARD_LETTER_MM * 1.2,
+                )
+        painter.restore()
 
 
 class TrackCutItem(QGraphicsItem):
@@ -3082,6 +3270,8 @@ class BoardScene(QGraphicsScene):
         #: Draw the labels written on the board (View > Show Board Labels).
         self.show_board_notes = True
         self.pad_grid: PadGridItem | None = None
+        #: The board itself, on a breadboard -- see BreadboardItem. None on every other.
+        self.breadboard_item: BreadboardItem | None = None
         self.show_ratsnest = show_ratsnest
         self.show_rulers = show_rulers
         self.highlighted_nets: tuple[str, ...] = ()
@@ -3217,6 +3407,10 @@ class BoardScene(QGraphicsScene):
         ruler is suppressed then (see ``_build``), and a menu item that silently does
         nothing is worse than one that is visibly unavailable.
         """
+        if is_breadboard(self.document.board):
+            # It prints its own addresses -- "e12" -- on the face a builder reads it from,
+            # and a grid ruler of A, B, C beside them would name the holes a second way.
+            return self.side == "top"
         labels = self.document.board.labels
         return labels is not None and labels.face in ("both", self.side)
 
@@ -3297,6 +3491,7 @@ class BoardScene(QGraphicsScene):
             consumed_holes(self.document)
             | undrilled_holes(self.document)
             | cut_holes(self.document)
+            | holeless_positions(self.document.board)
         )
         self.clear()
         self._risk_item = None
@@ -3329,17 +3524,27 @@ class BoardScene(QGraphicsScene):
         self.setBackgroundBrush(QBrush(BACKGROUND))
 
         scheme = scheme_for(board.material)
+        breadboard = is_breadboard(board)
         substrate = self.addRect(
             outline,
-            QPen(QColor(scheme.edge), 0.4),
-            QBrush(QColor(scheme.fill)),
+            QPen(QColor(BREADBOARD_EDGE if breadboard else scheme.edge), 0.4),
+            QBrush(QColor(BREADBOARD_BODY if breadboard else scheme.fill)),
         )
         substrate.setZValue(-100)
+
+        # A breadboard is plastic with holes and print, and none of the copper below: no
+        # pads, no strips, no legend, no fingers or bores (commands refuse those on one).
+        self.pad_grid = None
+        if breadboard:
+            self.breadboard_item = BreadboardItem(board, self.side)
+            self.addItem(self.breadboard_item)
+        else:
+            self.breadboard_item = None
 
         # Ink first, then copper on top of it: the legend is printed on the substrate and
         # a pad sits over the print, which is also the order that keeps a label legible
         # where it passes close to the outer row of pads.
-        if board.labels is not None:
+        if board.labels is not None and not breadboard:
             self.addItem(BoardLegendItem(self.document, board.labels, self.side))
 
         # A single-sided board has copper on the solder side ONLY. From the component
@@ -3358,15 +3563,16 @@ class BoardScene(QGraphicsScene):
         strips = StripGridItem(self.document, self.side)
         if strips.has_strips:
             self.addItem(strips)
-        self.pad_grid = PadGridItem(
-            board,
-            self.side,
-            holes_without_grid_pad(self.document, self.side)
-            | undrilled_holes(self.document)
-            | cut_holes(self.document),
-            copper=not (board.single_sided and self.side == "top"),
-        )
-        self.addItem(self.pad_grid)
+        if not breadboard:
+            self.pad_grid = PadGridItem(
+                board,
+                self.side,
+                holes_without_grid_pad(self.document, self.side)
+                | undrilled_holes(self.document)
+                | cut_holes(self.document),
+                copper=not (board.single_sided and self.side == "top"),
+            )
+            self.addItem(self.pad_grid)
         for cut in self.document.cuts:
             if is_stripboard(board):
                 self.addItem(TrackCutItem(cut, board, self.side))
@@ -3675,6 +3881,11 @@ class BoardScene(QGraphicsScene):
         if kind in ("solder-trace", "solder-trace-wired"):
             spec = NewSolderTraceConductor(
                 path=path, kind=cast(Any, kind), net_id=self._net_for(path)
+            )
+        elif is_breadboard(self.document.board):
+            # Pushed into the plastic from above: a breadboard has no other side to run on.
+            spec = NewWireConductor(
+                path=path, kind=cast(Any, kind), side="top", net_id=self._net_for(path)
             )
         else:
             spec = NewWireConductor(path=path, kind=cast(Any, kind), net_id=self._net_for(path))

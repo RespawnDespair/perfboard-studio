@@ -124,7 +124,8 @@ from perfboard_studio.boardfit import (
     BoardVerdict,
     choose_board,
 )
-from perfboard_studio.breadboard import is_breadboard
+from perfboard_studio.breadboard import SIZES as BREADBOARD_SIZES
+from perfboard_studio.breadboard import breadboard, is_breadboard
 from perfboard_studio.breadroute import plan_joined_board
 from perfboard_studio.catalog import CATALOG, CATEGORY_ORDER, CatalogPart, catalog_part
 from perfboard_studio.command import CommandBus, CommandContext, DispatchResult, HistoryEntry
@@ -172,7 +173,7 @@ from perfboard_studio.commands import (
     preset_payload,
 )
 from perfboard_studio.connectivity import FootprintLookup, extract_physical_nets
-from perfboard_studio.drc import DrcViolation, run_drc
+from perfboard_studio.drc import BREADBOARD_CONDUCTOR_KINDS, DrcViolation, run_drc
 from perfboard_studio.footprints import (
     MODULE_SEAT_SOCKETED_MM,
     MODULE_SEAT_SOLDERED_MM,
@@ -201,6 +202,7 @@ from perfboard_studio.geometry import (
     BoardPreset,
     board_edge_margin_mm,
     board_from_preset,
+    board_size_mm,
     edge_connector_holes,
     format_hole,
     hole_span_mm,
@@ -854,6 +856,15 @@ class BoardSetupDialog(QDialog):
     BOARD_TYPES: tuple[tuple[BoardType, str], ...] = (
         ("pad-per-hole", "Pad per hole — every hole is its own island"),
         ("stripboard", "Stripboard — whole rows joined; you cut the track to separate"),
+        ("breadboard", "Breadboard — solderless; five holes to a clip, power on the rails"),
+    )
+
+    #: The breadboards sold, by what they are called: their tie-point count. The pattern
+    #: is the size (``breadboard.SIZES``), so this is the whole of the question.
+    BREADBOARD_SIZES: tuple[tuple[str, str], ...] = (
+        ("830", "Full size · 830 points · 63 columns"),
+        ("400", "Half size · 400 points · 30 columns"),
+        ("170", "Mini · 170 points · 17 columns, no rails"),
     )
 
     STRIP_AXES: tuple[tuple[Literal["horizontal", "vertical"], str], ...] = (
@@ -927,6 +938,16 @@ class BoardSetupDialog(QDialog):
         self.strip_axis.setCurrentIndex(
             max(0, self.strip_axis.findData(board.strip_axis or "horizontal"))
         )
+        self.breadboard_size = QComboBox()
+        for size_value, size_label in self.BREADBOARD_SIZES:
+            self.breadboard_size.addItem(t(size_label), size_value)
+        current_size = next(
+            (key for key, shape in BREADBOARD_SIZES.items() if shape == (board.cols, board.rows)),
+            "830",
+        )
+        self.breadboard_size.setCurrentIndex(
+            max(0, self.breadboard_size.findData(current_size if is_breadboard(board) else "830"))
+        )
 
         self.cols = QSpinBox()
         self.cols.setRange(2, 400)
@@ -980,6 +1001,7 @@ class BoardSetupDialog(QDialog):
         self.cols.valueChanged.connect(self._update_note)
         self.rows.valueChanged.connect(self._update_note)
         self.board_type.currentIndexChanged.connect(self._update_enabled)
+        self.breadboard_size.currentIndexChanged.connect(self._update_note)
         self.pad_shape.currentIndexChanged.connect(self._update_enabled)
         self.legend.toggled.connect(self._update_enabled)
         self._pitch = board.pitch
@@ -992,6 +1014,7 @@ class BoardSetupDialog(QDialog):
         self._chosen.addRow(t("Board"), self.preset)
         self._chosen.addRow(t("Type"), self.board_type)
         self._chosen.addRow(t("Strips run"), self.strip_axis)
+        self._chosen.addRow(t("Size"), self.breadboard_size)
 
         # Shown rather than merely enabled, and the difference matters on a dialog this
         # short: a greyed-out row still costs a line and still has to be read past to find
@@ -1062,6 +1085,7 @@ class BoardSetupDialog(QDialog):
         for signal in (
             self.preset.currentIndexChanged,
             self.board_type.currentIndexChanged,
+            self.breadboard_size.currentIndexChanged,
             self.pad_shape.currentIndexChanged,
             self.pad_axis.currentIndexChanged,
             self.material.currentIndexChanged,
@@ -1165,9 +1189,23 @@ class BoardSetupDialog(QDialog):
         self.pad_axis.setEnabled(oblong)
         self.row_digits.setEnabled(self.legend.isChecked())
         self._chosen.setRowVisible(self.strip_axis, self.board_type.currentData() == "stripboard")
+        # A breadboard is chosen by its size and nothing else: the pattern decides its
+        # grid, and it has no material, pads or legend of its own to be asked about.
+        breadboard = self.board_type.currentData() == "breadboard"
+        self._chosen.setRowVisible(self.breadboard_size, breadboard)
+        self._chosen.setRowVisible(self.preset, not breadboard)
+        self.advanced_toggle.setVisible(not breadboard)
+        self._advanced.setVisible(not breadboard and self.advanced_toggle.isChecked())
         self._update_note()
 
     def _update_note(self) -> None:
+        if self.board_type.currentData() == "breadboard":
+            width, height = board_size_mm(self.board())
+            note = t("{width} × {height} mm ({holes} holes)").format(
+                width=f"{width:.1f}", height=f"{height:.1f}", holes=self.breadboard_size.currentData()
+            )
+            self._size_note.setText(f"<span style='color:{TEXT_DIM}'>{note}</span>")
+            return
         # The physical size, because that is what someone holds against a piece of board
         # they already own -- "80 columns" means nothing at the shop.
         width = self.cols.value() * self._pitch
@@ -1192,6 +1230,8 @@ class BoardSetupDialog(QDialog):
         self,
     ) -> tuple[tuple[EdgeConnector, ...], tuple[MountingHole, ...]] | None:
         """What the caller needs to apply a whole product rather than just a size."""
+        if self.board_type.currentData() == "breadboard":
+            return None  # Nothing is drilled into one, and it has no fingers.
         return _preset_features(self._preset, self.board())
 
     def board(self) -> Board:
@@ -1222,6 +1262,8 @@ class BoardSetupDialog(QDialog):
         # the file, and the format omits its defaults precisely so an unused feature
         # leaves no trace.
         board_type = cast(BoardType, self.board_type.currentData())
+        if board_type == "breadboard":
+            return breadboard(str(self.breadboard_size.currentData()))
         return dataclasses.replace(
             self._board,
             type=board_type,
@@ -5157,6 +5199,9 @@ class MainWindow(QMainWindow):
         # reach it, so on a perfboard tool there was no way to run a wire or lay a solder
         # trace by hand -- only to accept the router's output whole or discard it.
         self.act_draw: dict[str, QAction] = {}
+        #: Each tool's own tooltip, put back when a board that cannot take its copper is
+        #: changed to one that can.
+        self._draw_tips: dict[str, str] = {}
         for kind, label, shortcut, tip in (
             ("solder-trace", "&Solder Trace", "T",
              t("Join adjacent pads with solder. Orthogonal steps only — solder spans the "
@@ -5180,6 +5225,7 @@ class MainWindow(QMainWindow):
             action.setToolTip(tip)
             action.triggered.connect(lambda checked, k=kind: self.on_draw_mode(k, checked))
             self.act_draw[kind] = action
+            self._draw_tips[kind] = tip
         draw_menu.addSeparator()
         # The stripboard edit. It is in Draw because it is a board mode with the same
         # shape as the others -- arm it, click holes, Esc leaves -- even though it is the
@@ -8613,6 +8659,20 @@ class MainWindow(QMainWindow):
                 if strips
                 else t("Only stripboard has tracks to cut. File ▸ Board Setup ▸ Type.")
             )
+
+        # A breadboard takes a wire pushed in from above and nothing else: solder, a lead
+        # bent along the underside and bare wire on the solder side are not-on-breadboard
+        # errors before they are drawn, so those tools are greyed out rather than allowed.
+        if hasattr(self, "act_draw"):
+            plastic = is_breadboard(self.bus.document.board)
+            for kind, action in self.act_draw.items():
+                usable = not plastic or kind in BREADBOARD_CONDUCTOR_KINDS
+                action.setEnabled(usable)
+                action.setToolTip(
+                    self._draw_tips[kind]
+                    if usable
+                    else t("Nothing is soldered on a breadboard: use a jumper or an insulated wire.")
+                )
 
         # The two 3D-only items do nothing until the panel has been opened, and a menu
         # item that silently does nothing is worse than one that is visibly unavailable
