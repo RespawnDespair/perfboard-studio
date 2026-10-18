@@ -50,7 +50,7 @@ from .commands import (
 )
 from .connectivity import FootprintLookup, PhysicalPinRef, extract_physical_nets
 from .geometry import all_pin_holes, format_hole, hole_key, manhattan
-from .model import HoleCoord, NetId, PerfDocument, TrackCut
+from .model import ConductorId, HoleCoord, NetId, PerfDocument, TrackCut
 from .stripboard import (
     cut_between,
     is_stripboard,
@@ -107,10 +107,13 @@ class StripboardPlan:
     links: tuple[PlannedLink, ...]
     problems: tuple[StripProblem, ...]
     label: str
+    #: The conductors a re-route takes up first (``breadroute.plan_joined_reroute``):
+    #: empty for a plan that only adds, which is every plan but that one.
+    remove_ids: tuple[ConductorId, ...] = ()
 
     @property
     def is_empty(self) -> bool:
-        return not self.cuts and not self.conductors
+        return not self.cuts and not self.conductors and not self.remove_ids
 
     def payload(self) -> ApplyStripboardPlanPayload:
         """The one command that commits this plan, as a single undo step."""
@@ -119,6 +122,7 @@ class StripboardPlan:
             conductors=self.conductors,
             cut_ids=tuple(cut.id for cut in self.cuts),
             label=self.label,
+            remove_ids=self.remove_ids,
         )
 
 

@@ -134,7 +134,7 @@ from perfboard_studio.breadboard import (
     pattern_board,
     size_of,
 )
-from perfboard_studio.breadroute import plan_joined_board
+from perfboard_studio.breadroute import plan_joined_board, plan_joined_reroute
 from perfboard_studio.catalog import CATALOG, CATEGORY_ORDER, CatalogPart, catalog_part
 from perfboard_studio.command import CommandBus, CommandContext, DispatchResult, HistoryEntry
 from perfboard_studio.commands import (
@@ -9656,6 +9656,12 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(t("No netlist imported, so there is nothing to route."), 6000)
             return
 
+        # A board that joins its own holes is rewired by its own planner, as autoroute is:
+        # the pad-per-hole router lays solder and bare wire a breadboard cannot hold.
+        if board_joins_holes(self.bus.document.board):
+            self._route_stripboard(only_net_ids, rip_up=True, why=why)
+            return
+
         document = self.bus.document
         t0 = time.perf_counter()
         plan = self._run_planner(
@@ -9764,6 +9770,9 @@ class MainWindow(QMainWindow):
         # afterwards. Running the perfboard router on one would lay solder traces along
         # tracks that are already joined, and bare wire across a face that is solid copper.
         if board_joins_holes(self.bus.document.board):
+            # Stale copper first, as below: a jumper left in a clip a part moved out of
+            # joins whatever moved in, and the planner wires round it into a short.
+            self._clear_strays(quiet=True)
             self._route_stripboard(only_net_ids)
             return
 
@@ -9875,18 +9884,27 @@ class MainWindow(QMainWindow):
         )
         self._report_unrouted(plan)
 
-    def _route_stripboard(self, only_net_ids: tuple[NetId, ...] | None) -> None:
+    def _route_stripboard(
+        self, only_net_ids: tuple[NetId, ...] | None, rip_up: bool = False, why: str = ""
+    ) -> None:
         """Cut the tracks this board needs cutting, and link what is left apart.
 
         One command for both halves, because they are one decision: a board cut apart
         with nothing linking it, or linked with nothing cut, is a state nobody designed
-        and either is one Ctrl+Z away if this commits them separately.
+        and either is one Ctrl+Z away if this commits them separately. ``rip_up`` is
+        Re-route: what the nets had goes in the same command, asked first as it is there.
+        Route ▸ Lay Wires Along the Grid shapes a breadboard's jumpers as it shapes a wire.
         """
         document = self.bus.document
+        wire_path = self._autoroute_options().router.wire_path
         t0 = time.perf_counter()
         plan = self._run_planner(
             t("Planning jumpers…") if has_breadboard_pattern(document.board) else t("Planning cuts and links…"),
-            lambda _should_stop: plan_joined_board(document, self.lookup, only_net_ids),
+            lambda _should_stop: (
+                plan_joined_reroute(document, self.lookup, only_net_ids, wire_path)
+                if rip_up
+                else plan_joined_board(document, self.lookup, only_net_ids, wire_path)
+            ),
         )
         elapsed = (time.perf_counter() - t0) * 1000
         if plan is None:
@@ -9898,6 +9916,21 @@ class MainWindow(QMainWindow):
             )
             self._report_strip_problems(plan)
             return
+
+        if plan.remove_ids:
+            body = (
+                (f"<p>{why}</p>" if why else "")
+                + f"<b>{say(describe_strip_plan(plan))}</b><p>"
+                + t(
+                    "{removed} existing conductor(s) will be removed and {planned} planned "
+                    "in their place. Copper with no net assigned is left alone."
+                ).format(removed=len(plan.remove_ids), planned=len(plan.conductors))
+                + "</p><p>"
+                + t("One Ctrl+Z puts it all back.")
+                + "</p>"
+            )
+            if not self._confirm(t("Re-route?"), body, t("Re-route")):
+                return
 
         result = self.bus.dispatch("stripboard.apply", plan.payload())
         if not result.ok:

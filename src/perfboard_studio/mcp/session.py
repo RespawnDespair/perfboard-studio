@@ -39,7 +39,7 @@ from perfboard_studio.autoroute import (
 )
 from perfboard_studio.autoroute import describe as describe_route
 from perfboard_studio.breadboard import PATTERN_TYPES, has_breadboard_pattern, pattern_board
-from perfboard_studio.breadroute import plan_joined_board
+from perfboard_studio.breadroute import plan_joined_board, plan_joined_reroute
 from perfboard_studio.catalog import (
     CATEGORY_ORDER,
     CatalogCategory,
@@ -1341,15 +1341,23 @@ class BoardSession:
         # along tracks that are already joined and bare wire across a solid copper face,
         # so the board type picks the planner -- for an agent exactly as for the window.
         # A breadboard is the same problem with nothing to cut (breadroute.py).
-        if board_joins_holes(self.document.board):
-            return self._autoroute_stripboard(only)
+        joined = board_joins_holes(self.document.board)
+        if joined:
+            # Checked here, before anything is cleared, as _route_options checks it below.
+            _route_options(style, wires, crossings)
 
         # Cleared BEFORE planning, exactly as the GUI does it, so the plan is made
         # against the board as it will be rather than around copper that is about to go.
         # An agent that moves a part and re-routes must get the same result a user does.
+        # On a breadboard too: a jumper left in a clip a part has moved out of joins the
+        # part that moved IN, and the planner -- which takes what is fitted as fitted --
+        # wires round it into a short.
         cleared = stale_conductor_ids(self.document, self.lookup)
         if cleared:
             self.remove_stale_conductors()
+
+        if joined:
+            return self._autoroute_stripboard(only, wires, stale_removed=len(cleared))
 
         options = _route_options(style, wires, crossings)
         # Every variant's measurements travel with the result, not just the winner's. An
@@ -1416,15 +1424,29 @@ class BoardSession:
         )
         return result
 
-    def _autoroute_stripboard(self, only: tuple[NetId, ...] | None) -> dict[str, Any]:
+    def _autoroute_stripboard(
+        self,
+        only: tuple[NetId, ...] | None,
+        wires: str = "grid",
+        stale_removed: int = 0,
+        rip_up: bool = False,
+    ) -> dict[str, Any]:
         """Cut the tracks that short two nets, link the islands that are left.
 
         One command for both, so an agent's undo takes back a whole plan rather than
         leaving the board cut apart with nothing linking it. Everything the planner could
         not do comes back in ``problems`` -- an agent that is told only what worked cannot
         tell a finished board from a half-finished one.
+
+        ``rip_up`` is ``reroute``: what was laid for the nets goes first, in the same
+        command. ``wires`` shapes a breadboard's jumpers, as it shapes a perfboard's wires.
         """
-        plan = plan_joined_board(self.document, self.lookup, only)
+        wire_path = _route_options("balanced", wires).router.wire_path
+        plan = (
+            plan_joined_reroute(self.document, self.lookup, only, wire_path)
+            if rip_up
+            else plan_joined_board(self.document, self.lookup, only, wire_path)
+        )
         problems = [
             {
                 "code": problem.code,
@@ -1444,6 +1466,8 @@ class BoardSession:
                 links=[],
                 cut_count=0,
                 link_count=0,
+                stale_removed=stale_removed,
+                ripped_up=0,
                 problems=problems,
             )
 
@@ -1455,6 +1479,8 @@ class BoardSession:
             summary=describe_strip_plan(plan),
             cut_count=len(plan.cuts),
             link_count=len(plan.links),
+            stale_removed=stale_removed,
+            ripped_up=len(plan.remove_ids),
             cuts=[format_hole(cut.at, self.document.board) for cut in plan.cuts],
             links=[
                 {
@@ -1488,6 +1514,12 @@ class BoardSession:
         if not self.document.nets:
             return _refused("no-netlist", "Nothing to route: no netlist has been imported.")
         only = tuple(self._net_id_strict(name) for name in nets) if nets else None
+
+        # A board that joins its own holes is rewired by its own planner, as autoroute does
+        # it: the pad-per-hole router lays solder and bare wire a breadboard cannot hold.
+        if board_joins_holes(self.document.board):
+            _route_options(style, wires, crossings)
+            return self._autoroute_stripboard(only, wires, rip_up=True)
 
         plan = plan_reroute(
             self.document,

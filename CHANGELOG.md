@@ -20,6 +20,38 @@ closed without a bump.
 
 ## [Unreleased]
 
+### Added
+
+- **Breadboard jumpers can be laid along the grid.** Route ▸ Lay Wires Along the Grid, and
+  `wires="grid"` for an agent's `autoroute` and `reroute`, now shape a breadboard's jumpers
+  the way the pre-bent kits are made: along a row and down a column, an L, or a U or a Z
+  round a part rather than under it -- where straight jumpers fan out across the board at
+  every angle. Each takes a lane of its own where one is close, because two jumpers down
+  one row hide each other from above. They may cross, as they do on the plastic. The cut list and the guide cut
+  each one to the length it runs, corners included. On a real 830-point board the 46
+  jumpers that had 28 parts standing over them as chords have 2 along the grid.
+
+### Fixed
+
+- **Re-route on a breadboard laid solder and bare wire.** It asked the perfboard router
+  whatever the board, so on a real 830-point board 50 jumpers came back as 69 conductors,
+  72 DRC errors and a short. On a breadboard or a stripboard Re-route now takes up what the
+  nets had and asks that board's own planner again, in one undo step, in the window and for
+  an agent.
+- **Autoroute on a breadboard wired round the jumpers a moved part had left.** A whole clip
+  is one island, so a jumper in a clip a part moved into still reached two pins of its own
+  net and was not stale -- and was joined to the newcomer: Optimize Placement followed by
+  Autoroute ended in four shorts. A jumper with an end in a clip that holds a pin of
+  another net (or of none) is now stale there, and Autoroute clears stale copper first on
+  every board type, as it always did on perfboard.
+- **An unused lead in a breadboard clip was a party to nothing.** Moving a header into the
+  clips of a chip's unused pins joined them to its signals, and neither LVS (which asks
+  only about declared nets) nor the planner nor the placer counted it. On a breadboard a
+  pin no net declares is now a net of its own in a clip -- `cannot-separate` from the
+  planner, a conflict to the placer -- and Optimize Placement ranks shorted clips ahead of
+  everything else there, legality included, so a board whose parts already overlap no
+  longer loses to any legal arrangement however many clips it shorts.
+
 ## [0.20.0] - 2026-10-19
 
 ### Added

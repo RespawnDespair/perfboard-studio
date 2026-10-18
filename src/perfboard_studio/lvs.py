@@ -40,7 +40,7 @@ from .connectivity import FootprintLookup, PhysicalNet, PhysicalPinRef, extract_
 # whose pins fall outside it -- rotating a part near an edge does exactly that, and DRC's
 # job is to report it -- so a strict encoder here means LVS crashes while describing the
 # very defect it exists to describe. See the note on geometry.format_hole.
-from .geometry import format_hole
+from .geometry import all_pin_holes, format_hole
 from .model import (
     Board,
     ComponentInstance,
@@ -51,6 +51,7 @@ from .model import (
     NetNode,
     PerfDocument,
 )
+from .stripboard import board_joins_holes, segment_of
 
 # ---------------------------------------------------------------------------
 # Public types
@@ -520,7 +521,47 @@ def stale_conductor_ids(doc: PerfDocument, lookup: FootprintLookup) -> tuple[Con
                 continue  # Claims a net the document no longer has; not ours to judge.
             if len(island_pins & declared) < 2:
                 stale.append(conductor_id)
+    if board_joins_holes(doc.board):
+        stale.extend(_joined_to_another_net(doc, lookup))
     return tuple(sorted(set(stale)))
+
+
+def _joined_to_another_net(doc: PerfDocument, lookup: FootprintLookup) -> list[ConductorId]:
+    """On a board that joins its own holes: conductors with an end in a clip or a strip
+    segment that now holds a pin of another net, or of none.
+
+    The two-pin test above cannot see this there. A breadboard's island is a whole clip
+    and everything jumpered to it, so when a part moves into a clip a jumper still serves,
+    the jumper still reaches two pins of its own net -- and joins them to the newcomer. It
+    is still copper that has stopped doing what it claims, and the planner, which takes
+    what is fitted as fitted, would wire round it into a short. A pin no net declares
+    counts as another net here, as it does for ``breadroute._shorts``: nothing parts it
+    from the clip either.
+    """
+    net_of_pin = {
+        _pin_key(node.component_ref, node.pin): net.id for net in doc.nets for node in net.nodes
+    }
+    nets_in: dict[tuple[int, int], set[NetId | None]] = {}
+    for component in doc.components:
+        footprint = lookup(component.footprint_id)
+        if footprint is None:
+            continue
+        for pin, hole in all_pin_holes(component, footprint):
+            segment = segment_of(doc, hole)
+            if segment is not None:
+                nets_in.setdefault(segment, set()).add(
+                    net_of_pin.get(_pin_key(component.ref, pin.number))
+                )
+    stranded: list[ConductorId] = []
+    for conductor in doc.conductors:
+        if conductor.net_id is None or not conductor.path:
+            continue
+        for end in (conductor.path[0], conductor.path[-1]):
+            segment = segment_of(doc, end)
+            if segment is not None and nets_in.get(segment, set()) - {conductor.net_id}:
+                stranded.append(conductor.id)
+                break
+    return stranded
 
 
 def continuity_checks(doc: PerfDocument) -> tuple[ContinuityCheck, ...]:
