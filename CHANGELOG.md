@@ -69,6 +69,10 @@ closed without a bump.
   strip is now holed at every hole and sits behind its pads, and on a solderable breadboard
   each rail's copper carries on across the columns its holes skip.
 
+- **Autoroute on a breadboard it has already wired adds nothing.** It used to fit a second
+  jumper across the rail pair every time it was run again: the ground's one island touched
+  both rails through the bridge already there, and that read as two rails needing one.
+
 ## [0.19.0] - 2026-10-16
 
 ### Added

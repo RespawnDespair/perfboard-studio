@@ -257,3 +257,8 @@ def test_an_example_is_placed_and_wired_on_a_breadboard(example: str) -> None:
     assert plan.problems == ()
     assert run_lvs(plan.document, get_footprint).ok
     assert not [v for v in run_drc(plan.document, get_footprint) if v.severity == "error"]
+    # A board the planner has wired needs nothing more from it. Planning it again used to
+    # bridge the rail pair a second time: the ground's one island touches both rails
+    # through the bridge already there, and that read as two rails reached.
+    again = plan_breadboard(plan.document, get_footprint)
+    assert again.conductors == () and again.problems == ()

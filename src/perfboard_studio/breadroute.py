@@ -139,6 +139,10 @@ def plan_breadboard(
 
     on_board = {(ref.component_ref, ref.pin) for ref, _ in pins.values()}
     rails = _assign_rails(doc, island_of, island_holes, net_of, on_board)
+    # Which rails the board already joins to one another -- a bridge somebody fitted, or the
+    # one this planner fitted last time. Every island counts, a bare bridge with no pin on
+    # it included, which is why this is not read off the net's own islands below.
+    joined = [_reach(doc, holes)[0] for holes in island_holes.values()]
     conductors: list[NewConductor] = []
     links: list[PlannedLink] = []
 
@@ -175,7 +179,7 @@ def plan_breadboard(
             )
         own_rails = sorted(rail for rail, owner in rails.items() if owner == net.id)
         joins = (
-            _to_rails(net, islands, own_rails, doc, used, occupancy, problems)
+            _to_rails(net, islands, own_rails, doc, used, occupancy, problems, joined)
             if own_rails
             else _nearest_first(net, islands, doc, used, occupancy, problems)
         )
@@ -479,9 +483,13 @@ def _to_rails(
     used: set[str],
     occupancy: OccupancyIndex,
     problems: list[StripProblem],
+    joined: list[set[Rail]],
 ) -> list[Join]:
     """Drop a jumper from every island of a supply net to its nearer rail, then bridge the
-    two rails of the pair if both ended up carrying it."""
+    two rails of the pair if both ended up carrying it -- unless something on the board
+    (``joined``) already joins them. An island touching both rails through a bridge already
+    fitted reaches both, and read as needing a bridge it is standing on.
+    """
     rail_holes = {rail: _rail_holes(doc, rail) for rail in own_rails}
     joins: list[Join] = []
     reached: set[Rail] = set()
@@ -501,7 +509,7 @@ def _to_rails(
         joins.append(_take(choice[2], used))
         reached.add(choice[1])
 
-    if len(reached) == 2:
+    if len(reached) == 2 and not any(reached <= rails for rails in joined):
         top, bottom = sorted(reached, key=lambda rail: not rail.startswith("top"))
         bridge = _bridge(rail_holes[top], rail_holes[bottom], doc, used, occupancy)
         if bridge is not None:
