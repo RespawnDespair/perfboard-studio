@@ -33,6 +33,7 @@ from perfboard_studio.breadboard import (
     RAIL_CLASS,
     has_hole,
     is_breadboard,
+    is_solderable_breadboard,
     rail_of,
     strip_letter,
 )
@@ -56,6 +57,7 @@ from perfboard_studio.geometry import (
     edge_finger_rect,
     flying_lead_routes,
     hole_key,
+    holeless_positions,
     holes_without_grid_pad,
     legend_strip_mm,
     mounting_hole_centre_mm,
@@ -511,7 +513,9 @@ def build_substrate(doc: PerfDocument) -> list[vtk.vtkActor]:
     top, bottom = 0.0, -board.thickness
     bores = _mounting_bores(doc)
     patched = [rect for bore in bores for rect in bore.covers]
-    undrilled = undrilled_holes(doc)
+    # A breadboard pattern's positions with no hole are solid board, as a finger is: empty
+    # everywhere but on a solderable breadboard (the solderless one is build_breadboard).
+    undrilled = undrilled_holes(doc) | holeless_positions(board)
 
     drilled_at = vtk.vtkPoints()
     solid_at = vtk.vtkPoints()
@@ -668,7 +672,6 @@ def build_breadboard(doc: PerfDocument) -> list[vtk.vtkActor]:
         _finish(well.GetProperty(), LAMINATE)
         actors.append(well)
 
-    lines: dict[str, _Mesh] = {}
     letters = {row: strip_letter(board, row) for row in range(board.rows)}
     strip_rows = [row for row in range(board.rows) if letters[row] is not None]
     upper = max(row for row in strip_rows if (letters[row] or "") >= "f")
@@ -676,6 +679,34 @@ def build_breadboard(doc: PerfDocument) -> list[vtk.vtkActor]:
     middle = (_breadboard_row_y(board, upper) + _breadboard_row_y(board, lower)) / 2
     groove = _Mesh()
     groove.rectangle((x0, middle - BREADBOARD_GROOVE_MM / 2, x1, middle + BREADBOARD_GROOVE_MM / 2), _BREADBOARD_INLAY_MM)
+    groove_actor = vtk.vtkActor()
+    groove_mapper = vtk.vtkPolyDataMapper()
+    groove_mapper.SetInputData(groove.data())
+    groove_actor.SetMapper(groove_mapper)
+    groove_actor.GetProperty().SetColor(*_rgb(BREADBOARD.groove))
+    _finish(groove_actor.GetProperty(), MOULDED)
+    actors.append(groove_actor)
+    actors.extend(build_pattern_print(board, _rgb(BREADBOARD.print_ink), _BREADBOARD_INLAY_MM))
+    return actors
+
+
+def build_pattern_print(
+    board: Board, ink: tuple[float, float, float], z: float
+) -> list[vtk.vtkActor]:
+    """What a breadboard prints, plastic or copper: a line beside each rail and a + or a -
+    at its ends, in the rail's ink, and the column numbers every five and the row letters
+    at both ends in ``ink`` -- at height ``z``, just proud of whatever it is printed on.
+
+    The solderless board's in its print grey on the plastic; a solderable one's in the
+    silkscreen white every copper board's legend is drawn in. A rail line that would fall
+    off the board is left out, as the 2D view leaves it out: a solderable breadboard's
+    border is a tenth of a millimetre.
+    """
+    _, y0, _, y1 = board_outline_rect(board)
+    actors: list[vtk.vtkActor] = []
+    lines: dict[str, _Mesh] = {}
+    letters = {row: strip_letter(board, row) for row in range(board.rows)}
+    strip_rows = [row for row in range(board.rows) if letters[row] is not None]
     left = _breadboard_col_x(board, 0) - board.pitch * 0.4
     right = _breadboard_col_x(board, board.cols - 1) + board.pitch * 0.4
     rail_rows = [row for row in range(board.rows) if rail_of(board, row) is not None]
@@ -687,25 +718,23 @@ def build_breadboard(doc: PerfDocument) -> list[vtk.vtkActor]:
         y = _breadboard_row_y(board, row + away * 0.62)
         colour = BREADBOARD.rail_ink(RAIL_CLASS[rail])
         target = lines.setdefault(colour, _Mesh())
-        target.rectangle((left, y - BREADBOARD_LINE_MM / 2, right, y + BREADBOARD_LINE_MM / 2), _BREADBOARD_INLAY_MM)
+        if min(y0, y1) + board.pitch * 0.1 < y < max(y0, y1) - board.pitch * 0.1:
+            target.rectangle((left, y - BREADBOARD_LINE_MM / 2, right, y + BREADBOARD_LINE_MM / 2), z)
         for at_col in (-1.15, board.cols - 1 + 1.15):
             cx = _breadboard_col_x(board, at_col)
             cy = _breadboard_row_y(board, row)
             arm = BREADBOARD_LETTER_MM * 0.45
-            target.rectangle((cx - arm, cy - 0.12, cx + arm, cy + 0.12), _BREADBOARD_INLAY_MM)
+            target.rectangle((cx - arm, cy - 0.12, cx + arm, cy + 0.12), z)
             if rail.endswith("+"):
-                target.rectangle((cx - 0.12, cy - arm, cx + 0.12, cy + arm), _BREADBOARD_INLAY_MM)
+                target.rectangle((cx - 0.12, cy - arm, cx + 0.12, cy + arm), z)
 
-    for mesh_, colour, material in (
-        (groove, BREADBOARD.groove, MOULDED),
-        *((m, c, INK) for c, m in lines.items()),
-    ):
+    for colour, mesh_ in lines.items():
         actor = vtk.vtkActor()
         mapper = vtk.vtkPolyDataMapper()
         mapper.SetInputData(mesh_.data())
         actor.SetMapper(mapper)
         actor.GetProperty().SetColor(*_rgb(colour))
-        _finish(actor.GetProperty(), material)
+        _finish(actor.GetProperty(), INK)
         actors.append(actor)
 
     texts: list[tuple[str, float, float, float]] = []
@@ -724,7 +753,7 @@ def build_breadboard(doc: PerfDocument) -> list[vtk.vtkActor]:
         if glyphs is None:
             continue
         moved = vtk.vtkTransform()
-        moved.Translate(x, y, _BREADBOARD_INLAY_MM)
+        moved.Translate(x, y, z)
         placed = vtk.vtkTransformPolyDataFilter()
         placed.SetTransform(moved)
         placed.SetInputData(glyphs)
@@ -736,7 +765,7 @@ def build_breadboard(doc: PerfDocument) -> list[vtk.vtkActor]:
         printed_mapper = vtk.vtkPolyDataMapper()
         printed_mapper.SetInputData(append.GetOutput())
         printed.SetMapper(printed_mapper)
-        printed.GetProperty().SetColor(*_rgb(BREADBOARD.print_ink))
+        printed.GetProperty().SetColor(*ink)
         _finish(printed.GetProperty(), INK)
         actors.append(printed)
     return actors
@@ -5720,7 +5749,7 @@ def build_joints(doc: PerfDocument, lookup: FootprintLookup) -> list[vtk.vtkActo
     report, and a joint drawn on it would say it had been made.
     """
     board = doc.board
-    dead = patched_holes(doc) | undrilled_holes(doc)
+    dead = patched_holes(doc) | undrilled_holes(doc) | holeless_positions(board)
     z = pad_z(board, "bottom")
     points = vtk.vtkPoints()
     radius = LEAD_RADIUS_MM
@@ -6003,13 +6032,27 @@ def populate_renderer(
     for face in () if breadboard else ("top", "bottom"):
         if board.single_sided and face == "top":
             continue
-        ren.AddActor(build_pads(board, face, holes_without_grid_pad(doc, face) | cut_holes(doc)))
+        ren.AddActor(
+            build_pads(
+                board,
+                face,
+                holes_without_grid_pad(doc, face) | cut_holes(doc) | holeless_positions(board),
+            )
+        )
     # A finger has no bore, so it gets no wall either -- and neither does a position a
     # mounting bore's patch has taken over, where the plate is solid.
     if not breadboard:
-        ren.AddActor(build_drills(board, patched_holes(doc) | undrilled_holes(doc)))
+        ren.AddActor(
+            build_drills(
+                board, patched_holes(doc) | undrilled_holes(doc) | holeless_positions(board)
+            )
+        )
     for actor in () if breadboard else build_legend(doc):
         ren.AddActor(actor)
+    if is_solderable_breadboard(board):
+        # The breadboard's print in silkscreen, where a perfboard carries its legend.
+        for actor in build_pattern_print(board, LEGEND_RGB, 0.02):
+            ren.AddActor(actor)
     if board_notes:
         for actor in build_board_notes(doc):
             ren.AddActor(actor)

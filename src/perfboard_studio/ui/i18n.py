@@ -49,6 +49,12 @@ TURKISH: Mapping[str, str] = {
     "The same circuit on a board with nothing on it yet -- how a design tried on a breadboard goes on to perfboard. The board it is on now, and its file, stay exactly as they are.":
         "Aynı devre, üzerinde henüz hiçbir şey olmayan bir kartta — breadboard'da denenen bir tasarım perfboard'a böyle geçer. Şimdiki kart ve dosyası olduğu gibi kalır.",
     "There is no circuit here to take to another board.": "Burada başka bir karta taşınacak bir devre yok.",
+    "Same &Layout on a Solderable Breadboard…": "Aynı Yerleşimle &Lehimlenebilir Breadboard'a…",
+    "Every part and every jumper on the same holes of a solderable breadboard, as a new document -- how a circuit that works on the breadboard is made permanent. The breadboard and its file stay exactly as they are.":
+        "Her parça ve her jumper, lehimlenebilir bir breadboard'un aynı deliklerinde, yeni bir belge olarak -- breadboard'da çalışan bir devre böyle kalıcı hâle getirilir. Breadboard ve dosyası olduğu gibi kalır.",
+    "Only a solderless breadboard's layout moves to a solderable one.": "Yalnızca lehimsiz bir breadboard'un yerleşimi lehimlenebilir bir karta taşınır.",
+    "The same layout on a solderable breadboard: {parts} part(s) and {wires} wire(s), each on the holes it had.":
+        "Aynı yerleşim lehimlenebilir bir breadboard'da: {parts} parça ve {wires} tel, her biri eski deliklerinde.",
     "{count} part(s) waiting in the design: choose the board they go on.": "Tasarımda {count} parça bekliyor: hangi karta gideceklerini seç.",
     "&Open…": "&Aç…",
     "&Save": "&Kaydet",
@@ -1516,6 +1522,9 @@ TURKISH: Mapping[str, str] = {
     "Planning cuts and links…": "Kesikler ve bağlantılar planlanıyor…",
     "Planning jumpers…": "Jumper'lar planlanıyor…",
     "Breadboard — solderless; five holes to a clip, power on the rails": "Breadboard — lehimsiz; bir klipte beş delik, güç raylarda",
+    "Solderable breadboard — the same holes and strips, in copper, soldered": "Lehimlenebilir breadboard — aynı delikler ve şeritler, bakırda, lehimli",
+    "Border, left and right": "Kenar payı, sağ ve sol",
+    "Border, top and bottom": "Kenar payı, üst ve alt",
     "Full size · 830 points · 63 columns": "Tam boy · 830 nokta · 63 kolon",
     "Half size · 400 points · 30 columns": "Yarım boy · 400 nokta · 30 kolon",
     "Mini · 170 points · 17 columns, no rails": "Mini · 170 nokta · 17 kolon, raysız",

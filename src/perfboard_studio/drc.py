@@ -40,7 +40,14 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from .breadboard import RAIL_CLASS, has_hole, is_breadboard, rail_of, rail_takes
+from .breadboard import (
+    RAIL_CLASS,
+    has_breadboard_pattern,
+    has_hole,
+    is_breadboard,
+    rail_of,
+    rail_takes,
+)
 from .connectivity import FootprintLookup, PhysicalNet, PhysicalPinRef, extract_physical_nets
 from .footprints import WIRE_ENTRY_CLEARANCE_MM, body_extent, entry_corridor, wire_entry
 from .geometry import (
@@ -1523,7 +1530,7 @@ def _check_wrong_rails(doc: PerfDocument, lookup: FootprintLookup) -> list[DrcVi
     the supply and the ground. The placer counts it with the pairs nothing can separate,
     and the planner reports it, so neither proposes one.
     """
-    if not is_breadboard(doc.board):
+    if not has_breadboard_pattern(doc.board):
         return []
     class_of: dict[tuple[str, str], NetClass] = {
         (node.component_ref, node.pin): net.net_class for net in doc.nets for node in net.nodes

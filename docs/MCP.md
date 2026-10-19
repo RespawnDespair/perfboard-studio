@@ -132,13 +132,17 @@ and links rather than traces and wires, and reports the pairs it could not separ
 breadboard it plans jumpers into free holes, power and ground from the rails, and reports a
 clip it cannot reach (`clip-full`), two nets one clip joins (`cannot-separate`) and a pin on
 a rail its net is not for (`wrong-rail`); `cut_count` is always 0 there.
-There are four types: `pad-per-hole` (every hole its own island, the default),
+There are five types: `pad-per-hole` (every hole its own island, the default),
 `stripboard`, `plain` — bare substrate with no copper at all, where every connection
-is point-to-point wire and there is no pad for a solder trace to reach — and `breadboard`,
+is point-to-point wire and there is no pad for a solder trace to reach — `breadboard`,
 the solderless kind, whose clips join five holes across each half of a column and the
-length of each rail. A breadboard is 20 rows (with power rails) or 12 (without) at
-2.54 mm, as long as it has columns; its holes are named as it prints them, `e12` and
-`T+12`, and nothing that needs solder or a drill is accepted on one.
+length of each rail, and `solderable-breadboard`, the same pattern in copper. A breadboard
+of either kind is 20 rows (with power rails) or 12 (without) at 2.54 mm, as long as it has
+columns, and its holes are named as it prints them, `e12` and `T+12`. On the solderless one
+nothing that needs solder or a drill is accepted; the solderable one is soldered, takes a
+mounting hole like any board and is guided with an iron. `set_board(board_type=
+"solderable-breadboard")` on a working breadboard keeps every part and jumper on its holes
+and gives the board a copper board's thickness and drill -- what the board is bought for.
 
 `run_erc` checks the CIRCUIT, and is the one of the four that means anything before a part
 is placed. `run_drc` asks whether the board can be built and `run_lvs` whether it is the

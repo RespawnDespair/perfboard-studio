@@ -45,7 +45,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from itertools import pairwise
 
-from .breadboard import is_breadboard
+from .breadboard import has_breadboard_pattern
 from .geometry import all_pin_holes, hole_key
 from .model import (
     BoardSide,
@@ -284,7 +284,7 @@ def _extract_physical_nets(doc: PerfDocument, lookup: FootprintLookup) -> list[P
     # above, so there every node in a hole takes part -- a jumper's end is in the clip as
     # surely as a lead is -- where on stripboard only the copper side does.
     if board_joins_holes(doc.board):
-        either_side = is_breadboard(doc.board)
+        either_side = has_breadboard_pattern(doc.board)
         by_segment: dict[tuple[int, int], list[str]] = {}
         for key in sorted(node_info):
             info = node_info[key]

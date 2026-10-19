@@ -125,7 +125,15 @@ from perfboard_studio.boardfit import (
     choose_board,
 )
 from perfboard_studio.breadboard import SIZES as BREADBOARD_SIZES
-from perfboard_studio.breadboard import breadboard, is_breadboard
+from perfboard_studio.breadboard import (
+    SOLDERABLE_BORDER_X_MM,
+    SOLDERABLE_BORDER_Y_MM,
+    has_breadboard_pattern,
+    is_breadboard,
+    is_solderable_breadboard,
+    pattern_board,
+    size_of,
+)
 from perfboard_studio.breadroute import plan_joined_board
 from perfboard_studio.catalog import CATALOG, CATEGORY_ORDER, CatalogPart, catalog_part
 from perfboard_studio.command import CommandBus, CommandContext, DispatchResult, HistoryEntry
@@ -171,6 +179,7 @@ from perfboard_studio.commands import (
     create_standard_registry,
     create_starter_document,
     design_on_a_new_board,
+    layout_on_a_solderable_breadboard,
     preset_payload,
 )
 from perfboard_studio.connectivity import FootprintLookup, extract_physical_nets
@@ -863,6 +872,7 @@ class BoardSetupDialog(QDialog):
         ("pad-per-hole", "Pad per hole — every hole is its own island"),
         ("stripboard", "Stripboard — whole rows joined; you cut the track to separate"),
         ("breadboard", "Breadboard — solderless; five holes to a clip, power on the rails"),
+        ("solderable-breadboard", "Solderable breadboard — the same holes and strips, in copper, soldered"),
     )
 
     #: The breadboards sold, by what they are called: their tie-point count. The pattern
@@ -947,13 +957,23 @@ class BoardSetupDialog(QDialog):
         self.breadboard_size = QComboBox()
         for size_value, size_label in self.BREADBOARD_SIZES:
             self.breadboard_size.addItem(t(size_label), size_value)
-        current_size = next(
-            (key for key, shape in BREADBOARD_SIZES.items() if shape == (board.cols, board.rows)),
-            "830",
-        )
         self.breadboard_size.setCurrentIndex(
-            max(0, self.breadboard_size.findData(current_size if is_breadboard(board) else "830"))
+            max(0, self.breadboard_size.findData(size_of(board) or "830"))
         )
+        # A solderable breadboard's border is the one thing about it that differs between
+        # makers (breadboard.py), so it is the one thing asked beside its size.
+        solderable = is_solderable_breadboard(board)
+        self.border_x = QDoubleSpinBox()
+        self.border_y = QDoubleSpinBox()
+        for spin, start in (
+            (self.border_x, board.border_x_mm if solderable else SOLDERABLE_BORDER_X_MM),
+            (self.border_y, board.border_y_mm if solderable else SOLDERABLE_BORDER_Y_MM),
+        ):
+            spin.setRange(0.0, 30.0)
+            spin.setDecimals(1)
+            spin.setSingleStep(0.1)
+            spin.setSuffix(" mm")
+            spin.setValue(start)
 
         self.cols = QSpinBox()
         self.cols.setRange(2, 400)
@@ -1021,6 +1041,8 @@ class BoardSetupDialog(QDialog):
         self._chosen.addRow(t("Type"), self.board_type)
         self._chosen.addRow(t("Strips run"), self.strip_axis)
         self._chosen.addRow(t("Size"), self.breadboard_size)
+        self._chosen.addRow(t("Border, left and right"), self.border_x)
+        self._chosen.addRow(t("Border, top and bottom"), self.border_y)
 
         # Shown rather than merely enabled, and the difference matters on a dialog this
         # short: a greyed-out row still costs a line and still has to be read past to find
@@ -1196,16 +1218,20 @@ class BoardSetupDialog(QDialog):
         self.row_digits.setEnabled(self.legend.isChecked())
         self._chosen.setRowVisible(self.strip_axis, self.board_type.currentData() == "stripboard")
         # A breadboard is chosen by its size and nothing else: the pattern decides its
-        # grid, and it has no material, pads or legend of its own to be asked about.
-        breadboard = self.board_type.currentData() == "breadboard"
-        self._chosen.setRowVisible(self.breadboard_size, breadboard)
-        self._chosen.setRowVisible(self.preset, not breadboard)
-        self.advanced_toggle.setVisible(not breadboard)
-        self._advanced.setVisible(not breadboard and self.advanced_toggle.isChecked())
+        # grid, and it has no material, pads or legend of its own to be asked about. A
+        # solderable one is asked its border too, which is where its makers differ.
+        pattern = self.board_type.currentData() in ("breadboard", "solderable-breadboard")
+        solderable = self.board_type.currentData() == "solderable-breadboard"
+        self._chosen.setRowVisible(self.breadboard_size, pattern)
+        self._chosen.setRowVisible(self.border_x, solderable)
+        self._chosen.setRowVisible(self.border_y, solderable)
+        self._chosen.setRowVisible(self.preset, not pattern)
+        self.advanced_toggle.setVisible(not pattern)
+        self._advanced.setVisible(not pattern and self.advanced_toggle.isChecked())
         self._update_note()
 
     def _update_note(self) -> None:
-        if self.board_type.currentData() == "breadboard":
+        if self.board_type.currentData() in ("breadboard", "solderable-breadboard"):
             width, height = board_size_mm(self.board())
             note = t("{width} × {height} mm ({holes} holes)").format(
                 width=f"{width:.1f}", height=f"{height:.1f}", holes=self.breadboard_size.currentData()
@@ -1236,8 +1262,10 @@ class BoardSetupDialog(QDialog):
         self,
     ) -> tuple[tuple[EdgeConnector, ...], tuple[MountingHole, ...]] | None:
         """What the caller needs to apply a whole product rather than just a size."""
-        if self.board_type.currentData() == "breadboard":
-            return None  # Nothing is drilled into one, and it has no fingers.
+        if self.board_type.currentData() in ("breadboard", "solderable-breadboard"):
+            # Nothing is drilled into a solderless one, and neither has fingers; a
+            # solderable one's mounting holes are added like any board's, where they are.
+            return None
         return _preset_features(self._preset, self.board())
 
     def board(self) -> Board:
@@ -1268,8 +1296,17 @@ class BoardSetupDialog(QDialog):
         # the file, and the format omits its defaults precisely so an unused feature
         # leaves no trace.
         board_type = cast(BoardType, self.board_type.currentData())
-        if board_type == "breadboard":
-            return breadboard(str(self.breadboard_size.currentData()))
+        if board_type in ("breadboard", "solderable-breadboard"):
+            # Through pattern_board, so a kind's thickness and drill come with the kind.
+            cols, rows = BREADBOARD_SIZES[str(self.breadboard_size.currentData())]
+            pattern = pattern_board(board_type, cols, rows)
+            if board_type == "solderable-breadboard":
+                pattern = dataclasses.replace(
+                    pattern,
+                    border_x_mm=round(self.border_x.value(), 2),
+                    border_y_mm=round(self.border_y.value(), 2),
+                )
+            return pattern
         return dataclasses.replace(
             self._board,
             type=board_type,
@@ -4981,6 +5018,17 @@ class MainWindow(QMainWindow):
             )
         )
         act_from_design.triggered.connect(self.on_board_from_design)
+        act_to_solderable = self.act_layout_to_solderable = file_menu.addAction(
+            t("Same &Layout on a Solderable Breadboard…")
+        )
+        act_to_solderable.setToolTip(
+            t(
+                "Every part and every jumper on the same holes of a solderable breadboard, as "
+                "a new document -- how a circuit that works on the breadboard is made "
+                "permanent. The breadboard and its file stay exactly as they are."
+            )
+        )
+        act_to_solderable.triggered.connect(self.on_layout_to_solderable)
         act_open = file_menu.addAction(t("&Open…"))
         act_open.setShortcut(QKeySequence.StandardKey.Open)
         act_open.triggered.connect(self.on_open)
@@ -8714,6 +8762,8 @@ class MainWindow(QMainWindow):
         # A breadboard takes a wire pushed in from above and nothing else: solder, a lead
         # bent along the underside and bare wire on the solder side are not-on-breadboard
         # errors before they are drawn, so those tools are greyed out rather than allowed.
+        if hasattr(self, "act_layout_to_solderable"):
+            self.act_layout_to_solderable.setEnabled(is_breadboard(self.bus.document.board))
         if hasattr(self, "act_draw"):
             plastic = is_breadboard(self.bus.document.board)
             for kind, action in self.act_draw.items():
@@ -9835,7 +9885,7 @@ class MainWindow(QMainWindow):
         document = self.bus.document
         t0 = time.perf_counter()
         plan = self._run_planner(
-            t("Planning jumpers…") if is_breadboard(document.board) else t("Planning cuts and links…"),
+            t("Planning jumpers…") if has_breadboard_pattern(document.board) else t("Planning cuts and links…"),
             lambda _should_stop: plan_joined_board(document, self.lookup, only_net_ids),
         )
         elapsed = (time.perf_counter() - t0) * 1000
@@ -10523,6 +10573,39 @@ class MainWindow(QMainWindow):
             8000,
         )
         self.on_choose_board()
+
+    def on_layout_to_solderable(self) -> None:
+        """This breadboard's whole layout on a solderable one, as a new document
+        (``commands.layout_on_a_solderable_breadboard``): nothing is placed or wired again,
+        and the breadboard stays in its file."""
+        current = self.bus.document
+        if not is_breadboard(current.board):
+            self.statusBar().showMessage(
+                t("Only a solderless breadboard's layout moves to a solderable one."), 8000
+            )
+            return
+        if not self._offer_to_save():
+            return
+        document = layout_on_a_solderable_breadboard(
+            current, DocumentMeta(name=UNTITLED_NAME, created=_now_iso(), modified=_now_iso())
+        )
+        self.current_path = None
+        self._disk_text = None
+        self._watch_current_path()
+        self.bus = self._new_bus(document)
+        self._subscribe_bus()
+        self.scene.bus = self.bus
+        self._forget_the_previous_document()
+        self.on_bus_changed(self.bus.document, None)
+        self._mark_saved()
+        self.view.fit_board()
+        self.statusBar().showMessage(
+            t(
+                "The same layout on a solderable breadboard: {parts} part(s) and {wires} "
+                "wire(s), each on the holes it had."
+            ).format(parts=len(document.components), wires=len(document.conductors)),
+            8000,
+        )
 
     def on_board_setup(self) -> bool:
         """Change the grid or the substrate of the board already open. True when the

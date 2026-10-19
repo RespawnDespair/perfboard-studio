@@ -38,7 +38,7 @@ import dataclasses
 from dataclasses import dataclass
 from itertools import pairwise
 
-from .breadboard import is_breadboard
+from .breadboard import has_breadboard_pattern
 from .command import CommandContext, CommandError
 from .commands import (
     AddConductorPayload,
@@ -126,7 +126,7 @@ def describe_plan(plan: StripboardPlan) -> str:
     """One line, for a status bar or a confirmation dialog."""
     if plan.is_empty and not plan.problems:
         return "Nothing to do: every net is already right on this board."
-    if is_breadboard(plan.document.board):
+    if has_breadboard_pattern(plan.document.board):
         bits = [f"{len(plan.links)} jumper(s)"]
     else:
         bits = [f"{len(plan.cuts)} cut(s)", f"{len(plan.links)} link(s)"]

@@ -38,7 +38,7 @@ from perfboard_studio.autoroute import (
     plan_reroute,
 )
 from perfboard_studio.autoroute import describe as describe_route
-from perfboard_studio.breadboard import is_breadboard
+from perfboard_studio.breadboard import PATTERN_TYPES, has_breadboard_pattern, pattern_board
 from perfboard_studio.breadroute import plan_joined_board
 from perfboard_studio.catalog import (
     CATEGORY_ORDER,
@@ -191,7 +191,7 @@ def _hole(ref: str, board: Board) -> HoleCoord:
     try:
         return parse_hole(ref, board)
     except Exception as err:
-        if is_breadboard(board):
+        if has_breadboard_pattern(board):
             raise SessionError(str(err)) from err
         raise SessionError(
             f"{ref!r} is not a hole address. They look like 'A1', 'C7' or 'AC12': "
@@ -1092,6 +1092,20 @@ class BoardSession:
                 f"{strip_axis!r} is not a strip axis. Use 'horizontal' or 'vertical'."
             )
         wanted_type = cast(BoardType, board_type) if board_type is not None else board.type
+        if wanted_type in PATTERN_TYPES and wanted_type != board.type:
+            # A breadboard's thickness, drill and border follow its KIND, and turning one
+            # kind into the other changes them all (breadboard.pattern_board) -- a board
+            # keeping the plastic's 8.5 mm as copper would be drawn and exported as a slab.
+            return self._dispatch(
+                "board.set",
+                SetBoardPayload(
+                    board=pattern_board(
+                        wanted_type,
+                        cols if cols is not None else board.cols,
+                        rows if rows is not None else board.rows,
+                    )
+                ),
+            )
         updated = dataclasses.replace(
             board,
             type=wanted_type,

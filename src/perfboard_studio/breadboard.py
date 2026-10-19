@@ -37,6 +37,25 @@ position, so they are put on the nearest column, which is columns 1 to 29. Nobod
 rail hole by its number -- a lead goes "into the + rail" -- so the rounding costs nothing a
 builder can see, and it is written here so nobody mistakes it for a measurement.
 
+A SOLDERABLE BREADBOARD IS THE SAME PATTERN IN COPPER (``"solderable-breadboard"``): a
+printed circuit board -- BusBoard's SB830, Adafruit's Perma-Proto and their copies -- whose
+holes are where a breadboard's are and whose strips join the same five, sold so that a
+circuit that works on the breadboard moves to it hole for hole and is soldered. So there
+are two questions in this module and they must not be confused:
+:func:`has_breadboard_pattern` is about the HOLES -- which exist, what joins them, what they
+are called, the rails -- and is true of both; :func:`is_breadboard` is about the PLASTIC --
+nothing soldered, nothing drilled, leads held in clips -- and is true only of the
+solderless one. Everything that solders, drills, trims and is guided with an iron treats a
+solderable breadboard as the soldered board it is.
+
+What is modelled is the CORE every such board shares, chosen over any one maker's board
+(2026-10-19): the solderless pattern below, in the same three lengths. Makers add their own
+on top -- BusBoard's SB830 has two extra rails and two-hole pads down the channel, and is
+47 mm wide, which puts its rails closer to the strips than the solderless grid does -- and
+none of that is drawn. The border defaults to Adafruit's half-size Perma-Proto, 81 x 51 mm
+over 30 x 20 holes, which is the solderless grid with no rows moved; a board with more
+round it, or with mounting holes, is set in Board Setup like any other.
+
 Pure and deterministic, and it imports nothing but the model: ``geometry`` asks this
 module which positions have no hole and what a hole is called, so it cannot ask anything
 of ``geometry`` in return.
@@ -47,7 +66,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from .model import STANDARD_PITCH_MM, Board, HoleCoord, Mm, NetClass
+from .model import STANDARD_PITCH_MM, Board, BoardType, HoleCoord, Mm, NetClass
 
 #: Rows on a breadboard with power rails, and on one without.
 ROWS_WITH_RAILS = 20
@@ -112,13 +131,38 @@ _PAD_MM: Mm = 1.0
 BORDER_X_MM: Mm = 2.54
 BORDER_Y_MM: Mm = 1.9
 
+#: A solderable breadboard is an ordinary 1.6 mm FR-4 board.
+SOLDERABLE_THICKNESS_MM: Mm = 1.6
+#: Drilled for IC legs and square header posts: BusBoard gives the SB830's as 0.042 in.
+SOLDERABLE_HOLE_MM: Mm = 1.07
+#: The copper round each hole, where it widens out of its strip.
+SOLDERABLE_PAD_MM: Mm = 1.8
+#: Board past the outermost hole centres beyond the usual half pitch: Adafruit's half-size
+#: Perma-Proto, 81 x 51 mm over 30 x 20 holes (see the module docstring).
+SOLDERABLE_BORDER_X_MM: Mm = 2.4
+SOLDERABLE_BORDER_Y_MM: Mm = 0.1
+
+#: Every board type laid out in the breadboard's pattern.
+PATTERN_TYPES: frozenset[str] = frozenset({"breadboard", "solderable-breadboard"})
+
 
 def is_breadboard(board: Board) -> bool:
+    """A SOLDERLESS breadboard: plastic and clips, nothing soldered, nothing drilled."""
     return board.type == "breadboard"
 
 
+def is_solderable_breadboard(board: Board) -> bool:
+    return board.type == "solderable-breadboard"
+
+
+def has_breadboard_pattern(board: Board) -> bool:
+    """The breadboard's holes, joins and names: true of the solderless board and the
+    solderable one alike. See the module docstring for the two questions."""
+    return board.type in PATTERN_TYPES
+
+
 def has_rails(board: Board) -> bool:
-    return is_breadboard(board) and board.rows == ROWS_WITH_RAILS
+    return has_breadboard_pattern(board) and board.rows == ROWS_WITH_RAILS
 
 
 def board_problem(board: Board) -> str | None:
@@ -127,7 +171,7 @@ def board_problem(board: Board) -> str | None:
     One answer for ``board.set`` and for loading a file, which refuse the same things for
     the same reason (CLAUDE.md, "persist.py refuses at load what board.set refuses").
     """
-    if not is_breadboard(board):
+    if not has_breadboard_pattern(board):
         return None
     if board.rows not in (ROWS_WITH_RAILS, ROWS_WITHOUT_RAILS):
         return (
@@ -141,20 +185,53 @@ def board_problem(board: Board) -> str | None:
     return None
 
 
-def breadboard(size: str) -> Board:
-    """A breadboard of one of the ``SIZES``."""
-    cols, rows = SIZES[size]
+def pattern_board(kind: BoardType, cols: int, rows: int) -> Board:
+    """A board of either breadboard kind, with that kind's thickness, holes and border.
+
+    THE ONE PLACE those numbers are chosen by kind, because they follow the kind and not
+    the grid: turning a solderless breadboard into a solderable one keeps every hole and
+    changes 8.5 mm of plastic into 1.6 mm of FR-4. Every caller that changes a board's
+    kind -- the window, the MCP server, the move from one to the other -- builds through
+    here, so none of them is left carrying the other kind's drill.
+    """
+    if kind == "breadboard":
+        thickness, pad, drill = THICKNESS_MM, _PAD_MM, HOLE_MM
+        border_x, border_y = BORDER_X_MM, BORDER_Y_MM
+    elif kind == "solderable-breadboard":
+        thickness, pad, drill = SOLDERABLE_THICKNESS_MM, SOLDERABLE_PAD_MM, SOLDERABLE_HOLE_MM
+        border_x, border_y = SOLDERABLE_BORDER_X_MM, SOLDERABLE_BORDER_Y_MM
+    else:
+        raise ValueError(f"{kind!r} is not laid out in the breadboard's pattern.")
     return Board(
-        type="breadboard",
+        type=kind,
         cols=cols,
         rows=rows,
         pitch=STANDARD_PITCH_MM,
-        thickness=THICKNESS_MM,
+        thickness=thickness,
         material="FR4",
-        pad_diameter=_PAD_MM,
-        drill_diameter=HOLE_MM,
-        border_x_mm=BORDER_X_MM,
-        border_y_mm=BORDER_Y_MM,
+        pad_diameter=pad,
+        drill_diameter=drill,
+        border_x_mm=border_x,
+        border_y_mm=border_y,
+    )
+
+
+def breadboard(size: str) -> Board:
+    """A breadboard of one of the ``SIZES``."""
+    return pattern_board("breadboard", *SIZES[size])
+
+
+def solderable_breadboard(size: str) -> Board:
+    """A solderable breadboard of one of the ``SIZES``: the same holes, in copper."""
+    return pattern_board("solderable-breadboard", *SIZES[size])
+
+
+def size_of(board: Board) -> str | None:
+    """Which of the ``SIZES`` a breadboard of either kind is, or None."""
+    if not has_breadboard_pattern(board):
+        return None
+    return next(
+        (name for name, shape in SIZES.items() if shape == (board.cols, board.rows)), None
     )
 
 
@@ -211,7 +288,7 @@ def has_hole(board: Board, hole: HoleCoord) -> bool:
 def missing_holes(board: Board) -> frozenset[HoleCoord]:
     """Every grid position on a breadboard that has no hole -- the channel, the gaps
     beside the rails, the columns a rail leaves out. Empty on any other board."""
-    if not is_breadboard(board):
+    if not has_breadboard_pattern(board):
         return frozenset()
     return frozenset(
         HoleCoord(col, row)
@@ -227,7 +304,7 @@ def clip_of(board: Board, hole: HoleCoord) -> tuple[int, int] | None:
     A column's upper five holes are ``(col, 0)``, its lower five ``(col, 1)``, and a rail
     is ``(row, -1)``: unique on one board, which is all a segment id has to be.
     """
-    if not is_breadboard(board) or not has_hole(board, hole):
+    if not has_breadboard_pattern(board) or not has_hole(board, hole):
         return None
     if rail_of(board, hole.row) is not None:
         return (hole.row, -1)

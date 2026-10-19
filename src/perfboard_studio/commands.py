@@ -31,7 +31,7 @@ import math
 from dataclasses import dataclass
 from typing import Any, Literal, cast, get_args
 
-from .breadboard import board_problem, is_breadboard
+from .breadboard import board_problem, has_breadboard_pattern, is_breadboard, pattern_board
 from .command import (
     CommandContext,
     CommandDefinition,
@@ -253,6 +253,24 @@ def design_on_a_new_board(doc: PerfDocument, meta: DocumentMeta) -> PerfDocument
     )
 
 
+def layout_on_a_solderable_breadboard(doc: PerfDocument, meta: DocumentMeta) -> PerfDocument:
+    """A solderless breadboard's whole layout on a solderable one, as a new document.
+
+    What a solderable breadboard is FOR: its holes are where the breadboard's are and its
+    strips join the same five, so a circuit that works on the breadboard moves to it hole
+    for hole -- "without recutting wires or changing your layout", in BusBoard's words.
+    So this keeps EVERYTHING -- every part on its holes, every jumper, the nets, the design,
+    the sheet, the labels -- and changes only the board, through ``breadboard.pattern_board``
+    so the copper board has a copper board's thickness and drill. Where
+    ``design_on_a_new_board`` hands the circuit back to be laid out again, this is the move
+    that keeps the layout; both leave the breadboard's own file as it was.
+    """
+    if not is_breadboard(doc.board):
+        raise ValueError("Only a solderless breadboard's layout moves to a solderable one.")
+    board = pattern_board("solderable-breadboard", doc.board.cols, doc.board.rows)
+    return dataclasses.replace(doc, meta=meta, board=board)
+
+
 # ---------------------------------------------------------------------------
 # Shared validation helpers
 # ---------------------------------------------------------------------------
@@ -423,8 +441,19 @@ def checked_part_symbol(symbol: object, ref: str) -> PartSymbol | None:
 def refuse_on_breadboard(board: Board, what: str) -> None:
     """A breadboard is a block of plastic over spring clips: nothing is drilled into it and
     it has no copper of its own, so a mounting bore or a row of fingers on one describes
-    no board anybody can hold. Refused, like a cut on pad-per-hole."""
+    no board anybody can hold. Refused, like a cut on pad-per-hole.
+
+    A SOLDERABLE breadboard is a circuit board and takes a mounting bore like any other;
+    its fingers are refused by :func:`refuse_edge_connectors`."""
     if is_breadboard(board):
+        raise CommandError("breadboard", f"A breadboard has no {what}.")
+
+
+def refuse_edge_connectors(board: Board, what: str = "edge connectors") -> None:
+    """Fingers on a board in the breadboard's pattern, of either kind. The pattern runs to
+    the edge -- a rail along each long side, the strips across the short ones -- so a
+    finger strip would stand on holes the pattern already joins to something else."""
+    if has_breadboard_pattern(board):
         raise CommandError("breadboard", f"A breadboard has no {what}.")
 
 
@@ -1965,8 +1994,8 @@ class _SetBoard:
             raise CommandError("invalid-board", problem)
         if is_breadboard(b) and doc.mounting_holes:
             refuse_on_breadboard(b, "mounting holes; remove them first")
-        if is_breadboard(b) and doc.edge_connectors:
-            refuse_on_breadboard(b, "edge connectors; remove them first")
+        if has_breadboard_pattern(b) and doc.edge_connectors:
+            refuse_edge_connectors(b, "edge connectors; remove them first")
 
         # Shrinking the board could strand parts outside it. Refuse rather than
         # silently dropping the user's work, and name EVERY offender: naming the first
@@ -2064,7 +2093,7 @@ class _ApplyBoardPreset:
         resized = _SetBoard().apply(stripped, SetBoardPayload(board=p.board), ctx)
 
         if p.edge_connectors:
-            refuse_on_breadboard(p.board, "edge connectors")
+            refuse_edge_connectors(p.board)
         if p.mounting_holes:
             refuse_on_breadboard(p.board, "mounting holes")
         seen: set[str] = set()
@@ -2846,7 +2875,7 @@ class _ApplyStripboardPlan:
     def apply(
         self, doc: PerfDocument, p: ApplyStripboardPlanPayload, ctx: CommandContext
     ) -> PerfDocument:
-        if is_breadboard(doc.board):
+        if has_breadboard_pattern(doc.board):
             if p.cuts:
                 raise CommandError(
                     "breadboard", "A breadboard has no tracks to cut; its clips are fixed."
@@ -2907,7 +2936,7 @@ class _ApplyStripboardPlan:
     def describe(self, p: ApplyStripboardPlanPayload, doc: PerfDocument) -> str:
         if p.label:
             return p.label
-        if is_breadboard(doc.board):
+        if has_breadboard_pattern(doc.board):
             return f"Fit {len(p.conductors)} jumper(s)"
         return f"Cut {len(p.cuts)} track(s) and fit {len(p.conductors)} link(s)"
 
@@ -3066,7 +3095,7 @@ class _AddEdgeConnector:
         self, doc: PerfDocument, p: AddEdgeConnectorPayload, ctx: CommandContext
     ) -> PerfDocument:
         board = doc.board
-        refuse_on_breadboard(board, "edge connectors")
+        refuse_edge_connectors(board)
         if not _is_plain_int(p.start) or not _is_plain_int(p.count) or p.start < 0 or p.count < 1:
             raise CommandError(
                 "invalid-edge-connector",

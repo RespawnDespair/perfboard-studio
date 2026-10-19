@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from functools import cache
 from typing import Literal
 
-from .breadboard import hole_name, is_breadboard, missing_holes, parse_hole_name
+from .breadboard import has_breadboard_pattern, hole_name, missing_holes, parse_hole_name
 from .model import (
     Board,
     BoardEdge,
@@ -141,7 +141,7 @@ def parse_hole(text: str, board: Board | None = None) -> HoleCoord:
     other board it is :func:`hole_ref_to_coord`, in either case. Raises ValueError.
     """
     stripped = text.strip()
-    if board is not None and is_breadboard(board):
+    if board is not None and has_breadboard_pattern(board):
         for spelling in (stripped, stripped.lower(), stripped.upper()):
             found = parse_hole_name(board, spelling)
             if found is not None:
@@ -173,7 +173,7 @@ def format_hole(c: HoleCoord, board: Board | None = None) -> str:
     is exactly what it always was, which is why no golden moved. A breadboard position with
     no hole has no printed name and is called by its column.
     """
-    if board is not None and is_breadboard(board):
+    if board is not None and has_breadboard_pattern(board):
         name = hole_name(board, c)
         if name is not None:
             return name

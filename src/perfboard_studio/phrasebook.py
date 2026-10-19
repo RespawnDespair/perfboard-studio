@@ -214,6 +214,11 @@ TURKISH: dict[str, str] = {
     "Run the final checks, and power up under current limit.": (
         "Son kontrolleri yap ve akım sınırı altında enerji ver."
     ),
+    "Lay the board down with column 1 on the left and row j at the top: every address in "
+    "this guide is printed on it, row letter first — e12 is row e, column 12.": (
+        "Kartı 1. kolon solda, j sırası üstte olacak şekilde yatır: bu rehberdeki her adres "
+        "üstünde basılı, önce sıra harfi — e12, e sırası ve 12. kolon demek."
+    ),
     "Lay the breadboard down with column 1 on the left and row j at the top: every "
     "address in this guide is printed on it, row letter first — e12 is row e, column "
     "12. Then get the parts ready.": (
@@ -232,6 +237,18 @@ TURKISH: dict[str, str] = {
     "every part and every wire is pushed into its holes.": (
         "Lehimsiz bir breadboard, {points} nokta. Üzerinde hiçbir şey kesilmez, delinmez "
         "ya da lehimlenmez: her parça ve her tel deliklerine itilerek takılır."
+    ),
+    "A solderable breadboard, {points} points: a breadboard's holes and strips in copper. "
+    "Nothing on it is cut: every part goes through its holes and is soldered to the strip "
+    "under it.": (
+        "Lehimlenebilir bir breadboard, {points} nokta: bir breadboard'un delikleri ve "
+        "şeritleri, bakırda. Üzerinde hiçbir şey kesilmez: her parça deliklerinden geçer ve "
+        "altındaki şeride lehimlenir."
+    ),
+    "Soldering guide · solderable breadboard, {points} points · {steps} steps, {checks} "
+    "checks · Perfboard Studio {version}": (
+        "Lehimleme rehberi · lehimlenebilir breadboard, {points} nokta · {steps} adım, "
+        "{checks} kontrol · Perfboard Studio {version}"
     ),
     "Building guide · solderless breadboard, {points} points · {steps} steps, {checks} "
     "checks · Perfboard Studio {version}": (

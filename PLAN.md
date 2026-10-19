@@ -706,9 +706,6 @@ söyleyen tek şey şu an testler.
 
 Plandan gelmeyen, kullanımdan gelen işler. Sıra bağlayıcı değil.
 
-- **Lehimlenebilir breadboard PCB** (SB830, Perma-Proto): lehimsiz breadboard'un deseni,
-  ama lehimleniyor. Lehimsiz breadboard 0.19'da geldi (`breadboard.py`, `breadroute.py`);
-  bu onun üstüne biner — desen, planlayıcı ve adresler aynı, rehber lehim rehberi kalır.
 - **Hiyerarşik sayfa ve bus.** Yok. 24 parçalık kartlarda ihtiyaç duyulmadı.
 - **Kod imzalama** — §12.
 

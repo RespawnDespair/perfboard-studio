@@ -43,7 +43,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from .breadboard import clip_holes, clip_of, is_breadboard
+from .breadboard import clip_holes, clip_of, has_breadboard_pattern, is_solderable_breadboard
 from .geometry import hole_key, is_inside_board
 from .model import Board, HoleCoord, PerfDocument
 
@@ -89,7 +89,7 @@ def is_stripboard(board: Board) -> bool:
 def board_joins_holes(board: Board) -> bool:
     """Whether the board itself joins holes before anything is fitted: stripboard's strips
     and a breadboard's clips. On every other board each hole is an island."""
-    return is_stripboard(board) or is_breadboard(board)
+    return is_stripboard(board) or has_breadboard_pattern(board)
 
 
 def strip_axis(board: Board) -> Literal["horizontal", "vertical"]:
@@ -148,7 +148,7 @@ def segment_of(doc: PerfDocument, hole: HoleCoord) -> tuple[int, int] | None:
 
     On a breadboard it is the clip under the hole, and None where there is no hole.
     """
-    if is_breadboard(doc.board):
+    if has_breadboard_pattern(doc.board):
         return clip_of(doc.board, hole)
     if not is_stripboard(doc.board) or not is_inside_board(hole, doc.board):
         return None
@@ -176,8 +176,22 @@ def segments(doc: PerfDocument) -> tuple[StripSegment, ...]:
     ``segment_of`` about the holes that actually carry something, because a 30 x 20 board
     has 600 holes and only a few dozen of them are soldered into.
 
-    Empty on a breadboard, whose clips are its printed pattern and drawn as one.
+    Empty on a solderless breadboard, whose clips are under the plastic and drawn as its
+    print. On a SOLDERABLE one the clips are copper you can see, so each is a run: a column's
+    five holes, or a whole rail. ``index`` and ``ordinal`` are the clip's own id there
+    (``breadboard.clip_of``), which is unique on the board as a segment id has to be.
     """
+    if is_solderable_breadboard(doc.board):
+        runs: dict[tuple[int, int], list[HoleCoord]] = {}
+        for col in range(doc.board.cols):
+            for row in range(doc.board.rows):
+                clip = clip_of(doc.board, HoleCoord(col, row))
+                if clip is not None:
+                    runs.setdefault(clip, []).append(HoleCoord(col, row))
+        return tuple(
+            StripSegment(index, ordinal, tuple(sorted(holes, key=lambda h: (h.row, h.col))))
+            for (index, ordinal), holes in sorted(runs.items())
+        )
     if not is_stripboard(doc.board):
         return ()
 
@@ -209,7 +223,7 @@ def segment_holes(doc: PerfDocument, hole: HoleCoord) -> tuple[HoleCoord, ...]:
 
     Empty when the hole is cut, off the board, or the board has no strips.
     """
-    if is_breadboard(doc.board):
+    if has_breadboard_pattern(doc.board):
         return clip_holes(doc.board, hole)
     id_ = segment_of(doc, hole)
     if id_ is None:

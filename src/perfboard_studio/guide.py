@@ -55,7 +55,7 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
-from .breadboard import has_rails, is_breadboard
+from .breadboard import has_breadboard_pattern, has_rails, is_breadboard
 from .connectivity import FootprintLookup, PhysicalPinRef
 from .drc import DEFAULT_DRC_OPTIONS, DrcOptions, DrcViolation, run_drc, trace_electrical
 from .erc import run_erc
@@ -799,7 +799,11 @@ def _phase_summary(
         return say(PHASE_SUMMARIES[number])
 
     board = doc.board
-    parts: list[str] = [say("Cut the board")]
+    # A solderable breadboard comes at its size with every address printed on it, so there
+    # is nothing to cut and no corner to mark -- only which way up to lay it, the same
+    # sentence the solderless breadboard's guide opens on.
+    pattern = has_breadboard_pattern(board)
+    parts: list[str] = [] if pattern else [say("Cut the board")]
     if doc.mounting_holes:
         count = len(doc.mounting_holes)
         sizes = ", ".join(f"{d:g} mm" for d in sorted({m.diameter for m in doc.mounting_holes}))
@@ -819,14 +823,24 @@ def _phase_summary(
                 say("drill the {count} mounting holes ({sizes} at {where})",
                     count=count, sizes=sizes, where=where)
             )
-    if board.labels is None:
-        parts.append(say("mark hole A1"))
-    else:
-        parts.append(say("check which corner the board's printed A1 is in"))
+    if not pattern:
+        if board.labels is None:
+            parts.append(say("mark hole A1"))
+        else:
+            parts.append(say("check which corner the board's printed A1 is in"))
     parts.append(say("get the iron and the parts ready"))
 
-    summary = say("{items}, and {last}.", items=", ".join(parts[:-1]), last=parts[-1])
+    if len(parts) > 1:
+        summary = say("{items}, and {last}.", items=", ".join(parts[:-1]), last=parts[-1])
+    else:
+        summary = parts[0] + "."
     summary = summary[0].upper() + summary[1:]
+    if pattern:
+        summary = say(
+            "Lay the board down with column 1 on the left and row j at the top: every "
+            "address in this guide is printed on it, row letter first — e12 is row e, "
+            "column 12."
+        ) + " " + summary
 
     if doc.mounting_holes:
         # Its own sentence, because it is an instruction about ORDER rather than another

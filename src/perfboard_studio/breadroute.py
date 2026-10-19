@@ -40,8 +40,8 @@ from .breadboard import (
     Rail,
     clip_holes,
     clip_of,
+    has_breadboard_pattern,
     has_hole,
-    is_breadboard,
     rail_of,
     rail_takes,
 )
@@ -92,7 +92,7 @@ def plan_joined_board(
 ) -> StripboardPlan:
     """The plan for a board that joins its own holes: a stripboard's cuts and links, or a
     breadboard's jumpers. What every caller with such a board asks."""
-    if is_breadboard(doc.board):
+    if has_breadboard_pattern(doc.board):
         return plan_breadboard(doc, lookup, only_net_ids)
     return plan_stripboard(doc, lookup, only_net_ids)
 
@@ -103,7 +103,7 @@ def plan_breadboard(
     only_net_ids: tuple[NetId, ...] | None = None,
 ) -> StripboardPlan:
     """Work out the jumpers this breadboard needs, without touching it."""
-    if not is_breadboard(doc.board):
+    if not has_breadboard_pattern(doc.board):
         return StripboardPlan(
             document=doc, cuts=(), conductors=(), planned_cuts=(), links=(), label="",
             problems=(

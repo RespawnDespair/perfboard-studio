@@ -1746,6 +1746,50 @@ fingers, bores. Not a command, because the board the design was tried on is a fi
 keeping; the window then goes straight to `on_choose_board`, which tries the stock boards on
 the design as it does for any design with nothing placed.
 
+### A solderable breadboard is the same pattern in copper
+
+`board.type == "solderable-breadboard"`: a printed circuit board whose holes are where a
+breadboard's are and whose strips join the same five -- BusBoard's SB830, Adafruit's
+Perma-Proto -- bought so that a circuit that works on the breadboard moves to it hole for
+hole and is soldered. It is a fifth `BoardType` and nothing else new in the file, so the
+format did not move. Five things carry it, each with a test in
+`tests/test_solderable_breadboard.py`:
+
+- **Two questions, two predicates, and every caller asks one of them.**
+  `breadboard.has_breadboard_pattern` is about the HOLES -- which exist, what joins them,
+  what they are called, the rails -- and is true of both kinds: `clip_of`, `format_hole` and
+  `parse_hole`, `segment_of`, connectivity's either-side pass (a jumper in a free hole is
+  soldered to the strip as surely as it is gripped by a clip), `wrong-rail`, the placer's
+  clips, `breadroute`, the refusal of a cut and of fingers. `is_breadboard` is about the
+  PLASTIC -- nothing soldered, nothing drilled, a lead stopping in its clip -- and is the
+  solderless one only: `not-on-breadboard`, the building guide's phases and wire lengths, the
+  refusal of a mounting hole, the white plastic in both views and STEP. A solderable board is
+  everywhere else the soldered board it is, so it gets the soldering guide, an iron, trimmed
+  leads and mounting holes without a line of its own.
+- **Its board follows its kind** (`breadboard.pattern_board`): 1.6 mm FR-4 drilled 0.042 in
+  where the plastic is 8.5 mm with 0.8 mm openings. Board Setup, the MCP server's `set_board`
+  and the move below all build through it, because a board changed from one kind to the other
+  that kept the other kind's numbers is drawn and exported as the wrong slab.
+- **Its border is the one thing asked beside its size**, because it is where makers differ.
+  It starts at the half-size Perma-Proto's (81 x 51 mm over 30 x 20 holes, which is the
+  solderless grid with no row moved). The SB830 is 47 mm wide, so its rails sit closer to the
+  strips than the grid puts them, and its two extra rails and channel pads are not drawn: the
+  shared core was chosen over any one maker's board (2026-10-19).
+- **Its copper is the clips**: `stripboard.segments` returns one run per clip on a solderable
+  board (still none on the solderless one, whose clips are under the plastic), so both views'
+  strip builders draw it with no code of their own. Where the pattern has no hole the
+  renderers add `geometry.holeless_positions` to the set that already means "no pad and no
+  bore here" for a finger -- empty on every other board, which is why no render moved.
+- **The move is `commands.layout_on_a_solderable_breadboard`**, File ▸ Same Layout on a
+  Solderable Breadboard…: a NEW document, as the move to perfboard is, keeping EVERYTHING --
+  parts on their holes, jumpers, nets, design, sheet, labels -- and changing only the board.
+  Where `design_on_a_new_board` hands the circuit back to be laid out again, this is the move
+  that keeps the layout.
+
+`persist.BOARD_TYPES` and `BOARD_MATERIALS` are read off the model's Literals now
+(`get_args`): the new type was added to `BoardType` and not to persist's own copy, and every
+board of it saved and then refused to open.
+
 ### Layering
 
 ```

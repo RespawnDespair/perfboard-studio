@@ -50,7 +50,8 @@
   lehimlenmesi keyifli bir yerleşimi çıkaran şey bu.
 - **Önce breadboard, sonra plaket.** Lehimsiz breadboard da bir kart tipi: yerleştirilir,
   jumper'larla ve raylardan gelen güçle kablolanır, içinde havya olmayan bir kurulum
-  rehberi alır. Devre çalışınca aynı tasarım plakete geçer.
+  rehberi alır. Devre çalışınca aynı tasarım plakete geçer — ya da delik delik
+  lehimlenebilir bir breadboard'a.
 - **Yalnızca üçüncü boyutun görebildiği üç kural.** Kutuya sığmayan bir parça,
   üstüne parça lehimlenecek bir jumper, ve sıcak bir parçanın fazla yakınında
   duran ısıya duyarlı bir parça. 3D görünüm bir resim değil, kontrol aracı — ve kart,
@@ -104,6 +105,9 @@ neti aynı klibe koymaz ve her entegreyi oluğun üstüne oturtur, router jumper
 deliklere, toprağı ve gücü raylara taşır, rehber de bir kurulum rehberine dönüşür: önce
 plastiğin üstüne düz yatan jumper'lar, hiçbir yerde havya yok. Devre çalışınca *Dosya ▸ Bu
 Tasarımdan Yeni Kart Oluştur* onu plakete taşır; breadboard'un dosyası olduğu gibi kalır.
+Ya da *Dosya ▸ Aynı Yerleşimle Lehimlenebilir Breadboard'a* onu lehimlenebilir bir karta
+koyar — aynı delikler ve şeritler, bakırda — her parça ve jumper eski deliklerinde; onunla
+gelen rehber de yeniden bir lehimleme rehberidir.
 
 ![Yarım boy breadboard'a yerleştirilip kablolanmış NE555 astable](./docs/images/breadboard-3d.png)
 
@@ -379,7 +383,7 @@ src/perfboard_studio/boardfit.py hangi hazır kartın alınacağı, tasarım her
 src/perfboard_studio/step_export.py  STEP katıları olarak kart: DRC'nin ölçtüğü gövdeler
 src/perfboard_studio/stripboard.py  bakırı baştan bağlı gelen kart; striproute.py onun üstünde
                            tasarım yapan kes-ve-bağla planlayıcısı
-src/perfboard_studio/breadboard.py  lehimsiz breadboard'un sabit deseni; breadroute.py onu
+src/perfboard_studio/breadboard.py  breadboard'un sabit deseni, lehimsiz ya da lehimli; breadroute.py onu
                            kablolayan jumper ve ray planlayıcısı
 src/perfboard_studio/parsers/    KiCad netlist içe aktarıcı; kicad_parts.py: her bileşenin hangi
                            parça olduğu ve hangi bacağının hangisi olduğu
@@ -426,7 +430,8 @@ paneli ve yanındaki sayfa dışa aktarımı, aralarında tek bir seçimle yan y
 3D, pin adları kartta basılan gerçek parça kataloğu, üzerinde ne varsa o olarak çizilen pin
 başlıklarındaki modüller, karta yazılan etiketler, parça parça okunan KiCad netlist'leri,
 kütüphanede olmayan parçaların kendi ölçüleriyle tarif edilmesi, karta tellerle bağlanan
-panel parçaları, lehimsiz breadboard'lar — devre önce onda denenip sonra perfboard'a taşınır —,
+panel parçaları, lehimsiz breadboard'lar — devre önce onda denenip sonra perfboard'a
+taşınır ya da lehimlenebilir bir breadboard'a delik delik lehimlenir —,
 çökme kurtarma, MCP
 sunucusu, TR/EN yerelleştirme, bir `v*` etiketiyle çalışan üç platformluk paketleme, ve
 yeni sürümü haber verip indiren güncelleme denetimi

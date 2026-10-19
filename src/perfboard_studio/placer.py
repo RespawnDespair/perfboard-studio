@@ -91,7 +91,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 
 from .autoroute import plan_autoroute
-from .breadboard import clip_of, is_breadboard, rail_of, rail_takes
+from .breadboard import clip_of, has_breadboard_pattern, rail_of, rail_takes
 from .breadroute import plan_joined_board
 from .command import CommandContext
 from .commands import (
@@ -928,7 +928,7 @@ def _build_strips(
     hole, which is what lets every count below take a breadboard unchanged.
     """
     board = doc.board
-    if is_breadboard(board):
+    if has_breadboard_pattern(board):
         index_of: dict[tuple[int, int], int] = {}
         clips: dict[tuple[int, int], tuple[int, int]] = {}
         rail_nets: dict[int, frozenset[int]] = {}
@@ -2862,7 +2862,7 @@ def suggest_boards(
     perfboard's grid is a breadboard ``board.set`` refuses. Its sizes are its pattern, and
     are chosen as such in Board Setup.
     """
-    if is_breadboard(base):
+    if has_breadboard_pattern(base):
         return ()
     suggestions: list[BoardSuggestion] = []
     for preset in sorted(presets, key=lambda p: (p.width_mm * p.height_mm, p.name)):

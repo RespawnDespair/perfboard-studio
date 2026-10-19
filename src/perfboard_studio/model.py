@@ -75,12 +75,15 @@ VALID_ROTATIONS: tuple[Rotation, ...] = (0, 90, 180, 270)
 #: Which kind of board this is, and it decides what a connection IS: on pad-per-hole
 #: every hole is an island and every connection is added, on stripboard whole rows
 #: arrive joined and the design is where the copper is BROKEN (see stripboard.py), and
-#: on a solderless breadboard the joins are clips nobody can break (see breadboard.py).
+#: on a solderless breadboard the joins are clips nobody can break (see breadboard.py), and
+#: a solderable breadboard is that pattern in copper: the same holes and strips, soldered.
 #: Spelled with ``TypeAlias`` for the same reason ``BoardMaterial`` below is: it is READ
 #: AT RUN TIME, by the MCP server validating an agent's requested type against
 #: ``get_args`` -- which returns an empty tuple for a PEP 695 alias, so every value would
 #: be refused by a check that raises nothing.
-BoardType: TypeAlias = Literal["pad-per-hole", "stripboard", "plain", "breadboard"]  # noqa: UP040
+BoardType: TypeAlias = Literal[  # noqa: UP040
+    "pad-per-hole", "stripboard", "plain", "breadboard", "solderable-breadboard"
+]
 
 #: Substrate material. Not cosmetic: FR-2 phenolic paper (cheap "pertinaks") lifts pads
 #: under sustained heat far more readily than FR-4, which bounds how long a pure solder

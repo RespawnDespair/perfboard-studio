@@ -35,9 +35,9 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Literal, cast
+from typing import Literal, cast, get_args
 
-from .breadboard import board_problem, is_breadboard
+from .breadboard import board_problem, has_breadboard_pattern, is_breadboard
 from .geometry import validate_orthogonal_chain
 from .model import (
     DEFAULT_BOARD_NOTE_SIZE_MM,
@@ -953,8 +953,11 @@ def _check_unknown_keys(obj: dict[str, object], known: tuple[str, ...], path: st
             warnings.append(f'Unknown property "{_field_path(path, key)}" was ignored.')
 
 
-BOARD_TYPES: tuple[BoardType, ...] = ("pad-per-hole", "stripboard", "plain", "breadboard")
-BOARD_MATERIALS: tuple[BoardMaterial, ...] = ("FR4", "FR2", "FR1")
+#: Read off the model's own Literals rather than spelled again: the solderable breadboard
+#: was added to ``BoardType`` and to nothing here, and every board of it saved and then
+#: refused to open. ``get_args`` works on these because they are ``TypeAlias``es (model.py).
+BOARD_TYPES: tuple[BoardType, ...] = get_args(BoardType)
+BOARD_MATERIALS: tuple[BoardMaterial, ...] = get_args(BoardMaterial)
 STRIP_AXES: tuple[str, ...] = ("horizontal", "vertical")
 PAD_SHAPES: tuple[PadShape, ...] = ("round", "oblong")
 PAD_AXES: tuple[PadAxis, ...] = ("horizontal", "vertical")
@@ -1744,13 +1747,12 @@ def _parse_document(raw_input: object) -> tuple[PerfDocument, list[str]]:
         height_limit_mm = None
 
     # What ``board.set`` refuses about a breadboard's features, refused here too: a bore
-    # or a finger strip in a block of plastic describes no board anybody can hold.
-    if is_breadboard(board) and (mounting_holes or edge_connectors):
-        raise ValidationError(
-            "invalid-board",
-            "A breadboard has no mounting holes or edge connectors.",
-            "board",
-        )
+    # or a finger strip in a block of plastic describes no board anybody can hold, and a
+    # solderable breadboard's pattern runs to the edge where a finger strip would go.
+    if is_breadboard(board) and mounting_holes:
+        raise ValidationError("invalid-board", "A breadboard has no mounting holes.", "board")
+    if has_breadboard_pattern(board) and edge_connectors:
+        raise ValidationError("invalid-board", "A breadboard has no edge connectors.", "board")
 
     document = PerfDocument(
         meta=meta,

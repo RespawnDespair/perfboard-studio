@@ -45,6 +45,22 @@ closed without a bump.
 - **`run_erc` for an agent**, and an `erc` count in `get_status`: the one check that means
   anything on a design with nothing placed, which is when an agent drawing a circuit asks.
 
+- **A solderable breadboard is a board type**: the breadboard's holes and strips in copper,
+  as BusBoard's SB830 and Adafruit's Perma-Proto are, in the same three lengths. Its holes
+  are named as a breadboard's (`e12`, `T+12`), its five-hole strips and rails join what a
+  breadboard's clips join, and Place on the Board and Autoroute plan it as they plan a
+  breadboard -- but it is soldered: the build guide is a soldering guide with an iron, a lead
+  goes through and is trimmed, it takes a mounting hole, and solder on it is not an error.
+  Board Setup asks its size and its border, which is where makers differ; the border starts
+  at the half-size Perma-Proto's, 81 × 51 mm. Both views draw it as copper where the pattern
+  has holes, with the breadboard's print in silkscreen, and the STEP model is drilled only
+  there.
+
+- **File ▸ Same Layout on a Solderable Breadboard** is what such a board is bought for: a
+  circuit that works on the breadboard goes onto it hole for hole, every part and jumper
+  where it was, as a new document -- the breadboard's own file stays as it was. An agent does
+  the same with `set_board(board_type="solderable-breadboard")`.
+
 ## [0.19.0] - 2026-10-16
 
 ### Added

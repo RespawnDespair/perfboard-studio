@@ -51,7 +51,8 @@
   a layout that is pleasant to actually solder.
 - **A breadboard first, then the perfboard.** A solderless breadboard is a board type
   too: placed, wired with jumpers and power down the rails, and given a building guide
-  with no iron in it. When the circuit works, the same design goes on to perfboard.
+  with no iron in it. When the circuit works, the same design goes on to perfboard — or
+  onto a solderable breadboard, hole for hole.
 - **Three rules only the third dimension can see.** A part too tall for the case,
   a jumper trapped under a body that gets soldered down on top of it, and a
   heat-sensitive part sitting too close to a hot one. The 3D view is a checking
@@ -108,7 +109,9 @@ placer keeps two nets out of one clip and puts each chip across the groove, the 
 jumpers into free holes and ground and power down the rails, and the guide becomes a
 building guide: jumpers first, flat on the plastic, and no iron anywhere. When the circuit
 works, *File ▸ New Board from This Design* takes it on to perfboard, and the breadboard's
-file stays as it was.
+file stays as it was. Or *File ▸ Same Layout on a Solderable Breadboard* puts it on a
+solderable one — the same holes and strips in copper — with every part and jumper on the
+holes it had, and the guide that comes with it is a soldering guide again.
 
 ![The NE555 astable on a half-size breadboard, placed and wired](https://raw.githubusercontent.com/medinstech/perfboard-studio/main/docs/images/breadboard-3d.png)
 
@@ -377,7 +380,7 @@ src/perfboard_studio/boardfit.py which stock board to buy, by building the desig
 src/perfboard_studio/step_export.py  the board as STEP solids, the bodies DRC measured
 src/perfboard_studio/stripboard.py  the board whose copper arrives joined, and striproute.py
                            for the cuts-and-links planner that designs on one
-src/perfboard_studio/breadboard.py  the solderless breadboard's fixed pattern, and breadroute.py
+src/perfboard_studio/breadboard.py  the breadboard's fixed pattern, solderless or soldered, and breadroute.py
                            for the jumpers and rails that wire one
 src/perfboard_studio/parsers/    KiCad netlist importer, and kicad_parts.py: which part each
                            component is, and which of its legs is which
@@ -424,7 +427,8 @@ with one selection between them, a catalog of real parts with their pin names pr
 the board, modules on header strips drawn as what is on them, labels written on the board,
 KiCad netlists read part by part, parts described by their own measurements when the
 library does not have them, parts on the panel wired to the board, solderless breadboards —
-the circuit tried on one and then taken to perfboard —, crash recovery, the MCP server, TR/EN localisation, the
+the circuit tried on one and then taken to perfboard, or soldered hole for hole on a
+solderable one —, crash recovery, the MCP server, TR/EN localisation, the
 three-platform packaging that a `v*` tag runs, and the update check that tells you a release exists and fetches it (**Help ▸ Check
 for Updates**; it verifies the download against the release's `SHA256SUMS` and then hands
 it to you — running it stays your click).
