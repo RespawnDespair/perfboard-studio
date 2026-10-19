@@ -731,6 +731,13 @@ TURKISH: dict[str, str] = {
         "Şemanın ayrı tuttuğu netler arasında {count} kısa devre var. Bunlar giderilmeden "
         "bu kartı kurma."
     ),
+    "{count} error(s) in the circuit itself ({parts}) — a chip or a module with its supply "
+    "or ground on nothing, a part drawn the wrong way round, or a pin the part does not have. "
+    "This guide builds the circuit as drawn, those included: fix the circuit first.": (
+        "Devrenin kendisinde {count} hata var ({parts}) — beslemesi ya da toprağı hiçbir yere "
+        "bağlanmamış bir entegre ya da modül, ters çizilmiş bir parça ya da parçada olmayan bir "
+        "pin. Bu rehber devreyi çizildiği gibi kurdurur, bunlar da dahil: önce devreyi düzeltin."
+    ),
     "{count} DRC error(s) on this board — overlapping parts, crossing conductors or pins "
     "sharing a hole. The steps below describe it anyway; some of them will not be "
     "physically possible.": (
@@ -745,6 +752,7 @@ TURKISH: dict[str, str] = {
     "unknown-footprint": "bilinmeyen kılıf",
     "edge-connector": "kenar konnektörü",
     "no-netlist": "netlist yok",
+    "erc-error": "devre hatası",
     "drc-error": "DRC hatası",
     "no-conductors": "iletken yok",
     "lvs-open": "LVS açık devre",

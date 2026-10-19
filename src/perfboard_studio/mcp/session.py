@@ -89,6 +89,7 @@ from perfboard_studio.commands import (
 )
 from perfboard_studio.connectivity import extract_physical_nets
 from perfboard_studio.drc import run_drc
+from perfboard_studio.erc import run_erc
 from perfboard_studio.footprints import (
     GENERATED_ID_GRAMMAR,
     footprint_lookup,
@@ -294,6 +295,7 @@ class BoardSession:
         it carries the DRC and LVS summaries rather than making that two more round
         trips.
         """
+        erc = run_erc(self.document, self.lookup)
         drc = run_drc(self.document, self.lookup)
         lvs = run_lvs(self.document, self.lookup)
         remaining = summarize(ratsnest(self.document, self.lookup))
@@ -311,6 +313,12 @@ class BoardSession:
             "parts_not_placed": len(self.document.parts),
             "conductors": len(self.document.conductors),
             "schematic_nets": len(self.document.nets),
+            # The circuit's own check, before the board's: a design with nothing placed
+            # has no DRC or LVS worth reading, and this is already the whole answer for it.
+            "erc": {
+                "errors": sum(1 for f in erc if f.severity == "error"),
+                "warnings": sum(1 for f in erc if f.severity == "warning"),
+            },
             "drc": {
                 "errors": sum(1 for v in drc if v.severity == "error"),
                 "warnings": sum(1 for v in drc if v.severity == "warning"),
@@ -1549,6 +1557,27 @@ class BoardSession:
         return result
 
     # -- verification ------------------------------------------------------
+
+    def run_erc(self) -> dict[str, Any]:
+        findings = run_erc(self.document, self.lookup)
+        names = {net.id: net.name for net in self.document.nets}
+        return {
+            # "ok" is the call, as everywhere here; the verdict is the error count.
+            "ok": True,
+            "errors": sum(1 for f in findings if f.severity == "error"),
+            "warnings": sum(1 for f in findings if f.severity == "warning"),
+            "findings": [
+                {
+                    "rule": f.rule,
+                    "severity": f.severity,
+                    "message": f.message,
+                    "parts": list(f.refs),
+                    "pins": [f"{p.component_ref}.{p.pin}" for p in f.pins],
+                    "nets": [names[net_id] for net_id in f.net_ids if net_id in names],
+                }
+                for f in findings
+            ],
+        }
 
     def run_drc(self) -> dict[str, Any]:
         violations = run_drc(self.document, self.lookup)

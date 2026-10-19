@@ -58,6 +58,7 @@ from typing import Literal
 from .breadboard import has_rails, is_breadboard
 from .connectivity import FootprintLookup, PhysicalPinRef
 from .drc import DEFAULT_DRC_OPTIONS, DrcOptions, DrcViolation, run_drc, trace_electrical
+from .erc import run_erc
 from .footprints import adapter_package, flying_lead_length_mm, wire_entry
 from .geometry import (
     all_pin_holes,
@@ -2517,6 +2518,24 @@ def _warnings(
             )
         )
     else:
+        # First, because it is about the circuit and everything after it about the board:
+        # LVS proves the board is the circuit, and a circuit with an unpowered chip in it
+        # passes LVS perfectly. Built as drawn, it is a dead board.
+        circuit_errors = [f for f in run_erc(doc, lookup) if f.severity == "error"]
+        if circuit_errors:
+            warnings.append(
+                GuideWarning(
+                    code="erc-error",
+                    message=say(
+                        "{count} error(s) in the circuit itself ({parts}) — a chip or a "
+                        "module with its supply or ground on nothing, a part drawn the wrong "
+                        "way round, or a pin the part does not have. This guide builds the "
+                        "circuit as drawn, those included: fix the circuit first.",
+                        count=len(circuit_errors),
+                        parts=", ".join(dict.fromkeys(r for f in circuit_errors for r in f.refs)),
+                    ),
+                )
+            )
         lvs = run_lvs(doc, lookup)
         if lvs.summary.opens:
             warnings.append(

@@ -20,6 +20,29 @@ closed without a bump.
 
 ## [Unreleased]
 
+### Added
+
+- **The circuit is checked as it is drawn, before any board is.** ERC reads what each part
+  calls its pins and says what cannot work: a chip with a supply pin connected to nothing
+  (for a module, no ground), a VCC on a ground net or a GND on a power net, an electrolytic
+  or an LED drawn the wrong way round, and a net naming a pin the part does not have. It
+  also warns about a second supply pin left open, a wired NC pin, a net that reaches only one
+  pin, a part connected to nothing and a net naming a part nobody has. A part placed from the
+  catalog arrives with its pins named, so it is checked in full; a part whose pins nobody
+  named is not guessed at. A DS18B20 with its supply tied to ground, a clamp diode from
+  ground to a rail and an electrolytic on a negative rail are all left alone, and none of
+  the examples has a finding.
+
+- **Where it shows.** The findings panel is ERC / DRC / LVS, with the circuit's group first
+  and open whenever it has an error; a finding about a part not yet on the board points at
+  it on the sheet. The status bar counts it beside DRC and LVS. While the circuit has an
+  error the Circuit step is marked as the problem and Next opens what is wrong, so a board
+  is not chosen for a circuit that cannot work. The build guide warns when it is describing
+  one, in both languages, and `--headless` prints every finding.
+
+- **`run_erc` for an agent**, and an `erc` count in `get_status`: the one check that means
+  anything on a design with nothing placed, which is when an agent drawing a circuit asks.
+
 ## [0.19.0] - 2026-10-16
 
 ### Added

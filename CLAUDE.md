@@ -1072,6 +1072,49 @@ Two derivations must not be replaced with conventions:
   (`solder-trace-proximity`) hits. The risk the tool predicted and the measurement the
   user performs are one list, which is the whole point.
 
+### The circuit is checked before the board
+
+`erc.py` answers the one question DRC and LVS cannot: whether the CIRCUIT can work. LVS takes
+the netlist as the truth, so a 555 drawn with its VCC on nothing passes it cleanly and the
+guide writes the build of a dead board. One function, six consumers: the findings panel
+(ERC's group first, open while it has an error), the status bar, the step bar (an ERC error
+keeps Circuit from done and makes it the problem, so Next opens `show_circuit_findings`
+instead of choosing a board), the guide (`erc-error`, first of the netlist warnings), MCP
+(`run_erc` and `get_status["erc"]`) and `--headless`. It never reads the board, the copper
+or the sheet's geometry, so a design with nothing placed is checked exactly as a finished one.
+
+Five things are load-bearing, each with a test in `tests/test_erc.py`:
+
+- **It reads pin NAMES and nothing else** (`model.pin_name_of`). A DIP whose pins nobody
+  named is not checked, and that is deliberately not filled in from the catalog by the
+  part's value: nothing in a document refers back to `catalog.py`, and a check that did
+  would answer differently about one file on two releases. It is also why every example is
+  clean (`test_no_shipped_example_has_a_finding`) -- their chips came from a KiCad netlist
+  unnamed -- and why placing from the catalog is what makes this worth having.
+- **An error is something nobody does on purpose**, because an error holds the step bar
+  back. Every exemption came from a real circuit: NC on `nano-relay`'s relay terminal is
+  normally-closed, so NC is never checked on a connector, a relay or a part with NO or COM
+  pins; a DS18B20 in parasite mode has VDD on ground, so a part whose supply pins share a net
+  is exempt from `supply-on-wrong-net`; a clamp diode runs from ground to a rail, so only
+  electrolytics and LEDs are polarity-checked; and `parsers.kicad.infer_net_class` classes
+  `-12V` and `VEE` as POWER, so `is_negative_rail` decides whether a + on ground is right.
+- **`KIND_BY_ARCHETYPE` says what every archetype is** -- a chip needs every supply it
+  names, a module only its ground (its 3V3 or 5V may be an output, and pins of one name are
+  joined on its own board), a connector may have spares, a passive has no supply -- and a
+  test holds it to `BodyArchetype`, the archetype-table rule. IN is a supply only on a part
+  whose pins are exactly a regulator's (`{IN, OUT, GND}` or `{IN, OUT, ADJ}`); anywhere else
+  it is as often a signal.
+- **Connected means on a net with ANOTHER pin that exists.** A VCC alone on a net called
+  VCC is both a single-pin net and an unpowered chip, which is the label-typo case the sheet
+  makes easy.
+- **It is quiet until something is joined.** No `part-unconnected` until some net joins two
+  pins, and no supply finding on a part with nothing wired, so a circuit half drawn is one
+  warning per unwired part rather than a wall of errors about chips nobody has reached yet.
+
+Engine messages are English like DRC's; the panel's titles are `ui/main._erc_title`, held to
+`erc.RULES` by `test_every_rule_and_every_lvs_finding_has_a_title_in_words`. No golden moved:
+the NE555 fixture has no ERC error, so its guide carries no `erc-error`.
+
 ### The design comes before the board, and the sheet is drawn from it
 
 Two halves that must not be confused.
@@ -1704,7 +1747,7 @@ the design as it does for any design with nothing placed.
 
 ```
 model → geometry → stripboard → connectivity / occupancy
-                                    → drc, lvs, router, autoroute, placer, ratsnest,
+                                    → erc, drc, lvs, router, autoroute, placer, ratsnest,
                                       striproute, schematic
                                                         → boardfit, step_export
                                                         → guide → guide_export

@@ -37,6 +37,7 @@ from perfboard_studio.autoroute import describe as describe_plan
 from perfboard_studio.autoroute import describe_best, plan_autoroute, plan_best_autoroute
 from perfboard_studio.breadroute import plan_joined_board
 from perfboard_studio.drc import run_drc
+from perfboard_studio.erc import run_erc
 from perfboard_studio.footprints import footprint_lookup
 from perfboard_studio.geometry import board_outline_mm, hole_span_mm
 from perfboard_studio.guide import GuideOptions, build_guide
@@ -211,6 +212,20 @@ def headless(argv: list[str]) -> int:
     t_step = (time.perf_counter() - t0) * 1000
     print(f"STEP model   {t_step:6.1f} ms   {step.stat().st_size // 1024} KB -> {step.name}")
 
+    # --- ERC first: the circuit, before anything about the board. Each finding is
+    # printed, because a circuit error is the one thing in this report the board's own
+    # checks below cannot see.
+    t0 = time.perf_counter()
+    circuit = run_erc(doc, lookup)
+    t_erc = (time.perf_counter() - t0) * 1000
+    erc_errors = sum(1 for f in circuit if f.severity == "error")
+    print(
+        f"\nERC          {t_erc:6.1f} ms   {erc_errors} error(s), "
+        f"{len(circuit) - erc_errors} warning(s)"
+    )
+    for finding in circuit:
+        print(f"             {finding.severity}: {finding.message}")
+
     # --- DRC / LVS, timed. This is the number that matters for "is DRC fast enough to
     # run after every drag": see the docstring on view2d.BoardScene.mouseReleaseEvent
     # and main.py's on_bus_changed -- DRC runs on drag RELEASE, once, not per frame.
@@ -224,7 +239,7 @@ def headless(argv: list[str]) -> int:
     # are labels, not phrases, and stay as they are.
     errors = sum(1 for v in violations if v.severity == "error")
     warns = sum(1 for v in violations if v.severity == "warning")
-    print(f"\nDRC          {t_drc:6.1f} ms   {errors} error(s), {warns} warning(s) ({len(violations)} total)")
+    print(f"DRC          {t_drc:6.1f} ms   {errors} error(s), {warns} warning(s) ({len(violations)} total)")
 
     t0 = time.perf_counter()
     lvs_result = run_lvs(doc, lookup)

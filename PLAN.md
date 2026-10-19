@@ -349,6 +349,25 @@ lehimle route edilince aracın az önce route ettiği kartta **51 bulgu** çık�
 yanı yol, 20'si aynı boşluğun iki uçtan iki kez sayılması. Router riski hâlâ fiyatlıyor,
 yani etrafından dolaşıyor; sadece söylediğiniz stille artık tartışmıyor.
 
+### 5.3 ERC — devrenin kendisi
+
+Planda yoktu; devre uygulamanın içinde çizilmeye başlayınca gerekti. LVS netlist'i doğru
+kabul eder, o yüzden VCC'si hiçbir yere bağlanmamış bir 555'i temiz geçirir ve rehber ölü
+bir kartın montajını anlatır. `erc.py` pin **adlarını** okur (`pin_name_of`) ve karta hiç
+bakmaz, yani yerleştirilmemiş bir tasarımda da çalışır.
+
+- **Hata** (devre çizildiği gibi çalışamaz): beslemesi bağlı olmayan entegre (modülde
+  toprağı), toprak netinde VCC ya da güç netinde GND, ters çizilmiş elektrolitik ya da LED,
+  parçada olmayan bir pini anan net. Hata, iş akışında Devre adımını "bitti" saymaz.
+- **Uyarı**: açıkta kalan ikinci besleme pini, bağlanmış NC pini, tek pine ulaşan net,
+  hiçbir yere bağlı olmayan parça, kimsenin tanımlamadığı bir parçayı anan net.
+
+Adı verilmemiş pinlere tahmin yürütülmez ve katalogdan değere göre ad doldurulmaz —
+belge kataloğa bağlı değil. Her istisna gerçek bir devreden geldi: klemensteki NC "normalde
+kapalı" kontaktır, parazit beslemeli DS18B20'nin VDD'si topraktadır, kenetleme diyodu
+topraktan raya gider, `-12V` güç sınıfında olsa da negatif raydır. Örneklerin hiçbirinde
+bulgu yok.
+
 ---
 
 ## 6. Algoritmalar---
@@ -608,7 +627,7 @@ CI görsel testleri GUI olmadan çalışmalı. `--headless` (`ui/headless.py`) 2
 
 ### 9.2 Tool yüzeyi
 
-**Gerçekleşen: 54 tool**, plandaki "~25"e karşı. Tavan tutmadı, kural tuttu ve asıl
+**Gerçekleşen: 55 tool**, plandaki "~25"e karşı. Tavan tutmadı, kural tuttu ve asıl
 istenen kuraldı: her tool `docs/MCP.md`'de bir gruba ve bir gerekçeye bağlı, ve
 `test_mcp.py` bunu iki yönden birden denetliyor — dokümante edilmemiş bir tool kimsenin
 savunmadığı bir tool, artık var olmayan bir dokümante tool ise ajanı olmayan bir şeye
@@ -675,7 +694,7 @@ yüzden burada yalnızca **ne kaldığı** yazılı.
 | **M3** Router + yerleştirme | A\*/Lee + rip-up & reroute, lehim yolu primitifi + ray stratejisi, SA yerleştirme | ✅ |
 | **M4** 3D tam | Montaj animasyonu, patlatılmış görünüm, yükseklik/çarpışma DRC, headless render | ✅ |
 | **M5** Lehim rehberi | Sıralama motoru, adım kartları, tel kesim listesi, **doğrulama kontrol noktaları**, HTML+PDF+CSV | Kod ✅ · **dogfood ❌** |
-| **M6** MCP + CLI | 54 tool, iki taşıma, dosya izleme, snapshot/restore | ✅ |
+| **M6** MCP + CLI | 55 tool, iki taşıma, dosya izleme, snapshot/restore | ✅ |
 | **M7** Lansman | TR/EN i18n, dokümantasyon, örnek projeler, CI, paketleme, imzalama | İmzalama dışında ✅ (§14) |
 
 **Kalan tek kapsam maddesi: M5'in dogfood testi.** Rehberi takip ederek gerçek bir kart
@@ -731,7 +750,7 @@ güncellemenin kurulumu **başlatmamasının** sebeplerinden biri de bu (§14).
 | ~~Linux WebKitGTK'da WebGL yetersiz~~ | — | **Kapandı, riskten kaçınılarak.** M0 ölçtü ve cevap "bu riski taşımaya değmez" çıktı: çatı Qt + VTK oldu (D5), platform sorusu ortadan kalktı. Yerini alan risk, sürücünün VTK'ya yetmemesi — `PERFBOARD_STUDIO_SIMPLE_3D=1` onun kaçış yolu |
 | Autorouter beklenti tuzağı | **Yüksek** | "Interaktif asistan" konumlandırması; route edilemeyen netler açıkça raporlanır, sessizce bırakılmaz |
 | 3D'de fotogerçekçilik scope creep | Orta | Hedef sabit: "doğru ve anlaşılır". **Hedef bir kez bilerek yükseltildi:** parçalar Phong yerine malzeme olarak gölgelendiriliyor, çünkü hiçbir Phong değeri alüminyumu alüminyum göstermiyordu — ve bir DIP ile kristal kutuyu ayırt edememek doğruluk sorunuydu, süs sorunu değil. Bütçe hâlâ sınırlı: iki ağır parçanın ikisi de kapatılabiliyor |
-| MCP tool sayısı patlaması | Orta | **Gerçekleşen: 54 tool.** Tavan tutmadı, kural tuttu: her tool `docs/MCP.md`'de bir gruba ve bir gerekçeye bağlı (11 grup; sonuncusu "tasarım", yukarıdaki "Devre girişi" notuna bak). ~25 sayısı yüzey bilinmeden atılmış bir tahmindi; korumaya çalıştığı şey sayı değil gerekçe zorunluluğuydu ve o yürürlükte. Kuralın bir kez kaydığı da ölçüldü: `reroute` sunucuda vardı, dokümanda yoktu — sayıyı üç yerde üç farklı yapan buydu, ve artık `test_mcp.py` kaymayı bir daha bırakmıyor |
+| MCP tool sayısı patlaması | Orta | **Gerçekleşen: 55 tool.** Tavan tutmadı, kural tuttu: her tool `docs/MCP.md`'de bir gruba ve bir gerekçeye bağlı (11 grup; sonuncusu "tasarım", yukarıdaki "Devre girişi" notuna bak). ~25 sayısı yüzey bilinmeden atılmış bir tahmindi; korumaya çalıştığı şey sayı değil gerekçe zorunluluğuydu ve o yürürlükte. Kuralın bir kez kaydığı da ölçüldü: `reroute` sunucuda vardı, dokümanda yoktu — sayıyı üç yerde üç farklı yapan buydu, ve artık `test_mcp.py` kaymayı bir daha bırakmıyor |
 | Lisans kirlenmesi (GPL'li rakip kod) | **Yüksek** | Clean-room tutuldu: DIYLC/VeroRoute kaynağına bakılmadı; `docs/prior-art.md` neye bakıldığını yazıyor. Apache-2.0 olmayan tek parça KiCad'in 3D mesh'leri (D6), kendi lisansıyla tek klasörde |
 | Kapsamın 3 kart tipine yayılması | Orta | v1 sadece pad-per-hole. Stripboard artık uçtan uca: `stripboard.py` geometri, `striproute.py` router, 2D'de kesme modu, ve `placer.py` strip hizasını skorluyor |
 | **Lehim yolu güvenilirliği**: araç kullanıcıyı kırılgan yapıya teşvik edebilir | **Yüksek** | DRC bilgilendirir, engellemez: uzun saf yolda omurga önerir, FR-2'de ısı uyarısı verir, R5' risklerini test adımına çevirir. Karar kullanıcının, veri aracın |

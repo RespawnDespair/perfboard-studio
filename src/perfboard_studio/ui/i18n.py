@@ -382,7 +382,7 @@ TURKISH: Mapping[str, str] = {
     "Parts": "Parçalar",
     "Nets": "Netler",
     "3D View": "3D Görünüm",
-    "DRC / LVS": "DRC / LVS",
+    "ERC / DRC / LVS": "ERC / DRC / LVS",
     # -- dialogs -------------------------------------------------------------
     "New Board": "Yeni Kart",
     "Board Setup": "Kart Ayarları",
@@ -569,6 +569,18 @@ TURKISH: Mapping[str, str] = {
     "Unknown footprint": "Bilinmeyen footprint",
     "Bare wire on a joint": "Lehim noktası üzerinde çıplak tel",
     "Wire too thick for the hole": "Tel delik için fazla kalın",
+    "Supply not connected": "Besleme bağlı değil",
+    "Supply on the wrong net": "Besleme yanlış nette",
+    "Part drawn backwards": "Parça ters çizilmiş",
+    "Net names a missing pin": "Net olmayan bir pini anıyor",
+    "Supply pin left open": "Besleme pini boşta",
+    "NC pin wired": "NC pini bağlanmış",
+    "Net reaches one pin": "Net tek pine ulaşıyor",
+    "Part connected to nothing": "Parça hiçbir yere bağlı değil",
+    "Net names an unknown part": "Net bilinmeyen bir parçayı anıyor",
+    "Whether the circuit itself is right, before any board is asked about.": (
+        "Devrenin kendisinin doğru olup olmadığı — daha hiçbir karta bakılmadan."
+    ),
     "Open: a net in pieces": "Açık devre: net parçalı",
     "Short: two nets joined": "Kısa devre: iki net birleşik",
     "Copper joined to no pin": "Hiçbir pine bağlı olmayan bakır",
@@ -1394,6 +1406,12 @@ TURKISH: Mapping[str, str] = {
     # -- the status bar and the panels' summaries ---------------------------------
     # These were the last English left on a Turkish screen: the menus were translated
     # and the numbers under them were not.
+    "ERC {errors} err / {warnings} warn": "ERC {errors} hata / {warnings} uyarı",
+    "The circuit checked: supplies, polarity, NC pins, nets that join nothing. "
+    "Click to see the findings.": (
+        "Devre denetlendi: beslemeler, kutuplar, NC pinleri, hiçbir şeyi birleştirmeyen "
+        "netler. Bulguları görmek için tıkla."
+    ),
     "DRC {errors} err / {warnings} warn": "DRC {errors} hata / {warnings} uyarı",
     "LVS {matched}/{total} · {opens} open · {shorts} short": (
         "LVS {matched}/{total} · {opens} açık · {shorts} kısa"
@@ -1967,6 +1985,7 @@ TURKISH: Mapping[str, str] = {
     "Open the Build Guide": "Montaj Rehberini Aç",
     "no parts yet": "henüz parça yok",
     "{parts} part(s) · {nets} net(s)": "{parts} parça · {nets} net",
+    "{parts} part(s) · {errors} error(s)": "{parts} parça · {errors} hata",
     "nothing to place": "yerleştirilecek parça yok",
     "{placed}/{total} on the board": "{placed}/{total} kartta",
     "nothing to wire yet": "henüz bağlanacak bir şey yok",
@@ -1976,9 +1995,11 @@ TURKISH: Mapping[str, str] = {
     "{errors} error(s) · {warnings} warning(s)": "{errors} hata · {warnings} uyarı",
     "guide · 3D": "rehber · 3D",
     "What the board is: its parts and what joins them. Drawn on the sheet, or by "
-    "placing parts on the board and connecting their pins.": (
+    "placing parts on the board and connecting their pins. ERC checks it as it is "
+    "drawn: a chip with no supply is an error before any board is chosen.": (
         "Kartın ne olduğu: parçaları ve onları neyin birleştirdiği. Şemada çizilir ya da "
-        "parçalar karta konup pinleri bağlanarak girilir."
+        "parçalar karta konup pinleri bağlanarak girilir. ERC devreyi çizildiği anda "
+        "denetler: beslemesi olmayan bir entegre, daha kart seçilmeden hatadır."
     ),
     "Which perfboard it goes on. Chosen before the parts go down, while the size is "
     "still free: every stock size is tried with your circuit laid out on it.": (

@@ -175,6 +175,8 @@ from perfboard_studio.commands import (
 )
 from perfboard_studio.connectivity import FootprintLookup, extract_physical_nets
 from perfboard_studio.drc import BREADBOARD_CONDUCTOR_KINDS, DrcViolation, run_drc
+from perfboard_studio.erc import SEVERITY as ERC_SEVERITY
+from perfboard_studio.erc import ErcFinding, run_erc
 from perfboard_studio.footprints import (
     MODULE_SEAT_SOCKETED_MM,
     MODULE_SEAT_SOLDERED_MM,
@@ -520,6 +522,9 @@ ROLE_CATALOG_ID = int(Qt.ItemDataRole.UserRole) + 7
 #: (component ref, pin number) on a pin row under a net. The row also carries
 #: ROLE_NET_ID, so selecting a pin highlights its net exactly as selecting the net does.
 ROLE_PIN = int(Qt.ItemDataRole.UserRole) + 5
+#: The references an ERC finding is about. By reference rather than component id, because
+#: a circuit finding is as often about a part in the design, which has no place to select.
+ROLE_REFS = int(Qt.ItemDataRole.UserRole) + 10
 
 
 def _now_iso() -> str:
@@ -3347,6 +3352,22 @@ def _rule_title(rule: str) -> str:
     return titles.get(rule, rule)
 
 
+def _erc_title(rule: str) -> str:
+    """The same, for a rule about the circuit (``erc.RULES``, held to this by a test)."""
+    titles = {
+        "supply-unconnected": t("Supply not connected"),
+        "supply-on-wrong-net": t("Supply on the wrong net"),
+        "polarity-reversed": t("Part drawn backwards"),
+        "pin-not-on-part": t("Net names a missing pin"),
+        "supply-pin-open": t("Supply pin left open"),
+        "nc-pin-connected": t("NC pin wired"),
+        "single-pin-net": t("Net reaches one pin"),
+        "part-unconnected": t("Part connected to nothing"),
+        "part-not-defined": t("Net names an unknown part"),
+    }
+    return titles.get(rule, rule)
+
+
 def _lvs_title(kind: str) -> str:
     """The same, for an LVS finding's kind."""
     titles = {
@@ -3452,6 +3473,7 @@ class MainWindow(QMainWindow):
         self.bus = self._new_bus(document)
         self._unsubscribe: Any = None
         self._last_drc_ms = 0.0
+        self._last_erc: tuple[ErcFinding, ...] = ()
         self._last_violations: tuple[DrcViolation, ...] = ()
         self._last_lvs: LvsResult | None = None
         self._last_ratsnest: tuple[NetRatsnest, ...] = ()
@@ -3801,6 +3823,8 @@ class MainWindow(QMainWindow):
             drc_errors=sum(1 for v in self._last_violations if v.severity == "error"),
             drc_warnings=sum(1 for v in self._last_violations if v.severity == "warning"),
             lvs_problems=problems,
+            erc_errors=sum(1 for f in self._last_erc if f.severity == "error"),
+            erc_warnings=sum(1 for f in self._last_erc if f.severity == "warning"),
         )
 
     def _refresh_workflow(self) -> None:
@@ -3827,7 +3851,10 @@ class MainWindow(QMainWindow):
     def on_workflow_next(self, key: str) -> None:
         """The Next button: the step's own action, reached from where it already was."""
         step = cast(StepKey, key)
-        if step == "circuit":
+        if step == "circuit" and any(f.severity == "error" for f in self._last_erc):
+            # What step_action promised: the circuit's errors, beside the sheet they are on.
+            self.show_circuit_findings()
+        elif step == "circuit":
             self.show_schematic()
             document = self.bus.document
             if document.parts or document.components:
@@ -8057,7 +8084,7 @@ class MainWindow(QMainWindow):
         self.drc_tree.customContextMenuRequested.connect(self._on_drc_context_menu)
         layout.addWidget(self.drc_tree)
 
-        dock = QDockWidget(t("DRC / LVS"), self)
+        dock = QDockWidget(t("ERC / DRC / LVS"), self)
         dock.setObjectName("dockDrc")
         dock.setWidget(panel)
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock)
@@ -8502,7 +8529,10 @@ class MainWindow(QMainWindow):
         return menu
 
     def _copy_all_findings(self) -> None:
-        lines = [f"{v.severity} {v.rule}: {v.message}" for v in self._last_violations]
+        # The circuit's first, as in the panel: a forum post about a dead board that leaves
+        # out the unpowered chip is asking the wrong question.
+        lines = [f"erc {f.severity} {f.rule}: {f.message}" for f in self._last_erc]
+        lines += [f"{v.severity} {v.rule}: {v.message}" for v in self._last_violations]
         if self._last_lvs is not None:
             lines += [f"lvs {i.kind}: {i.message}" for i in self._last_lvs.issues]
         QApplication.clipboard().setText("\n".join(lines))
@@ -8524,6 +8554,7 @@ class MainWindow(QMainWindow):
         #: cleared when it can again. See _on_autosave_tick.
         self.label_warning = QLabel()
         self.label_selection = QLabel()
+        self.label_erc = QLabel()
         self.label_drc = QLabel()
         self.label_lvs = QLabel()
         self.label_ratsnest = QLabel()
@@ -8538,6 +8569,7 @@ class MainWindow(QMainWindow):
             self.label_warning,
             self.label_selection,
             self.label_hole,
+            self.label_erc,
             self.label_ratsnest,
             self.label_lvs,
             self.label_drc,
@@ -8550,6 +8582,7 @@ class MainWindow(QMainWindow):
             label.setMinimumWidth(1)
             bar.addPermanentWidget(label)
         # Each count opens the panel that says what it is counting (see _OpensPanel).
+        _OpensPanel(self.label_erc, self.dock_drc)
         _OpensPanel(self.label_drc, self.dock_drc)
         _OpensPanel(self.label_lvs, self.dock_drc)
         _OpensPanel(self.label_ratsnest, self.dock_nets)
@@ -8560,6 +8593,9 @@ class MainWindow(QMainWindow):
         self._track_moved_nets(document, entry)
         self.scene.set_document(document)
 
+        # The circuit's check, ahead of the board's: it is what the Circuit step, the first
+        # rows of the findings and the status bar's first count are measured on.
+        self._last_erc = run_erc(document, self.lookup)
         t0 = time.perf_counter()
         violations = run_drc(document, self.lookup)
         self._last_drc_ms = (time.perf_counter() - t0) * 1000
@@ -8694,6 +8730,18 @@ class MainWindow(QMainWindow):
             self.act_reset_3d.setEnabled(live)
             self.act_exploded.setEnabled(live)
 
+        erc_errors = sum(1 for f in self._last_erc if f.severity == "error")
+        erc_warns = len(self._last_erc) - erc_errors
+        erc_colour = ERROR if erc_errors else (WARNING if erc_warns else OK)
+        erc_text = t("ERC {errors} err / {warnings} warn").format(
+            errors=erc_errors, warnings=erc_warns
+        )
+        self.label_erc.setText(f'<span style="color:{erc_colour}">{erc_text}</span>')
+        self.label_erc.setToolTip(
+            t("The circuit checked: supplies, polarity, NC pins, nets that join nothing. "
+              "Click to see the findings.")
+        )
+
         errors = sum(1 for v in self._last_violations if v.severity == "error")
         warns = sum(1 for v in self._last_violations if v.severity == "warning")
         drc_colour = ERROR if errors else (WARNING if warns else OK)
@@ -8762,6 +8810,8 @@ class MainWindow(QMainWindow):
         needle = self.drc_filter.text().strip().lower() if hasattr(self, "drc_filter") else ""
         tree.clear()
 
+        self._add_erc_findings(needle, expanded)
+
         drc_root = QTreeWidgetItem(
             ["DRC", t("{count} violation(s)").format(count=len(violations))]
         )
@@ -8826,6 +8876,70 @@ class MainWindow(QMainWindow):
                 kind_item.addChild(leaf)
             kind_item.setExpanded(f"lvs:{kind}" in expanded)
         lvs_root.setExpanded("LVS" in expanded or not expanded)
+
+    def _add_erc_findings(self, needle: str, expanded: set[str]) -> None:
+        """The circuit's findings, as the tree's first group: the circuit comes before the
+        board, and an unpowered chip is wrong whatever the board does about it.
+
+        Open on its own whenever it has an error, unlike the other two -- an error here
+        means the circuit step is not done, and Next sends people to this group to read it.
+        """
+        findings = self._last_erc
+        errors = sum(1 for f in findings if f.severity == "error")
+        root = QTreeWidgetItem(
+            [
+                "ERC",
+                t("{errors} error(s) · {warnings} warning(s)").format(
+                    errors=errors, warnings=len(findings) - errors
+                ),
+            ]
+        )
+        root.setToolTip(0, t("Whether the circuit itself is right, before any board is asked about."))
+        root.setData(0, ROLE_FINDING_KEY, "ERC")
+        self.drc_tree.addTopLevelItem(root)
+        components = {c.ref: c.id for c in self.bus.document.components}
+        by_rule: dict[str, list[ErcFinding]] = {}
+        for finding in findings:
+            haystack = f"{finding.rule} {_erc_title(finding.rule)} {finding.severity} {finding.message}"
+            if needle and needle not in haystack.lower():
+                continue
+            by_rule.setdefault(finding.rule, []).append(finding)
+        for rule, items in by_rule.items():
+            severity = items[0].severity
+            rule_item = QTreeWidgetItem(
+                [f"{_erc_title(rule)} ({_severity_word(severity)})", f"{len(items)}"]
+            )
+            rule_item.setToolTip(0, rule)
+            rule_item.setForeground(0, QColor(ERROR if severity == "error" else WARNING))
+            rule_item.setData(0, ROLE_FINDING_KEY, f"erc:{rule}")
+            root.addChild(rule_item)
+            for finding in items:
+                leaf = QTreeWidgetItem(["", finding.message])
+                leaf.setData(0, ROLE_REFS, finding.refs)
+                leaf.setData(
+                    0, ROLE_COMPONENT_IDS, tuple(components[r] for r in finding.refs if r in components)
+                )
+                if finding.net_ids:
+                    leaf.setData(0, ROLE_NET_ID, finding.net_ids[0])
+                rule_item.addChild(leaf)
+            rule_item.setExpanded(f"erc:{rule}" in expanded)
+        root.setExpanded("ERC" in expanded or not expanded or errors > 0)
+
+    def show_circuit_findings(self) -> None:
+        """The findings panel, open on the circuit's group, with the sheet beside it."""
+        self.show_schematic()
+        self.dock_drc.show()
+        self.dock_drc.raise_()
+        root = self.drc_tree.topLevelItem(0)
+        if root is None or root.data(0, ROLE_FINDING_KEY) != "ERC":
+            return
+        root.setExpanded(True)
+        for index in range(root.childCount()):
+            child = root.child(index)
+            key = child.data(0, ROLE_FINDING_KEY) if child is not None else None
+            if child is not None and ERC_SEVERITY.get(str(key).removeprefix("erc:")) == "error":
+                child.setExpanded(True)
+        self.drc_tree.scrollToItem(root)
 
     #: Findings of one rule above which they are gathered by the conductor they are
     #: about. Three, because two or three rows are quicker to read than a heading.
@@ -8916,6 +9030,16 @@ class MainWindow(QMainWindow):
             self.view.center_on_holes(holes, self.bus.document.board, self.side)
         if component_ids:
             self.scene.select_components(component_ids)
+        # A circuit finding is about parts that may not be on the board yet, so it points
+        # at the first of them on the sheet the way clicking its symbol would -- and at its
+        # net, which the Nets dock then lights on the board and the sheet alike.
+        refs = item.data(0, ROLE_REFS)
+        if refs:
+            self._schematic_ref = str(refs[0])
+            self._sync_schematic_highlight()
+        net_id = item.data(0, ROLE_NET_ID)
+        if net_id:
+            self._select_net(net_id)
 
     # -- nets dock ----------------------------------------------------------
 

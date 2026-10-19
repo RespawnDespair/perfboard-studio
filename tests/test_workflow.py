@@ -115,3 +115,31 @@ def test_nothing_on_the_board_is_nothing_to_check() -> None:
     a board nobody has started."""
     facts = dataclasses.replace(EMPTY, parts_off_board=8, nets=7, lvs_problems=7)
     assert statuses(facts)["check"] == "todo"
+
+
+def test_a_circuit_with_an_error_in_it_is_not_drawn_yet() -> None:
+    """ERC's errors are the circuit's own: a chip with no supply is wrong before a board is
+    chosen, and choosing one would only build the mistake. So the circuit is a problem, the
+    board is not the next step yet, and Next reads the findings."""
+    facts = dataclasses.replace(EMPTY, parts_off_board=8, nets=7, erc_errors=2, erc_warnings=1)
+    steps = statuses(facts)
+    assert steps["circuit"] == "problem"
+    assert steps["board"] == "todo"
+    assert next_step(workflow_steps(facts)) == "circuit"
+    circuit = workflow_steps(facts)[0]
+    assert circuit.action == "See the Findings"
+    assert circuit.summary == "8 part(s) · 2 error(s)"
+
+
+def test_a_circuit_error_comes_before_a_board_error() -> None:
+    facts = dataclasses.replace(EMPTY, parts_on_board=8, nets=7, drc_errors=1, erc_errors=1)
+    assert statuses(facts)["check"] == "problem"
+    assert next_step(workflow_steps(facts)) == "circuit"
+
+
+def test_circuit_warnings_do_not_hold_anything_back() -> None:
+    """A part joined to nothing or a net reaching one pin is worth reading and not worth
+    stopping for -- the same line DRC's warnings draw."""
+    facts = dataclasses.replace(EMPTY, parts_off_board=8, nets=7, erc_warnings=3)
+    assert statuses(facts)["circuit"] == "done"
+    assert next_step(workflow_steps(facts)) == "board"

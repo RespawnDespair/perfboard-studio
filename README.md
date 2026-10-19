@@ -39,9 +39,12 @@
   *"block 2 complete → U1 pin 4 to C3(−) must show continuity"* and *"before
   power-on: GND to V+ must read above 10 kΩ"*. Derived from the netlist, so it is
   exact rather than generic advice.
-- **Perfboard LVS.** The board's real connectivity is extracted and compared
-  against the schematic. Opens, shorts and floating conductors are reported
-  before you pick up the iron.
+- **The circuit is checked, then the board.** While the circuit is still being
+  drawn, ERC catches a chip whose supply pin is wired to nothing, an electrolytic or
+  an LED drawn the wrong way round, and a net that reaches only one pin. Once it is on
+  the board, perfboard LVS extracts the board's real connectivity and compares it
+  against the schematic: opens, shorts and floating conductors are reported before
+  you pick up the iron.
 - **Six kinds of connection, not one.** A lead bend, a solder trace, a wired
   solder trace, bare wire, insulated wire and a top jumper have different costs,
   limits and failure modes, and the router prices all six — which is what makes
@@ -366,7 +369,7 @@ golden fixtures in `tools/diffcheck/`, down to the last IEEE-754 double.
 
 ```
 src/perfboard_studio/            the engine: document model, command bus, connectivity,
-                           router, autorouter, placer, DRC, LVS, persistence
+                           router, autorouter, placer, ERC, DRC, LVS, persistence
 src/perfboard_studio/guide.py    the soldering guide, and guide_export.py for HTML/CSV/JSON
 src/perfboard_studio/schematic.py  the sheet, drawn from the netlist until somebody draws it,
                            and schematic_export.py for the SVG the PDF and PNG come from

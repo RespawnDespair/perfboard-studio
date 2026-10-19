@@ -39,9 +39,11 @@
   değil; *"blok 2 bitti → U1 pin 4 ile C3(−) arasında süreklilik olmalı"* ve *"güç
   vermeden önce: GND ile V+ arası 10 kΩ üzerinde okumalı"*. Netlist'ten
   türetildiği için genel tavsiye değil, o karta özel.
-- **Perfboard için LVS.** Kartın gerçek bağlantısallığı çıkarılır ve şemayla
-  karşılaştırılır. Açık devreler, kısa devreler ve boşta kalan iletkenler havyayı
-  elinize almadan önce raporlanır.
+- **Önce devre, sonra kart denetlenir.** Devre daha çizilirken ERC, besleme pini
+  hiçbir yere bağlanmamış bir entegreyi, ters çizilmiş bir elektrolitiği ya da LED'i ve
+  tek bir pine ulaşan bir neti yakalar. Devre karta geçince perfboard için LVS kartın
+  gerçek bağlantısallığını çıkarır ve şemayla karşılaştırır: açık devreler, kısa
+  devreler ve boşta kalan iletkenler havyayı elinize almadan önce raporlanır.
 - **Tek tip değil, altı tip bağlantı.** Bacak bükme, lehim yolu, telli lehim yolu,
   çıplak tel, izoleli tel ve üstten jumper — altısının da maliyeti, sınırı ve
   bozulma biçimi farklı, ve router altısını da fiyatlandırıyor. Gerçekten
@@ -369,7 +371,7 @@ değil, "yerine geçtiği implementasyonla bayt bayt aynı sonucu üretiyor" olm
 
 ```
 src/perfboard_studio/            motor: doküman modeli, komut veri yolu, bağlantısallık,
-                           router, autorouter, yerleştirici, DRC, LVS, kalıcılık
+                           router, autorouter, yerleştirici, ERC, DRC, LVS, kalıcılık
 src/perfboard_studio/guide.py    lehimleme rehberi; HTML/CSV/JSON için guide_export.py
 src/perfboard_studio/schematic.py  şema sayfası, biri çizene kadar netlist'ten çizilir; PDF
                            ve PNG'nin üretildiği SVG için schematic_export.py

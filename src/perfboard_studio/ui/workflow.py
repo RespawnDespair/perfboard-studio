@@ -70,6 +70,10 @@ class WorkflowFacts:
     drc_warnings: int
     #: LVS opens and shorts: the board is not the circuit.
     lvs_problems: int
+    #: ERC errors: the circuit itself cannot work as drawn (``erc.py``). Warnings are
+    #: counted for the step's line and never hold it back.
+    erc_errors: int = 0
+    erc_warnings: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,8 +103,11 @@ def step_action(key: StepKey, facts: WorkflowFacts | None = None) -> str:
 
     The circuit's depends on what it has: with no parts the next thing is a part, and with
     parts and nothing joining them it is joining them -- "Add a Part" over eight parts and
-    no nets sent people back to the one thing they had already done.
+    no nets sent people back to the one thing they had already done. And with an error in
+    it, the next thing is reading what is wrong.
     """
+    if key == "circuit" and facts is not None and facts.erc_errors:
+        return t("See the Findings")
     if key == "circuit" and facts is not None and facts.parts_off_board + facts.parts_on_board:
         return t("Connect the Pins")
     return {
@@ -117,7 +124,8 @@ def step_tooltip(key: StepKey) -> str:
     return {
         "circuit": t(
             "What the board is: its parts and what joins them. Drawn on the sheet, or by "
-            "placing parts on the board and connecting their pins."
+            "placing parts on the board and connecting their pins. ERC checks it as it is "
+            "drawn: a chip with no supply is an error before any board is chosen."
         ),
         "board": t(
             "Which perfboard it goes on. Chosen before the parts go down, while the size is "
@@ -139,7 +147,10 @@ def step_tooltip(key: StepKey) -> str:
 def workflow_steps(facts: WorkflowFacts) -> tuple[StepState, ...]:
     """Every step's status and one line about it. The first step not done is ``current``."""
     parts = facts.parts_off_board + facts.parts_on_board
-    circuit_done = parts > 0 and facts.nets > 0
+    # A circuit with an error in it is not drawn yet, whatever else is: an unpowered chip is
+    # still unpowered on the finest board, and nothing downstream will say so.
+    circuit_bad = parts > 0 and facts.erc_errors > 0
+    circuit_done = parts > 0 and facts.nets > 0 and not circuit_bad
     board_done = facts.board_chosen or facts.parts_on_board > 0
     place_done = facts.parts_on_board > 0 and facts.parts_off_board == 0
     route_done = place_done and facts.unrouted == 0 and facts.nets > 0
@@ -148,6 +159,10 @@ def workflow_steps(facts: WorkflowFacts) -> tuple[StepState, ...]:
 
     if parts == 0:
         circuit = t("no parts yet")
+    elif circuit_bad:
+        circuit = t("{parts} part(s) · {errors} error(s)").format(
+            parts=parts, errors=facts.erc_errors
+        )
     else:
         circuit = t("{parts} part(s) · {nets} net(s)").format(parts=parts, nets=facts.nets)
     if parts == 0:
@@ -189,7 +204,7 @@ def workflow_steps(facts: WorkflowFacts) -> tuple[StepState, ...]:
     steps: list[StepState] = []
     for key in STEP_ORDER:
         status: StepStatus
-        if key == "check" and check_bad:
+        if (key == "check" and check_bad) or (key == "circuit" and circuit_bad):
             status = "problem"
         elif done[key]:
             status = "done"

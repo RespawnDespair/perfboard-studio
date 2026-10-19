@@ -69,10 +69,11 @@ prefer when the circuit is not already on paper:
 get_status                     → where is this board
 add_part                       → the design: one call per part, no holes chosen yet
 create_net / connect_pins      → wire it; a part need not be on the board
+run_erc                        → is the circuit right, before there is a board
 place_parts                    → the whole design onto the board, one undo step
 optimize_placement             → apply=False first if you want to look
 autoroute                      → reports every connection it could NOT make
-run_drc / run_lvs              → is it right
+run_drc / run_lvs              → is the board right, and is it the circuit
 generate_guide                 → is it buildable, and what is missing
 ```
 
@@ -102,11 +103,11 @@ conductor at a time.
 | **The board** | `set_board` · `add_mounting_hole` · `add_edge_connector` · `cut_track` · `add_board_label` · `remove_board_feature` |
 | **Editing** | `place_component` · `move_component` · `rotate_component` · `set_component_locked` · `delete_component` · `add_wire` · `add_solder_trace` · `remove_stale_conductors` · `set_height_limit` |
 | **Planning** | `autoroute` · `reroute` · `optimize_placement` |
-| **Verifying** | `run_drc` · `run_lvs` · `check_heights` |
+| **Verifying** | `run_erc` · `run_drc` · `run_lvs` · `check_heights` |
 | **Output** | `generate_guide` · `export_pdf` · `export_step` |
 | **State** | `snapshot` · `restore` · `undo` · `redo` |
 
-54 tools, against PLAN.md §2's "~25, deliberately narrow". Each is a verb that cannot
+55 tools, against PLAN.md §2's "~25, deliberately narrow". Each is a verb that cannot
 be composed from the others, and the surface was trimmed rather than grown where it
 could be: the history listing folded into `get_status`, there is no separate "add solder
 bridge" because a bridge is a two-pad solder trace and one concept should not have two
@@ -138,6 +139,19 @@ the solderless kind, whose clips join five holes across each half of a column an
 length of each rail. A breadboard is 20 rows (with power rails) or 12 (without) at
 2.54 mm, as long as it has columns; its holes are named as it prints them, `e12` and
 `T+12`, and nothing that needs solder or a drill is accepted on one.
+
+`run_erc` checks the CIRCUIT, and is the one of the four that means anything before a part
+is placed. `run_drc` asks whether the board can be built and `run_lvs` whether it is the
+circuit -- and to `run_lvs` the netlist is the truth, so a 555 drawn with its VCC pin on
+nothing passes it cleanly and `generate_guide` writes the build of a dead board. `run_erc`
+reads the pins' NAMES: a supply pin of a chip connected to nothing (for a module, its
+ground), a VCC on a ground net or a GND on a power net, an electrolytic or an LED with its
+positive lead on ground and its negative on a supply, a net naming a pin the part does not
+have -- those are `errors`; a second GND left open, a wired NC pin, a net reaching one pin,
+a part joined to nothing and a net naming a part nobody has are `warnings`. A part whose
+pins nobody named is not checked, which is the argument for placing from the catalog
+(`part=`): its parts arrive named. `get_status` carries the two counts, and the guide
+warns (`erc-error`) when it is describing a circuit with an error in it.
 
 `check_heights` is the one from PLAN.md §9.2's list that neither render tool can stand
 in for: a part too tall for the case looks exactly like one that fits, from every angle
@@ -195,8 +209,8 @@ a file rather than a directory, adds `.step` if the name has neither `.step` nor
 and is refused without one (`no-path`) for the same reason.
 
 **`ok` means the call ran.** Every tool here returns `ok: false` only for a refusal —
-so `run_lvs` reports its verdict as `matches_schematic` and `run_drc` as `errors` /
-`warnings`. A board with an open is a question answered, not a tool that failed.
+so `run_lvs` reports its verdict as `matches_schematic`, and `run_erc` and `run_drc` as
+`errors` / `warnings`. A board with an open is a question answered, not a tool that failed.
 
 **A real part can be asked for by its name.** `list_catalog` lists the parts a perfboard
 is built from -- BC547, IRF9540N, 7805, NE555, an ESP32-DevKitC -- each with the package it

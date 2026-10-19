@@ -88,10 +88,11 @@ A good working order, design first — the order every other EDA tool works in:
   get_status                → where is this board
   add_part                  → the design: one call per part, no holes chosen yet
   create_net / connect_pins → wire it; a part need not be on the board
+  run_erc                   → is the circuit right, before there is a board
   place_parts               → the whole design onto the board, one undo step
   optimize_placement        → apply=False first if you want to look
   autoroute                 → reports every connection it could NOT make
-  run_drc / run_lvs         → is it right
+  run_drc / run_lvs         → is the board right, and is it the circuit
   generate_guide            → is it buildable, and what is missing
 With a circuit that already exists, `import_netlist` replaces the first three steps and
 `place_component` puts parts down directly. Use `reroute`, not `autoroute`, after
@@ -114,7 +115,7 @@ session = BoardSession()
 
 @mcp.tool()
 def get_status() -> dict[str, Any]:
-    """Where this board stands: part and net counts, DRC and LVS summaries, how many
+    """Where this board stands: part and net counts, ERC, DRC and LVS summaries, how many
     connections are still unrouted, and how deep the undo stack is. Call this first, and
     again after anything that surprises you."""
     return session.get_status()
@@ -675,6 +676,19 @@ def optimize_placement(seed: int = 0, apply: bool = True) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Verification
 # ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def run_erc() -> dict[str, Any]:
+    """Check the CIRCUIT before the board: a chip with a supply pin wired to nothing, a VCC
+    on ground, an electrolytic or an LED drawn the wrong way round, a wired NC pin, a net
+    reaching one pin, a part joined to nothing. Read from the pins' names, so it checks what
+    the parts declare -- a catalog part, an LED, an electrolytic -- and works on a design
+    with nothing placed. LVS cannot catch any of these: it proves the board is the circuit,
+    and an unpowered chip is faithfully reproduced.
+
+    The verdict is `errors`; `ok` means the call ran."""
+    return session.run_erc()
 
 
 @mcp.tool()

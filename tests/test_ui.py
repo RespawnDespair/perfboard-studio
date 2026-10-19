@@ -5233,6 +5233,16 @@ def _finding_key_role():
     return ROLE_FINDING_KEY
 
 
+def _findings_root(window, key):
+    """A group at the top of the findings -- "ERC", "DRC" or "LVS" -- by its key, not by
+    where it is: ERC came in above the other two."""
+    for i in range(window.drc_tree.topLevelItemCount()):
+        root = window.drc_tree.topLevelItem(i)
+        if root.data(0, _finding_key_role()) == key:
+            return root
+    raise AssertionError(f"no {key} group in the findings")
+
+
 def test_an_expanded_rule_stays_expanded_across_an_edit() -> None:
     """The panel rebuilt from clear() on every command, so working through a rule meant
     re-expanding it after every attempt to fix what the rule was complaining about."""
@@ -5276,10 +5286,8 @@ def test_the_findings_can_be_filtered_down_to_one_rule() -> None:
     window.drc_filter.setText(wanted)
 
     # The row says what the rule is about; its id -- what was typed -- is in the tooltip.
-    shown = {
-        window.drc_tree.topLevelItem(0).child(j).toolTip(0)
-        for j in range(window.drc_tree.topLevelItem(0).childCount())
-    }
+    drc = _findings_root(window, "DRC")
+    shown = {drc.child(j).toolTip(0) for j in range(drc.childCount())}
     assert shown == {wanted}
     _close(window)
 
@@ -5290,8 +5298,8 @@ def test_every_rule_and_every_lvs_finding_has_a_title_in_words() -> None:
     import re
     from typing import get_args
 
-    from perfboard_studio import drc, lvs
-    from perfboard_studio.ui.main import _lvs_title, _rule_title
+    from perfboard_studio import drc, erc, lvs
+    from perfboard_studio.ui.main import _erc_title, _lvs_title, _rule_title
 
     source = pathlib.Path(drc.__file__).read_text(encoding="utf-8")
     rules = set(re.findall(r'rule="([a-z0-9-]+)"', source))
@@ -5300,6 +5308,7 @@ def test_every_rule_and_every_lvs_finding_has_a_title_in_words() -> None:
     kinds = get_args(lvs.LvsIssueKind.__value__)
     assert kinds
     assert [kind for kind in kinds if _lvs_title(kind) == kind] == []
+    assert [rule for rule in erc.RULES if _erc_title(rule) == rule] == []
 
 
 def test_a_finding_row_says_what_is_wrong_and_keeps_the_rule_id() -> None:
@@ -5324,6 +5333,7 @@ def test_the_status_bar_counts_open_the_panel_that_explains_them() -> None:
     window = _window_on(_load_dense())
     window.show()
     for label, dock in (
+        (window.label_erc, window.dock_drc),
         (window.label_drc, window.dock_drc),
         (window.label_lvs, window.dock_drc),
         (window.label_ratsnest, window.dock_nets),
@@ -5550,7 +5560,7 @@ def test_a_severity_has_the_same_colour_in_the_tree_as_on_the_status_bar() -> No
     from perfboard_studio.ui.theme import ERROR, WARNING
 
     window = _window_on(_load_dense())
-    root = window.drc_tree.topLevelItem(0)
+    root = _findings_root(window, "DRC")
     by_rule = {v.rule: v.severity for v in window._last_violations}
 
     for j in range(root.childCount()):
@@ -5717,6 +5727,13 @@ def test_the_findings_can_be_copied_out_as_text() -> None:
     copied = QApp.clipboard().text()
     assert copied
     assert any(v.message in copied for v in window._last_violations)
+    _close(window)
+
+    window = _window_on(_unpowered_555())
+    window._copy_all_findings()
+    assert QApp.clipboard().text().startswith(
+        "erc error supply-unconnected: U1 pin 8 (VCC) is connected to nothing"
+    )
     _close(window)
 
 
@@ -7806,6 +7823,78 @@ def test_the_step_bar_follows_the_document() -> None:
         assert window.workflow_bar.next_key == "board"
         board_button = window.workflow_bar.buttons["board"]
         assert board_button.property("status") == "current"
+    finally:
+        _close(window)
+
+
+def _unpowered_555() -> PerfDocument:
+    """A 555 from the catalog in the design, its output and ground wired and its VCC on
+    nothing -- the circuit LVS would pass and the guide would build."""
+    from perfboard_studio.catalog import catalog_part
+    from perfboard_studio.commands import create_empty_document
+    from perfboard_studio.model import DocumentMeta, Net, NetNode, SchematicPart
+
+    entry = catalog_part("ne555")
+    assert entry is not None
+    parts = (
+        SchematicPart(
+            id="u1", ref="U1", value=entry.placed_value, footprint_id=entry.footprint_id,
+            pin_names=entry.pin_names,
+        ),
+        SchematicPart(id="r1", ref="R1", value="1k", footprint_id="r-axial-3"),
+        SchematicPart(id="c1", ref="C1", value="100n", footprint_id="c-disc-p2"),
+    )
+    nets = (
+        Net(id="n1", name="OUT", nodes=(NetNode("U1", "3"), NetNode("R1", "1"))),
+        Net(id="n2", name="GND", nodes=(NetNode("U1", "1"), NetNode("C1", "2")), net_class="ground"),
+    )
+    blank = create_empty_document(DocumentMeta(name="t", created="", modified=""))
+    return dataclasses.replace(blank, parts=parts, nets=nets)
+
+
+def test_a_circuit_error_comes_first_in_the_findings_and_is_where_next_goes() -> None:
+    """Before any board: the findings open on the circuit's group, the status bar counts
+    it, the Circuit step is the problem, and Next opens what is wrong beside the sheet --
+    and connecting the pin clears all four."""
+    from perfboard_studio.commands import AddNetPayload
+    from perfboard_studio.model import NetNode
+    from perfboard_studio.ui.main import _erc_title
+
+    window = _window_on(_unpowered_555())
+    try:
+        root = window.drc_tree.topLevelItem(0)
+        assert root.data(0, _finding_key_role()) == "ERC"
+        assert root.isExpanded(), "an error in the circuit is shown, not folded away"
+        group = _drc_group(window, "erc:supply-unconnected")
+        assert group is not None
+        assert group.text(0).startswith(_erc_title("supply-unconnected"))
+        assert group.toolTip(0) == "supply-unconnected"
+        assert "ERC 1 err" in window.label_erc.text()
+        assert window.workflow_bar.next_key == "circuit"
+        assert window.workflow_bar.buttons["circuit"].property("status") == "problem"
+
+        window.dock_drc.hide()
+        window.on_workflow_next("circuit")
+        assert not window.dock_drc.isHidden()
+        assert window.schematic_is_showing()
+        group = _drc_group(window, "erc:supply-unconnected")
+        assert group.isExpanded()
+
+        # The finding is about a part in the design: clicking it points at U1 on the sheet.
+        window._on_drc_item_clicked(group.child(0), 0)
+        assert window._schematic_ref == "U1"
+
+        result = window.bus.dispatch(
+            "net.add",
+            AddNetPayload(
+                name="+9V", net_class="power",
+                nodes=(NetNode("U1", "8"), NetNode("C1", "1")),
+            ),
+        )
+        assert result.ok
+        assert _drc_group(window, "erc:supply-unconnected") is None
+        assert "ERC 0 err" in window.label_erc.text()
+        assert window.workflow_bar.next_key == "board"
     finally:
         _close(window)
 

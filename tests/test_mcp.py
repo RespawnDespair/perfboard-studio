@@ -298,6 +298,35 @@ def test_drc_and_lvs_come_back_as_data_not_prose(loaded: BoardSession) -> None:
     assert lvs["opens"] > 0  # Nothing routed yet, and it says so rather than pretending.
 
 
+def test_an_agent_is_told_its_circuit_is_wrong_before_anything_is_placed(
+    session: BoardSession,
+) -> None:
+    """A 555 from the catalog with VCC on nothing: LVS has nothing to say about a design
+    with no board, and would pass it once placed. ERC answers here, in the design."""
+    assert session.add_part("U1", "", part="ne555")["ok"]
+    assert session.add_part("R1", "r-axial-3", "1k")["ok"]
+    assert session.add_part("C1", "c-disc-p2", "100n")["ok"]
+    session.create_net("OUT", "signal", ["U1.3", "R1.1"])
+    session.create_net("GND", "ground", ["U1.1", "C1.2"])
+
+    erc = session.run_erc()
+    assert erc["ok"] is True
+    assert erc["errors"] == 1 and erc["warnings"] == 0
+    (finding,) = erc["findings"]
+    assert finding == {
+        "rule": "supply-unconnected",
+        "severity": "error",
+        "message": "U1 pin 8 (VCC) is connected to nothing, so the chip is not powered.",
+        "parts": ["U1"],
+        "pins": ["U1.8"],
+        "nets": [],
+    }
+    assert session.get_status()["erc"] == {"errors": 1, "warnings": 0}
+
+    session.create_net("+9V", "power", ["U1.8", "C1.1"])
+    assert session.run_erc()["errors"] == 0
+
+
 def test_ok_means_the_call_ran_and_never_the_verdict(loaded: BoardSession) -> None:
     """``ok: false`` is this API's word for "refused", matching CommandBus.dispatch. It
     read on ``run_lvs`` as "the board matches the schematic", so an unrouted board came
@@ -817,7 +846,13 @@ def test_the_tool_surface_is_registered_and_stays_narrow() -> None:
     # get_board_info how big the board is; nothing put the two together in the form the
     # enclosure is actually drawn in, which is a CAD program reading STEP. One file, one
     # verb, composed from nothing else here.
-    assert len(tools) <= 54, f"{len(tools)} tools; see the note in server.py before adding more"
+    #
+    # And 55, for run_erc. run_drc and run_lvs both judge the BOARD, and LVS takes the
+    # netlist as the truth: an agent that drew a 555 with its VCC on nothing got a clean
+    # LVS and a guide for a dead board. Not a field on run_lvs, because it answers on a
+    # design with nothing placed -- which is when an agent drawing a circuit asks -- and
+    # LVS has nothing to say there but "unplaced".
+    assert len(tools) <= 55, f"{len(tools)} tools; see the note in server.py before adding more"
     for critical in ("render_2d_view", "render_3d_view", "snapshot", "restore"):
         assert critical in names, f"{critical} is named in PLAN.md Sec 9.2 as load-bearing"
     assert all(tool.description for tool in tools), "a tool with no description is unusable"
