@@ -33,7 +33,9 @@ closed without a bump.
   ground to a rail and an electrolytic on a negative rail are all left alone, and none of
   the examples has a finding.
 
-- **Where it shows.** The findings panel is ERC / DRC / LVS, with the circuit's group first
+- **Where it shows.** On the schematic, where the circuit is being drawn: every pin a finding
+  is about is ringed, red for an error and a dashed amber for a warning, and hovering it says
+  what is wrong. The findings panel is ERC / DRC / LVS, with the circuit's group first
   and open whenever it has an error; a finding about a part not yet on the board points at
   it on the sheet. The status bar counts it beside DRC and LVS. While the circuit has an
   error the Circuit step is marked as the problem and Next opens what is wrong, so a board

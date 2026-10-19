@@ -1076,7 +1076,10 @@ Two derivations must not be replaced with conventions:
 
 `erc.py` answers the one question DRC and LVS cannot: whether the CIRCUIT can work. LVS takes
 the netlist as the truth, so a 555 drawn with its VCC on nothing passes it cleanly and the
-guide writes the build of a dead board. One function, six consumers: the findings panel
+guide writes the build of a dead board. One function, seven consumers: the sheet (each
+finding ringed on the pin it names, `viewsch.finding_marks`; a warning's ring is dashed
+because the warning amber is the power-net colour, chosen from rendered candidates), the
+findings panel
 (ERC's group first, open while it has an error), the status bar, the step bar (an ERC error
 keeps Circuit from done and makes it the problem, so Next opens `show_circuit_findings`
 instead of choosing a board), the guide (`erc-error`, first of the netlist warnings), MCP

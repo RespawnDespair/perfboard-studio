@@ -6653,6 +6653,9 @@ class MainWindow(QMainWindow):
             return
         self._schematic_stale = False
         drawing = build_schematic(self.bus.document, self.lookup)
+        # The circuit's findings ringed on the pins they are about: the sheet is where the
+        # circuit is drawn, so it is where an unpowered VCC is looked for.
+        self.schematic_view.set_findings(self._last_erc)
         self.schematic_view.set_drawing(drawing)
         self._sync_schematic_highlight()
 

@@ -7899,6 +7899,61 @@ def test_a_circuit_error_comes_first_in_the_findings_and_is_where_next_goes() ->
         _close(window)
 
 
+def test_a_pin_with_an_error_and_a_warning_is_an_error_and_says_both() -> None:
+    from perfboard_studio.erc import ErcFinding
+    from perfboard_studio.model import NetNode
+    from perfboard_studio.ui.viewsch import finding_marks
+
+    pin = NetNode("U1", "8")
+    pins, parts = finding_marks(
+        (
+            ErcFinding("single-pin-net", "warning", "alone", refs=("U1",), pins=(pin,)),
+            ErcFinding("supply-unconnected", "error", "unpowered", refs=("U1",), pins=(pin,)),
+            ErcFinding("part-unconnected", "warning", "joined to nothing", refs=("R3",)),
+        )
+    )
+    assert pins == {("U1", "8"): ("error", ("alone", "unpowered"))}
+    # A finding that names no pin is about the whole part, and is ringed on the part.
+    assert parts == {"R3": ("warning", ("joined to nothing",))}
+
+
+def test_the_sheet_rings_the_pin_erc_is_about_and_its_tooltip_says_why() -> None:
+    """The findings panel says U1 pin 8; the sheet is where somebody drawing the circuit is
+    looking, so the pin is ringed there and hovering it says what is wrong -- and the ring
+    goes the moment the pin is connected."""
+    from perfboard_studio.commands import AddNetPayload
+    from perfboard_studio.model import NetNode
+    from perfboard_studio.ui.viewsch import pin_anchor
+
+    window = _open_schematic(_unpowered_555())
+    try:
+        item = window.schematic_view.item
+        assert item is not None
+        assert item.pin_marks == {
+            ("U1", "8"): (
+                "error",
+                ("U1 pin 8 (VCC) is connected to nothing, so the chip is not powered.",),
+            )
+        }
+        anchor = pin_anchor(item.drawing, "U1", "8")
+        assert anchor is not None
+        assert "so the chip is not powered" in window.schematic_view.describe(anchor)
+
+        result = window.bus.dispatch(
+            "net.add",
+            AddNetPayload(
+                name="+9V", net_class="power",
+                nodes=(NetNode("U1", "8"), NetNode("C1", "1")),
+            ),
+        )
+        assert result.ok
+        item = window.schematic_view.item
+        assert item is not None and item.pin_marks == {} and item.part_marks == {}
+        assert "not powered" not in window.schematic_view.describe(anchor)
+    finally:
+        _close(window)
+
+
 def test_placing_after_choosing_a_board_does_not_ask_again(monkeypatch) -> None:
     """The Board step and the placement both ask which board; asked once at the step, the
     placement uses the answer rather than putting the same question up a second time."""

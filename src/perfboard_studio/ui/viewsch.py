@@ -71,6 +71,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from perfboard_studio.erc import ErcFinding, ErcSeverity
 from perfboard_studio.model import NetNode, Point2
 from perfboard_studio.schematic import (
     GRID_MM,
@@ -188,6 +189,23 @@ NOTE_MM = 0.30
 #: it while a shape is.
 GHOST_MM = 0.35
 
+#: What ERC says about a pin, drawn ON the pin: a ring in the application's error and warning
+#: colours, because a finding is the application talking about the drawing rather than part
+#: of the drawing. Chosen on 2026-10-19 from three rendered candidates (filled rings for
+#: both, this, and a "!" badge beside the pin). The warning ring is DASHED AND UNFILLED
+#: because the warning amber is ``POWER``: a filled amber ring on a +5V wire read as one more
+#: dot on the rail. The two differ in shape as well as colour, so severity reads without it.
+MARK_ERROR = theme.ERROR
+MARK_WARNING = theme.WARNING
+MARK_RADIUS_MM = 1.35
+MARK_MM = 0.45
+#: How much of the error colour fills its ring: enough to find from across the sheet, little
+#: enough to read the pin number under it.
+MARK_FILL_ALPHA = 55
+#: Where a finding about a whole part (it is connected to nothing) is ringed: just past the
+#: top-right corner of its symbol, where no lead and no label is.
+PART_MARK_OFFSET_MM = 0.6
+
 #: How close a click has to land to a wire to count as hitting it, in millimetres.
 PICK_MM = 1.6
 
@@ -218,6 +236,44 @@ def _class_colour(net_class: str) -> str:
     if net_class == "ground":
         return GROUND
     return SIGNAL
+
+
+#: One mark: the worse severity of everything said about the spot, and every message said.
+type Mark = tuple[ErcSeverity, tuple[str, ...]]
+
+
+def finding_marks(
+    findings: Iterable[ErcFinding],
+) -> tuple[dict[tuple[str, str], Mark], dict[str, Mark]]:
+    """Where ERC's findings go on the sheet: ``(by pin, by part)``.
+
+    A finding that names pins marks each of them -- both leads of an electrolytic drawn
+    backwards. One that names only a part (connected to nothing) marks the part. A pin
+    with an error and a warning is an error, and its tooltip says both.
+    """
+    pins: dict[tuple[str, str], Mark] = {}
+    parts: dict[str, Mark] = {}
+    for finding in findings:
+        if finding.pins:
+            for node in finding.pins:
+                key = (node.component_ref, node.pin)
+                pins[key] = _with(pins.get(key), finding)
+        else:
+            for ref in finding.refs:
+                parts[ref] = _with(parts.get(ref), finding)
+    return pins, parts
+
+
+def _with(mark: Mark | None, finding: ErcFinding) -> Mark:
+    """A mark with one more finding said about the same spot: the worse severity wins."""
+    if mark is None:
+        return (finding.severity, (finding.message,))
+    severity, messages = mark
+    if finding.severity == "error":
+        severity = "error"
+    if finding.message not in messages:
+        messages = (*messages, finding.message)
+    return (severity, messages)
 
 
 def pin_anchor(drawing: SchematicDrawing, ref: str, number: str) -> QPointF | None:
@@ -264,6 +320,9 @@ class SheetItem(QGraphicsItem):
         #: The wire or the shape following the pointer, as scene points.
         self.ghost_path: tuple[QPointF, ...] = ()
         self.ghost_shape: tuple[str, QPointF, QPointF] | None = None
+        #: What ERC says about each pin and each whole part (``finding_marks``).
+        self.pin_marks: dict[tuple[str, str], Mark] = {}
+        self.part_marks: dict[str, Mark] = {}
 
     def boundingRect(self) -> QRectF:
         return QRectF(0.0, 0.0, self.drawing.width, self.drawing.height).adjusted(
@@ -283,6 +342,23 @@ class SheetItem(QGraphicsItem):
             return
         self.highlight_refs, self.highlight_nets = refs_set, nets_set
         self.update()
+
+    def set_findings(self, findings: Iterable[ErcFinding]) -> None:
+        pins, parts = finding_marks(findings)
+        if pins == self.pin_marks and parts == self.part_marks:
+            return
+        self.pin_marks, self.part_marks = pins, parts
+        self.update()
+
+    def part_mark_at(self, ref: str) -> QPointF | None:
+        """Where the ring for a finding about a whole part goes."""
+        for symbol in self.drawing.symbols:
+            if symbol.ref == ref:
+                return QPointF(
+                    symbol.at.x + symbol.width + PART_MARK_OFFSET_MM,
+                    symbol.at.y - PART_MARK_OFFSET_MM,
+                )
+        return None
 
     # -- painting ------------------------------------------------------------
 
@@ -317,6 +393,10 @@ class SheetItem(QGraphicsItem):
         for symbol in drawing.symbols:
             self._symbol(painter, symbol)
 
+        # Over the symbols and the no-connect crosses -- an unpowered VCC is a crossed-out
+        # pin, and the ring has to read through the cross -- and under the text, so the pin
+        # number in the ring stays readable.
+        self._marks(painter)
         self._selection(painter)
         self._ghost(painter)
 
@@ -419,6 +499,32 @@ class SheetItem(QGraphicsItem):
                 painter.drawPolyline(polygon)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.restore()
+
+    def _marks(self, painter: QPainter) -> None:
+        """A ring on every pin and part ERC has something to say about (``MARK_*``)."""
+        spots: list[tuple[QPointF, ErcSeverity]] = []
+        for (ref, number), (severity, _) in self.pin_marks.items():
+            anchor = pin_anchor(self.drawing, ref, number)
+            if anchor is not None:
+                spots.append((anchor, severity))
+        for ref, (severity, _) in self.part_marks.items():
+            corner = self.part_mark_at(ref)
+            if corner is not None:
+                spots.append((corner, severity))
+        for at, severity in spots:
+            colour = QColor(MARK_ERROR if severity == "error" else MARK_WARNING)
+            pen = QPen(colour)
+            pen.setWidthF(MARK_MM)
+            if severity == "error":
+                fill = QColor(colour)
+                fill.setAlpha(MARK_FILL_ALPHA)
+                painter.setBrush(QBrush(fill))
+            else:
+                pen.setStyle(Qt.PenStyle.DashLine)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(pen)
+            painter.drawEllipse(at, MARK_RADIUS_MM, MARK_RADIUS_MM)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
 
     def _annotation(self, painter: QPainter, note: Annotation, selected: bool) -> None:
         """A caption or a box. Never in a net colour: a note is not part of the circuit and
@@ -675,6 +781,9 @@ class SchematicView(QGraphicsView):
         self.pending_tee: Tee | None = None
         self.selected_refs: list[str] = []
         self.selected_notes: list[int] = []
+        #: ERC's findings, kept here for the selection's reason: the item is thrown away on
+        #: every rebuild, and the findings arrive from the window, not from the drawing.
+        self.findings: tuple[ErcFinding, ...] = ()
         self.setBackgroundBrush(QBrush(QColor(SHEET)))
         #: Where the press that might become a drag happened, in viewport coordinates, and
         #: what was under it. Held because a drag is a press PLUS movement: acting on the
@@ -769,6 +878,7 @@ class SchematicView(QGraphicsView):
             {f"n{index}" for index in self.selected_notes},
         )
         self.item.pending_pin = self.pending_pin
+        self.item.set_findings(self.findings)
         self._scene.addItem(self.item)
         self._scene.setSceneRect(self.item.boundingRect())
         # A fitted sheet STAYS fitted when it changes size, as it does when the panel does:
@@ -780,6 +890,34 @@ class SchematicView(QGraphicsView):
     def set_highlight(self, refs: Iterable[str], net_ids: Iterable[str]) -> None:
         if self.item is not None:
             self.item.set_highlight(refs, net_ids)
+
+    def set_findings(self, findings: Iterable[ErcFinding]) -> None:
+        """What ERC says about the circuit, ringed on the pins it is about.
+
+        On screen only. The exported sheet is the circuit, and a finding is the application
+        talking about it -- the same line the selection box and the highlight do not cross.
+        """
+        self.findings = tuple(findings)
+        if self.item is not None:
+            self.item.set_findings(self.findings)
+
+    def findings_at(self, scene_pos: QPointF) -> tuple[str, ...]:
+        """What ERC said about the pin or the part ring under a point, for the tooltip."""
+        if self.item is None:
+            return ()
+        pin = self.pin_at(scene_pos)
+        if pin is not None and pin in self.item.pin_marks:
+            return self.item.pin_marks[pin][1]
+        for ref, (_, messages) in self.item.part_marks.items():
+            corner = self.item.part_mark_at(ref)
+            if corner is not None and math.hypot(
+                scene_pos.x() - corner.x(), scene_pos.y() - corner.y()
+            ) <= max(MARK_RADIUS_MM, self.pin_pick_radius()):
+                return messages
+        symbol = self.symbol_at(scene_pos)
+        if symbol is not None and symbol.ref in self.item.part_marks:
+            return self.item.part_marks[symbol.ref][1]
+        return ()
 
     def set_tool(self, tool: SheetTool) -> None:
         """Which tool has the left button.
@@ -1573,7 +1711,8 @@ class SchematicView(QGraphicsView):
         return picture
 
     def describe(self, scene_pos: QPointF) -> str:
-        """What is under the cursor, as one line. Empty when that is nothing.
+        """What is under the cursor, as one line -- and below it, what ERC says about the
+        pin or the part there, a line each. Empty when there is nothing.
 
         Separate from the tooltip so it can be tested without a mouse, which is the only
         way this file gets tested at all on a machine with no font database.
@@ -1582,6 +1721,10 @@ class SchematicView(QGraphicsView):
         click can land on then — a tooltip offering a net under the cursor would be
         describing something the next click cannot select.
         """
+        lines = (self._what_is_under(scene_pos), *self.findings_at(scene_pos))
+        return "\n".join(line for line in lines if line)
+
+    def _what_is_under(self, scene_pos: QPointF) -> str:
         if self.wiring:
             pin = self.pin_at(scene_pos)
             return f"{pin[0]}.{pin[1]}" if pin is not None else ""
