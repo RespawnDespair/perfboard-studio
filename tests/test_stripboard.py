@@ -618,3 +618,49 @@ def test_a_plan_made_against_a_board_that_has_moved_on_is_refused() -> None:
 
     assert again.ok is False
     assert again.code == "duplicate-cut"
+
+
+# ---------------------------------------------------------------------------
+# In 3D
+# ---------------------------------------------------------------------------
+
+
+def test_in_3d_every_hole_on_a_strip_is_still_a_hole() -> None:
+    """A strip was one box per run, centred where the pads are and so standing proud of
+    them, with nothing taken out: from underneath every strip was a bar with no pad and no
+    hole anywhere along it. It is one holed piece per hole now, behind the pads."""
+    from perfboard_studio.ui import view3d
+
+    doc = _doc(cuts=(TrackCut(id="c1", at=HoleCoord(4, 2)),))
+    actors = view3d.build_strips(doc)
+    pieces = [a for a in actors if a.GetMapper().IsA("vtkGlyph3DMapper")]
+    placed = [
+        piece.GetMapper().GetInput().GetPoint(index)
+        for piece in pieces
+        for index in range(piece.GetMapper().GetInput().GetNumberOfPoints())
+    ]
+    assert len(placed) == sum(len(run.holes) for run in segments(doc))
+    # Behind the pads on the solder side, and still clear of the board they are etched on.
+    assert {round(z, 6) for _, _, z in placed} == {
+        round(view3d.pad_z(STRIPBOARD, "bottom") + view3d.STRIP_UNDER_PAD_MM, 6)
+    }
+    assert view3d.pad_z(STRIPBOARD, "bottom") < placed[0][2] < -STRIPBOARD.thickness
+
+
+def test_a_piece_of_strip_has_its_hole_taken_out_and_its_corners_kept() -> None:
+    """Its area is the rectangle less the hole. A piece whose outline cut its corners off
+    would leave a pinhole where two pieces meet, and come out short by those corners."""
+    import math
+
+    import vtk
+
+    from perfboard_studio.ui import view3d
+
+    tile = view3d._strip_tile(-1.27, 1.27, 0.9, 0.5, along_x=True)
+    triangles = vtk.vtkTriangleFilter()
+    triangles.SetInputData(tile)
+    triangles.Update()
+    mass = vtk.vtkMassProperties()
+    mass.SetInputData(triangles.GetOutput())
+    mass.Update()
+    assert mass.GetSurfaceArea() == pytest.approx(2.54 * 1.8 - math.pi * 0.5**2, rel=0.005)

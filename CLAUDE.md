@@ -732,7 +732,10 @@ whichever of the two it lands in. The tiles a bore takes are exactly the holes
 for DRC — and its centre comes from `mounting_hole_centre_mm`, never from `mount.at`.
 Every lead is drawn through its hole and trimmed just past the far copper
 (`view3d._through_hole_pieces`), which is the only evidence the solder side has that
-anything came through it.
+anything came through it. The board's own copper -- a stripboard's strips, a solderable
+breadboard's clips -- is punched the same way (`view3d.build_strips`): one holed piece per
+hole, glyphed, sitting `STRIP_UNDER_PAD_MM` behind the pads. It was a solid bar per run
+standing a few hundredths OVER them, so from underneath no strip had a pad or a hole in it.
 
 ### Parts are shaded as materials, and the room is generated too
 

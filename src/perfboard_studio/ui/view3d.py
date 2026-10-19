@@ -1236,41 +1236,112 @@ def build_pads(
     return actor
 
 
+#: How far a strip's copper sits INSIDE the pads on its face. Behind each pad's ring, so the
+#: ring and the hole in it read through the strip, and still proud of the substrate the
+#: strip is etched on.
+STRIP_UNDER_PAD_MM = 0.02
+
+
+def _strip_tile(
+    low: float, high: float, half_width: float, radius: float, along_x: bool
+) -> vtk.vtkPolyData:
+    """One hole's piece of a strip, with the hole punched out of it: ``low`` to ``high``
+    along the run, ``half_width`` either side of it.
+
+    The rectangle's four corners are sampled exactly, beside the evenly spaced angles a
+    circle needs, so two pieces meet along a shared edge with no pinhole at the corner --
+    the reason ``_tile_with_hole`` starts its square at a corner.
+    """
+    if along_x:
+        x0, x1, y0, y1 = low, high, -half_width, half_width
+    else:
+        x0, x1, y0, y1 = -half_width, half_width, low, high
+    corners = ((x0, y0), (x1, y0), (x1, y1), (x0, y1))
+    angles = sorted(
+        {math.atan2(y, x) % (2 * math.pi) for x, y in corners}
+        | {2 * math.pi * index / TILE_SIDES for index in range(TILE_SIDES)}
+    )
+    outer: list[tuple[float, float]] = []
+    inner: list[tuple[float, float]] = []
+    for angle in angles:
+        dx, dy = math.cos(angle), math.sin(angle)
+        reach_x = (x1 / dx if dx > 0 else x0 / dx) if abs(dx) > 1e-12 else math.inf
+        reach_y = (y1 / dy if dy > 0 else y0 / dy) if abs(dy) > 1e-12 else math.inf
+        reach = min(reach_x, reach_y)
+        outer.append((reach * dx, reach * dy))
+        inner.append((radius * dx, radius * dy))
+    return _annulus(outer, inner)
+
+
 def build_strips(doc: PerfDocument) -> list[vtk.vtkActor]:
-    """The copper a stripboard came with, as one bar per uncut run.
+    """The copper a stripboard or a solderable breadboard came with, one run at a time.
 
     On the solder side only, because that is the only side it is on. Without it the 3D
     view of a stripboard shows a grid of separate pads -- which is a picture of a
     different board, and this view exists to be checked against the real one.
 
-    One thin box per segment rather than per hole: a 30 x 20 board has 20 of them against
-    600 pads, and the strip has to read as one continuous piece of copper anyway.
+    WITH ITS HOLES IN IT, and UNDER the pads. It was one thin box per run, centred where the
+    pads are and so standing a few hundredths proud of them, with nothing taken out: from
+    underneath every strip was a solid bar with no pad and no hole anywhere along it. Now a
+    run is one piece per hole, a pitch long with the hole punched out -- glyphed, so the
+    pieces cost a handful of sources however long the board is -- and the end pieces stop
+    as far past their hole as the pad does. Where a run skips a position, as a breadboard's
+    rail skips every sixth column, the copper carries on across it, because the strip does.
     """
     runs = segments(doc)
     if not runs:
         return []
     board = doc.board
     extent_x, extent_y = pad_extent_mm(board)
-    z = pad_z(board, "bottom")
-    actors: list[vtk.vtkActor] = []
+    half_pitch = board.pitch / 2
+    radius = board.drill_diameter / 2
+    z = pad_z(board, "bottom") + STRIP_UNDER_PAD_MM
+    pieces: dict[tuple[bool, float, float], vtk.vtkPoints] = {}
+    bridges = _Mesh()
     for run in runs:
-        first_x, first_y = _xy(board, run.holes[0])
-        last_x, last_y = _xy(board, run.holes[-1])
-        bar = vtk.vtkCubeSource()
-        bar.SetXLength(abs(last_x - first_x) + extent_x)
-        bar.SetYLength(abs(last_y - first_y) + extent_y)
-        # Thin enough to read as foil rather than as a rail standing off the board, and
-        # thick enough that the renderer does not fight the substrate for the same plane.
-        bar.SetZLength(0.06)
-        actor = vtk.vtkActor()
+        along_x = len({hole.row for hole in run.holes}) == 1
+        at = [_xy(board, hole) for hole in run.holes]
+        along = extent_x if along_x else extent_y
+        half_width = (extent_y if along_x else extent_x) / 2
+        positions = sorted(x if along_x else y for x, y in at)
+        first, last = positions[0], positions[-1]
+        for x, y in at:
+            position = x if along_x else y
+            low = -half_pitch if position > first + 1e-9 else -along / 2
+            high = half_pitch if position < last - 1e-9 else along / 2
+            key = (along_x, round(low, 6), round(high, 6))
+            pieces.setdefault(key, vtk.vtkPoints()).InsertNextPoint(x, y, z)
+        across = at[0][1] if along_x else at[0][0]
+        for a, b in pairwise(positions):
+            if b - a > board.pitch + 1e-9:
+                start, end = a + half_pitch, b - half_pitch
+                bridges.rectangle(
+                    (start, across - half_width, end, across + half_width)
+                    if along_x
+                    else (across - half_width, start, across + half_width, end),
+                    z,
+                )
+
+    actors = [
+        _glyphed(points, _strip_tile(low, high, _strip_half_width(board, along_x), radius, along_x))
+        for (along_x, low, high), points in sorted(pieces.items())
+    ]
+    if bridges.points.GetNumberOfPoints():
+        bridge = vtk.vtkActor()
         mapper = vtk.vtkPolyDataMapper()
-        mapper.SetInputConnection(bar.GetOutputPort())
-        actor.SetMapper(mapper)
-        actor.SetPosition((first_x + last_x) / 2, (first_y + last_y) / 2, z)
+        mapper.SetInputData(bridges.data())
+        bridge.SetMapper(mapper)
+        actors.append(bridge)
+    for actor in actors:
         actor.GetProperty().SetColor(*scheme_for(board.material).pad_rgb)
         _finish(actor.GetProperty(), TINNED)
-        actors.append(actor)
     return actors
+
+
+def _strip_half_width(board: Board, along_x: bool) -> float:
+    """Half a strip's width: as wide as the pads it joins, across the run."""
+    extent_x, extent_y = pad_extent_mm(board)
+    return (extent_y if along_x else extent_x) / 2
 
 
 def build_mounting_holes(doc: PerfDocument) -> list[vtk.vtkActor]:

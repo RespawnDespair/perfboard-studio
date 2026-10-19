@@ -25,6 +25,7 @@ from perfboard_studio.breadboard import (
     is_solderable_breadboard,
     missing_holes,
     pattern_board,
+    rail_columns,
     size_of,
     solderable_breadboard,
 )
@@ -296,4 +297,15 @@ def test_in_3d_it_is_drilled_only_where_the_pattern_has_holes() -> None:
     holes = board.cols * board.rows - len(missing_holes(board))
     # Both faces of every tile: drilled at the pattern's holes, solid everywhere else.
     assert glyphed == sorted([2 * holes, 2 * len(missing_holes(board))])
-    assert len(view3d.build_strips(doc)) == 30 * 2 + 4
+    # Its copper: a holed piece at every hole of every clip, and the rails carried across
+    # the column each group of five leaves out -- the copper does not stop there.
+    strips = view3d.build_strips(doc)
+    pieces = sum(
+        a.GetMapper().GetInput().GetNumberOfPoints()
+        for a in strips
+        if a.GetMapper().IsA("vtkGlyph3DMapper")
+    )
+    assert pieces == holes
+    (bridges,) = [a for a in strips if not a.GetMapper().IsA("vtkGlyph3DMapper")]
+    gaps_per_rail = max(rail_columns(board)) - min(rail_columns(board)) + 1 - len(rail_columns(board))
+    assert bridges.GetMapper().GetInput().GetNumberOfPolys() == 4 * gaps_per_rail > 0

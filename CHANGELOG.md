@@ -61,6 +61,14 @@ closed without a bump.
   where it was, as a new document -- the breadboard's own file stays as it was. An agent does
   the same with `set_board(board_type="solderable-breadboard")`.
 
+### Fixed
+
+- **A stripboard seen from underneath in 3D has its holes again.** Each strip was drawn as
+  one solid bar standing just over the pads, so from the solder side -- the side a strip is
+  checked from -- every strip was a plain bar with no pad and no hole anywhere along it. A
+  strip is now holed at every hole and sits behind its pads, and on a solderable breadboard
+  each rail's copper carries on across the columns its holes skip.
+
 ## [0.19.0] - 2026-10-16
 
 ### Added
