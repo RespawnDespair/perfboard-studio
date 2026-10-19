@@ -32,12 +32,13 @@ parts go in shortest-first (a tall part fitted early blocks the board from lying
 the bench while you solder the short ones), the solder side is done in blocks as each
 group is fitted, long wires come after, and the ICs go in last -- heat and ESD.
 
-WHAT IS NOT HERE YET, said plainly so nobody has to discover it: PLAN.md Sec 7.2 also
-asks each step card to carry a rendered image -- the board with that one part
-highlighted, from above and mirrored from the solder side. That needs the renderer, so
-it belongs with M4's headless render path rather than here, and the text steps are
-written to stand on their own until it lands. The 1:1 printable sheets already exist
-(ui/export_pdf.py) and are what a builder holds against the board today.
+WHAT IS NOT HERE, said plainly so nobody has to look for it: the picture on each step
+card (PLAN.md Sec 7.2). It needs the renderer, so ``ui/view3d.render_step_images`` makes
+it -- one per step, shot from the face the work is done on -- and the window, the MCP
+server, ``--headless`` and a project save hand it to ``guide_export.guide_to_html``.
+Without GL there is no picture, which is why the text steps here are written to stand on
+their own. The 1:1 printable sheets (ui/export_pdf.py) are what a builder holds against
+the board.
 
 PURE AND DETERMINISTIC: no I/O, no clock, no randomness, no Qt. The same document always
 produces the same guide, which is what makes it diffable, testable and safe to generate
