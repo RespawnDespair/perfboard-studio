@@ -20,6 +20,8 @@ closed without a bump.
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-19
+
 ### Added
 
 - **The circuit is checked as it is drawn, before any board is.** ERC reads what each part
@@ -4252,7 +4254,8 @@ was introduced during 0.4.0 development, so they are accurate but were not writt
 release time. Their compare links point at commits rather than tags for the same reason;
 from v0.4.0 onwards every release is tagged.
 
-[Unreleased]: https://github.com/medinstech/perfboard-studio/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/medinstech/perfboard-studio/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/medinstech/perfboard-studio/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/medinstech/perfboard-studio/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/medinstech/perfboard-studio/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/medinstech/perfboard-studio/compare/v0.16.0...v0.17.0
