@@ -43,9 +43,9 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -153,7 +153,7 @@ jobs:
           esac
           /tmp/fresh/bin/python -c "import perfboard_studio.mcp.server; print('mcp server imports')"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: perfboard-studio-pypi-distributions
           path: dist/*
@@ -177,9 +177,9 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -268,7 +268,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "makensis failed" }
           Get-ChildItem releases | Format-Table Name, Length
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: perfboard-studio-windows-installer
           path: releases/*.exe
@@ -347,9 +347,9 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -422,7 +422,7 @@ jobs:
           test -f ./headless_out/out_2d.png
           rm -rf squashfs-root
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: perfboard-studio-linux-appimage
           path: releases/*.AppImage
@@ -441,9 +441,9 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -521,7 +521,7 @@ jobs:
           done
           hdiutil detach /Volumes/PerfboardStudio -force
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: perfboard-studio-macos-dmg
           path: releases/*.dmg
@@ -545,18 +545,18 @@ jobs:
     steps:
       # Named one at a time rather than by pattern, so that which files the checksum
       # file below covers is visible here rather than inferred from a glob.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: perfboard-studio-linux-appimage
           path: releases
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: perfboard-studio-macos-dmg
           path: releases
       # The Windows installer is already on the release and is NOT uploaded again. It is
       # fetched because SHA256SUMS has to cover all three files, and this is the only job
       # that can see more than one of them.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: perfboard-studio-windows-installer
           path: releases
