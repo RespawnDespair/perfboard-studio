@@ -3284,9 +3284,26 @@ class BoardSizeDialog(QDialog):
         )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        # The boards above are stock perfboard, the only boards a circuit can be TRIED on
+        # here (``placer.suggest_boards`` offers nothing else). A breadboard, a stripboard or
+        # a size of one's own is a board this dialog cannot draw the circuit on, so it is
+        # the board's setup -- one press away, rather than a menu nobody looks in while a
+        # question about which board is on the screen.
+        #: True when the dialog was left for Board Setup instead of a board in the list.
+        self.wants_setup = False
+        other = buttons.addButton(t("Breadboard or Other Board…"), QDialogButtonBox.ButtonRole.ActionRole)
+        other.setToolTip(
+            t("A breadboard, a stripboard or a size of your own, in Board Setup.")
+        )
+        other.clicked.connect(self._to_setup)
+        self.other_button = other
         layout.addWidget(buttons)
         if pictures:
             self.resize(4 * (self.THUMBNAIL.width() + 40) + 60, 2 * (self.THUMBNAIL.height() + 64) + 160)
+
+    def _to_setup(self) -> None:
+        self.wants_setup = True
+        self.accept()
 
     def chosen(self) -> BoardSuggestion | None:
         """The board to switch to, or None to keep the one the document already has."""
@@ -7838,6 +7855,9 @@ class MainWindow(QMainWindow):
         )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return False, None
+        if dialog.wants_setup:
+            # Board Setup chooses the board itself; nothing in the list is to be applied.
+            return self.on_board_setup(), None
         return True, dialog.chosen()
 
     def _use_board(self, choice: BoardChoice, chosen: BoardSuggestion) -> bool:

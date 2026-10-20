@@ -1529,6 +1529,8 @@ TURKISH: Mapping[str, str] = {
     "Half size · 400 points · 30 columns": "Yarım boy · 400 nokta · 30 kolon",
     "Mini · 170 points · 17 columns, no rails": "Mini · 170 nokta · 17 kolon, raysız",
     "Channel": "Oluk",
+    "Breadboard or Other Board…": "Breadboard veya Başka Bir Kart…",
+    "A breadboard, a stripboard or a size of your own, in Board Setup.": "Kart Ayarları'nda bir breadboard, bir şerit kart ya da kendi ölçünüz.",
     "Narrow part": "Dar kısım",
     "300 mil · standard, a DIP straddles it": "300 mil · standart, DIP üstüne oturur",
     "600 mil · Arduino Nano": "600 mil · Arduino Nano için",

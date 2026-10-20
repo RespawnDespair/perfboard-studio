@@ -8332,6 +8332,50 @@ def test_the_board_size_dialog_offers_the_stock_sizes_and_the_board_you_have() -
     _close(window)
 
 
+def test_a_breadboard_is_one_press_away_from_the_board_question(monkeypatch) -> None:
+    """The stock boards are the only ones the circuit can be tried on there, so the
+    question listed no breadboard at all, and Board Setup -- where one is chosen -- was a
+    menu away. Its button leaves the question for Board Setup, and the board chosen there
+    is the board."""
+    from perfboard_studio.breadboard import breadboard
+    from perfboard_studio.commands import SetBoardPayload
+    from perfboard_studio.model import SchematicPart
+    from perfboard_studio.placer import design_entries, recommended_board, suggest_boards
+    from perfboard_studio.ui import main as main_module
+    from perfboard_studio.ui.main import BoardSizeDialog
+
+    window = _blank_window()
+    try:
+        document = dataclasses.replace(
+            window.bus.document,
+            parts=(SchematicPart(id="p1", ref="U1", value="", footprint_id="dip-8"),),
+        )
+        suggestions = suggest_boards(document.board, design_entries(document), document.nets, window.lookup)
+        dialog = BoardSizeDialog(suggestions, document.board, recommended_board(suggestions), window)
+        dialog.other_button.click()
+        assert dialog.wants_setup and dialog.result() == main_module.QDialog.DialogCode.Accepted
+
+        _add(window, "U1", "dip-8")
+        monkeypatch.setattr(
+            main_module.MainWindow, "_run_planner", lambda self, label, work: work(lambda: False)
+        )
+
+        def leave_for_setup(self):  # type: ignore[no-untyped-def]
+            self.wants_setup = True
+            return main_module.QDialog.DialogCode.Accepted
+
+        def choose_a_breadboard(self):  # type: ignore[no-untyped-def]
+            return self.bus.dispatch("board.set", SetBoardPayload(board=breadboard("830"))).ok
+
+        monkeypatch.setattr(BoardSizeDialog, "exec", leave_for_setup)
+        monkeypatch.setattr(main_module.MainWindow, "on_board_setup", choose_a_breadboard)
+        window.on_choose_board()
+        assert window.bus.document.board == breadboard("830")
+        assert window._board_chosen
+    finally:
+        _close(window)
+
+
 def test_the_board_size_dialog_shows_each_board_with_the_circuit_on_it() -> None:
     """"fits, 29 % full" is a number; the picture says HOW -- a packed corner of a big
     board and a full small one read the same as percentages. Given the document, every

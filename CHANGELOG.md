@@ -22,6 +22,11 @@ closed without a bump.
 
 ### Added
 
+- **A breadboard can be chosen from the board question.** The Board step's "Which board is
+  this going on?" lists the stock perfboards a circuit can be tried on, and had no way to a
+  breadboard at all: that was Board Setup, a menu away. **Breadboard or Other Board…** opens
+  it from the question, and the board chosen there is the board.
+
 - **Breadboard jumpers can be laid along the grid.** Route ▸ Lay Wires Along the Grid, and
   `wires="grid"` for an agent's `autoroute` and `reroute`, now shape a breadboard's jumpers
   the way the pre-bent kits are made: along a row and down a column, an L, or a U or a Z
