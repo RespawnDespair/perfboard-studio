@@ -1528,6 +1528,16 @@ TURKISH: Mapping[str, str] = {
     "Full size · 830 points · 63 columns": "Tam boy · 830 nokta · 63 kolon",
     "Half size · 400 points · 30 columns": "Yarım boy · 400 nokta · 30 kolon",
     "Mini · 170 points · 17 columns, no rails": "Mini · 170 nokta · 17 kolon, raysız",
+    "Channel": "Oluk",
+    "Narrow part": "Dar kısım",
+    "300 mil · standard, a DIP straddles it": "300 mil · standart, DIP üstüne oturur",
+    "600 mil · Arduino Nano": "600 mil · Arduino Nano için",
+    "700 mil · Raspberry Pi Pico": "700 mil · Raspberry Pi Pico için",
+    "900 mil · narrow ESP32 devkit": "900 mil · dar ESP32 geliştirme kartı",
+    "1000 mil · ESP32 devkit": "1000 mil · ESP32 geliştirme kartı",
+    "Wide all the way": "Baştan sona geniş",
+    " columns": " kolon",
+    "How many columns, from column 1, keep the ordinary 0.3 inch channel with their strips moved in to it, so a DIP still fits beside the module.": "1. kolondan başlayarak kaç kolonun, şeritleri ona doğru kaydırılmış olarak olağan 0,3 inçlik oluğu koruduğu; böylece modülün yanına hâlâ bir DIP sığar.",
     "Nothing is soldered on a breadboard: use a jumper or an insulated wire.": "Breadboard'da lehim yapılmaz: jumper ya da izoleli kablo kullanın.",
     "Stopping, and keeping the best found so far…": (
         "Durduruluyor; şimdiye kadar bulunan en iyisi tutuluyor…"

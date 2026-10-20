@@ -128,6 +128,8 @@ from perfboard_studio.breadboard import SIZES as BREADBOARD_SIZES
 from perfboard_studio.breadboard import (
     SOLDERABLE_BORDER_X_MM,
     SOLDERABLE_BORDER_Y_MM,
+    STANDARD_CHANNEL,
+    channel_of,
     has_breadboard_pattern,
     is_breadboard,
     is_solderable_breadboard,
@@ -883,6 +885,17 @@ class BoardSetupDialog(QDialog):
         ("170", "Mini · 170 points · 17 columns, no rails"),
     )
 
+    #: How wide a breadboard's channel is, in mil: the ordinary 0.3 inch and the wide
+    #: bodies printed for modules (``breadboard.WIDE_CHANNEL_MILS``). The channel is part of
+    #: the pattern -- one row of grid per pitch -- so this is the second half of the question.
+    BREADBOARD_CHANNELS: tuple[tuple[str, str], ...] = (
+        ("300", "300 mil · standard, a DIP straddles it"),
+        ("600", "600 mil · Arduino Nano"),
+        ("700", "700 mil · Raspberry Pi Pico"),
+        ("900", "900 mil · narrow ESP32 devkit"),
+        ("1000", "1000 mil · ESP32 devkit"),
+    )
+
     STRIP_AXES: tuple[tuple[Literal["horizontal", "vertical"], str], ...] = (
         ("horizontal", "Along a row"),
         ("vertical", "Down a column"),
@@ -960,6 +973,26 @@ class BoardSetupDialog(QDialog):
         self.breadboard_size.setCurrentIndex(
             max(0, self.breadboard_size.findData(size_of(board) or "830"))
         )
+        self.breadboard_channel = QComboBox()
+        for channel_value, channel_label in self.BREADBOARD_CHANNELS:
+            self.breadboard_channel.addItem(t(channel_label), channel_value)
+        channel = channel_of(board) if has_breadboard_pattern(board) else STANDARD_CHANNEL
+        if self.breadboard_channel.findData(str(channel * 100)) < 0:
+            self.breadboard_channel.addItem(f"{channel * 100} mil", str(channel * 100))
+        self.breadboard_channel.setCurrentIndex(self.breadboard_channel.findData(str(channel * 100)))
+        # A wide body that keeps the ordinary channel for part of its length (lhm0's
+        # "flex"): how many columns from column 1. Zero is a channel wide all the way.
+        self.narrow_channel = QSpinBox()
+        self.narrow_channel.setRange(0, 400)
+        self.narrow_channel.setSpecialValueText(t("Wide all the way"))
+        self.narrow_channel.setSuffix(t(" columns"))
+        self.narrow_channel.setValue(board.narrow_channel_cols)
+        self.narrow_channel.setToolTip(
+            t(
+                "How many columns, from column 1, keep the ordinary 0.3 inch channel with "
+                "their strips moved in to it, so a DIP still fits beside the module."
+            )
+        )
         # A solderable breadboard's border is the one thing about it that differs between
         # makers (breadboard.py), so it is the one thing asked beside its size.
         solderable = is_solderable_breadboard(board)
@@ -1028,6 +1061,8 @@ class BoardSetupDialog(QDialog):
         self.rows.valueChanged.connect(self._update_note)
         self.board_type.currentIndexChanged.connect(self._update_enabled)
         self.breadboard_size.currentIndexChanged.connect(self._update_note)
+        self.breadboard_channel.currentIndexChanged.connect(self._update_enabled)
+        self.narrow_channel.valueChanged.connect(self._update_note)
         self.pad_shape.currentIndexChanged.connect(self._update_enabled)
         self.legend.toggled.connect(self._update_enabled)
         self._pitch = board.pitch
@@ -1041,6 +1076,8 @@ class BoardSetupDialog(QDialog):
         self._chosen.addRow(t("Type"), self.board_type)
         self._chosen.addRow(t("Strips run"), self.strip_axis)
         self._chosen.addRow(t("Size"), self.breadboard_size)
+        self._chosen.addRow(t("Channel"), self.breadboard_channel)
+        self._chosen.addRow(t("Narrow part"), self.narrow_channel)
         self._chosen.addRow(t("Border, left and right"), self.border_x)
         self._chosen.addRow(t("Border, top and bottom"), self.border_y)
 
@@ -1114,6 +1151,8 @@ class BoardSetupDialog(QDialog):
             self.preset.currentIndexChanged,
             self.board_type.currentIndexChanged,
             self.breadboard_size.currentIndexChanged,
+            self.breadboard_channel.currentIndexChanged,
+            self.narrow_channel.valueChanged,
             self.pad_shape.currentIndexChanged,
             self.pad_axis.currentIndexChanged,
             self.material.currentIndexChanged,
@@ -1223,6 +1262,11 @@ class BoardSetupDialog(QDialog):
         pattern = self.board_type.currentData() in ("breadboard", "solderable-breadboard")
         solderable = self.board_type.currentData() == "solderable-breadboard"
         self._chosen.setRowVisible(self.breadboard_size, pattern)
+        self._chosen.setRowVisible(self.breadboard_channel, pattern)
+        # Only a channel that can narrow onto the grid is offered a narrow part: each strip
+        # moves in by half of what the channel loses (breadboard.board_problem).
+        extra = int(self.breadboard_channel.currentData()) // 100 - STANDARD_CHANNEL
+        self._chosen.setRowVisible(self.narrow_channel, pattern and extra > 0 and extra % 2 == 0)
         self._chosen.setRowVisible(self.border_x, solderable)
         self._chosen.setRowVisible(self.border_y, solderable)
         self._chosen.setRowVisible(self.preset, not pattern)
@@ -1299,7 +1343,11 @@ class BoardSetupDialog(QDialog):
         if board_type in ("breadboard", "solderable-breadboard"):
             # Through pattern_board, so a kind's thickness and drill come with the kind.
             cols, rows = BREADBOARD_SIZES[str(self.breadboard_size.currentData())]
-            pattern = pattern_board(board_type, cols, rows)
+            extra = int(self.breadboard_channel.currentData()) // 100 - STANDARD_CHANNEL
+            narrow = (
+                min(self.narrow_channel.value(), cols - 1) if extra > 0 and extra % 2 == 0 else 0
+            )
+            pattern = pattern_board(board_type, cols, rows + extra, narrow)
             if board_type == "solderable-breadboard":
                 pattern = dataclasses.replace(
                     pattern,
