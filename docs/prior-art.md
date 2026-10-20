@@ -73,9 +73,10 @@ as a formula; no file, drawing or code of Fritzing's is copied or shipped, and t
 application's source (GPL-3.0) was not read.
 
 **lhm0's wide-mcu-breadboard (CC BY-NC-SA 4.0)** — the wide channel (`breadboard.py`,
-"A WIDE CHANNEL") was measured off two of its printed bodies, `top_ESP32_1000mil.stl` and
-`top_ESP32_900mil_flex2.stl`: every opening in the top face, put on the 0.1 inch grid,
-which all 830 of each land on exactly. What was taken is where the holes are -- the channel
+"A WIDE CHANNEL") was measured off three of its printed bodies, `top_ESP32_1000mil.stl`,
+`top_ESP32_900mil_flex2.stl` and `top_ESP32_1000mil_flex2.stl`: every opening in the top
+face, put on the 0.1 inch grid, which all 830 of each land on exactly -- except the last's
+narrow part, which is half a pitch off it and is rounded (see the module docstring). What was taken is where the holes are -- the channel
 width, where it narrows and that the rails keep their distance from the strips -- which are
 facts about a physical board, restated as a formula and pinned in
 `tests/test_breadboard_wide.py`. No file, mesh or drawing of the project is copied or

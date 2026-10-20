@@ -296,8 +296,10 @@ def set_board(
     between rows e and f for a module too wide for the ordinary 300 mil one (an ESP32
     devkit is 1000, a narrow one 900, a Pico 700): one more row of grid per 100 mil, rails
     kept. narrow_channel_cols keeps the 300 mil channel for that many columns from column
-    1, its strips moved in to meet it, so a DIP still fits beside the module; the two
-    channels must differ by an even number of pitches (900 and 300 do, 1000 and 300 not)."""
+    1, its strips moved in to meet it, so a DIP still fits beside the module -- 39 on the
+    flex bodies of 63 columns. Where the strips cannot move in by the same whole number of
+    rows (1000 against 300) the narrow part is drawn half a pitch high; every connection
+    and hole name is exact."""
     return session.set_board(
         cols, rows, material, board_type, strip_axis, pitch, single_sided, channel_mil,
         narrow_channel_cols,

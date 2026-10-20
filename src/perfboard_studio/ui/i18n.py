@@ -1537,6 +1537,8 @@ TURKISH: Mapping[str, str] = {
     "700 mil · Raspberry Pi Pico": "700 mil · Raspberry Pi Pico için",
     "900 mil · narrow ESP32 devkit": "900 mil · dar ESP32 geliştirme kartı",
     "1000 mil · ESP32 devkit": "1000 mil · ESP32 geliştirme kartı",
+    "900 mil flex · 300 mil for columns 1–39": "900 mil esnek · 1–39. kolonlarda 300 mil",
+    "1000 mil flex · 300 mil for columns 1–39": "1000 mil esnek · 1–39. kolonlarda 300 mil",
     "Wide all the way": "Baştan sona geniş",
     " columns": " kolon",
     "How many columns, from column 1, keep the ordinary 0.3 inch channel with their strips moved in to it, so a DIP still fits beside the module.": "1. kolondan başlayarak kaç kolonun, şeritleri ona doğru kaydırılmış olarak olağan 0,3 inçlik oluğu koruduğu; böylece modülün yanına hâlâ bir DIP sığar.",

@@ -5,6 +5,7 @@ its length where the board does."""
 from __future__ import annotations
 
 import dataclasses
+import math
 import os
 
 import pytest
@@ -61,6 +62,9 @@ WIDE_1000 = breadboard("830", channel=10)
 #: lhm0's top_ESP32_900mil_flex2: 900 mil for the right-hand 24 columns, 300 mil for the
 #: 39 from column 1, so a DIP still straddles the channel beside the module.
 FLEX_900 = breadboard("830", channel=9, narrow_channel_cols=39)
+#: lhm0's top_ESP32_1000mil_flex2: the same, at 1000 mil. Its narrow part is half a pitch
+#: off the grid the rest of it is on, and is drawn half a pitch high.
+FLEX_1000 = breadboard("830", channel=10, narrow_channel_cols=39)
 
 
 def _doc(board, **fields) -> PerfDocument:  # type: ignore[no-untyped-def]
@@ -71,17 +75,23 @@ def _doc(board, **fields) -> PerfDocument:  # type: ignore[no-untyped-def]
 # The pattern, as measured
 # ---------------------------------------------------------------------------
 
-#: The openings in lhm0's two STL bodies, found by rasterising each one's top face and
+#: The openings in lhm0's three STL bodies, found by rasterising each one's top face and
 #: taking the centre of every hole in it, then put on the 0.1 inch grid -- all 830 of each
-#: land exactly on it. Across the board, in pitches from its centre line: the strip rows,
-#: by the columns (1-based) they run along. The rails are the ordinary board's, two rows
-#: each side, three pitches outside the outer strip row and 50 holes in groups of five.
+#: land exactly on it, but for the 1000 mil flex body's narrow part, half a pitch off it.
+#: Across the board, in pitches from its centre line: the strip rows, by the columns
+#: (1-based) they run along. The rails are the ordinary board's, two rows each side, three
+#: pitches outside the outer strip row and 50 holes in groups of five.
 MEASURED = {
     "1000": (WIDE_1000, [((1, 63), (5, 6, 7, 8, 9))], (12, 13)),
     "900-flex2": (
         FLEX_900,
         [((1, 39), (1.5, 2.5, 3.5, 4.5, 5.5)), ((40, 63), (4.5, 5.5, 6.5, 7.5, 8.5))],
         (11.5, 12.5),
+    ),
+    "1000-flex2": (
+        FLEX_1000,
+        [((1, 39), (1.5, 2.5, 3.5, 4.5, 5.5)), ((40, 63), (5, 6, 7, 8, 9))],
+        (12, 13),
     ),
 }
 
@@ -90,14 +100,20 @@ MEASURED = {
 def test_the_wide_patterns_are_the_ones_measured_off_the_printed_bodies(name: str) -> None:
     board, strips, rails = MEASURED[name]
     centre = (board.rows - 1) / 2
+
+    def row(at: float) -> int:
+        # A position half a row off the grid goes up the board, to the lower row number:
+        # the rounding the module docstring writes down. Every other one is exact.
+        return math.floor(at + 1e-9)
+
     expected: set[tuple[int, int]] = set()
     for (first, last), offsets in strips:
         for col in range(first - 1, last):
             for offset in offsets:
-                expected |= {(col, round(centre - offset)), (col, round(centre + offset))}
+                expected |= {(col, row(centre - offset)), (col, row(centre + offset))}
     for offset in rails:
         for col in rail_columns(FULL):
-            expected |= {(col, round(centre - offset)), (col, round(centre + offset))}
+            expected |= {(col, row(centre - offset)), (col, row(centre + offset))}
     holes = {(c, r) for r in range(board.rows) for c in range(board.cols) if has_hole(board, HoleCoord(c, r))}
     assert holes == expected
     # The same tie points as the board the clips came out of.
@@ -144,6 +160,16 @@ def test_where_the_channel_narrows_a_strip_keeps_its_letters_on_other_rows() -> 
     assert [(first, end, e - f) for first, end, f, e in channel_stretches(WIDE_1000)] == [(0, 63, 10)]
 
 
+def test_a_narrowing_by_an_odd_number_of_pitches_is_drawn_half_a_pitch_high() -> None:
+    """1000 mil to 300 is seven pitches, three and a half each side: the lower strip moves
+    in four rows and the upper three, so the narrow channel's middle is half a row above
+    the wide one's. Its clips are still five holes, one column each, and named."""
+    (_, _, f_narrow, e_narrow), (_, _, f_wide, e_wide) = channel_stretches(FLEX_1000)
+    assert e_narrow - f_narrow == STANDARD_CHANNEL
+    assert (f_narrow + e_narrow) / 2 == (f_wide + e_wide) / 2 - 0.5
+    assert board_problem(FLEX_1000) is None
+
+
 # ---------------------------------------------------------------------------
 # What is refused
 # ---------------------------------------------------------------------------
@@ -152,7 +178,6 @@ def test_where_the_channel_narrows_a_strip_keeps_its_letters_on_other_rows() -> 
 @pytest.mark.parametrize(
     ("board", "says"),
     [
-        (breadboard("830", channel=10, narrow_channel_cols=39), "half a pitch"),
         (breadboard("830", narrow_channel_cols=10), "nothing to narrow"),
         (breadboard("830", channel=9, narrow_channel_cols=63), "leave some"),
         (dataclasses.replace(FULL, type="pad-per-hole", narrow_channel_cols=5), "Only a breadboard"),
@@ -160,8 +185,8 @@ def test_where_the_channel_narrows_a_strip_keeps_its_letters_on_other_rows() -> 
     ],
 )
 def test_a_channel_that_cannot_be_on_the_grid_is_refused(board, says: str) -> None:  # type: ignore[no-untyped-def]
-    """lhm0's 1000 mil flex board narrows 10 pitches to 3: each strip would move by three
-    and a half, so the narrow part is half a pitch off the grid. Refused, not rounded."""
+    """A narrow part that is not part of the board, a channel with nothing to narrow, a
+    narrowing on a board with no channel, and a channel wider than any module."""
     problem = board_problem(board)
     assert problem is not None and says in problem
     bus = CommandBus(_doc(FULL), create_standard_registry(), CommandContext(next_id=create_document_id_generator(_doc(FULL))))
@@ -221,8 +246,12 @@ def _design(board, module: str, with_dip: bool) -> PerfDocument:  # type: ignore
 
 @pytest.mark.parametrize(
     ("board", "module", "with_dip"),
-    [(WIDE_1000, "esp32-devkitc", False), (FLEX_900, "esp32-c3-devkitm-1", True)],
-    ids=["1000-devkitc", "900-flex2-c3-and-a-555"],
+    [
+        (WIDE_1000, "esp32-devkitc", False),
+        (FLEX_900, "esp32-c3-devkitm-1", True),
+        (FLEX_1000, "esp32-devkitc", True),
+    ],
+    ids=["1000-devkitc", "900-flex2-c3-and-a-555", "1000-flex2-devkitc-and-a-555"],
 )
 def test_a_devkit_goes_across_the_channel_and_the_board_is_the_circuit(board, module: str, with_dip: bool) -> None:  # type: ignore[no-untyped-def]
     """Place on the Board, then the planner: the module straddles the wide channel with a
@@ -256,8 +285,8 @@ def test_an_agent_asks_for_a_wide_channel_in_mil() -> None:
     assert session.set_board(channel_mil=900, narrow_channel_cols=39)["ok"]
     assert session.document.board == FLEX_900
     assert session.get_board_info()["narrow_channel_cols"] == 39
-    refused = session.set_board(channel_mil=1000)  # still 39 narrow columns: off the grid
-    assert not refused["ok"] and "half a pitch" in refused["message"]
+    assert session.set_board(channel_mil=1000)["ok"]  # the 39 narrow columns kept
+    assert session.document.board == FLEX_1000
     with pytest.raises(SessionError):
         session.set_board(channel_mil=950)
     with pytest.raises(SessionError):
@@ -279,13 +308,18 @@ def test_board_setup_asks_a_breadboard_its_channel_and_where_it_narrows() -> Non
     assert form.isRowVisible(dialog.breadboard_channel) and not form.isRowVisible(dialog.narrow_channel)
     dialog.breadboard_channel.setCurrentIndex(dialog.breadboard_channel.findData("1000"))
     assert dialog.board() == WIDE_1000
-    # 1000 cannot narrow onto the grid, so it is not asked.
-    assert not form.isRowVisible(dialog.narrow_channel)
-    dialog.breadboard_channel.setCurrentIndex(dialog.breadboard_channel.findData("900"))
     assert form.isRowVisible(dialog.narrow_channel)
-    dialog.narrow_channel.setValue(39)
-    assert dialog.board() == FLEX_900
-    assert BoardSetupDialog(FLEX_900).board() == FLEX_900
+    # A flex body is found by name in the list, which sets its narrow part.
+    for key, board in (("900-flex", FLEX_900), ("1000-flex", FLEX_1000)):
+        dialog.breadboard_channel.setCurrentIndex(dialog.breadboard_channel.findData(key))
+        assert dialog.narrow_channel.value() == 39 and dialog.board() == board
+        reopened = BoardSetupDialog(board)
+        assert reopened.breadboard_channel.currentData() == key and reopened.board() == board
+    # ...and a plain choice after it is wide all the way again; the box still takes any count.
+    dialog.breadboard_channel.setCurrentIndex(dialog.breadboard_channel.findData("900"))
+    assert dialog.board() == breadboard("830", channel=9)
+    dialog.narrow_channel.setValue(20)
+    assert dialog.board() == breadboard("830", channel=9, narrow_channel_cols=20)
 
 
 def test_the_groove_is_drawn_as_wide_as_the_channel_in_both_views() -> None:
