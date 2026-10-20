@@ -1655,8 +1655,10 @@ Four decisions carry it, each with a test in `tests/test_breadboard.py`:
   uniform wide board writes nothing new. `Board.narrow_channel_cols` (omitted at 0) keeps
   the ordinary channel for the first columns with their strips moved in, so a strip letter
   is a different row there: ask `strip_letter(board, row, col)` and draw the groove from
-  `breadboard.channel_stretches`, never from one column's rows. A narrowing that is not an
-  even number of pitches would put the narrow part half a pitch off the grid and is refused.
+  `breadboard.channel_stretches`, never from one column's rows. A narrowing by an odd number
+  of pitches (lhm0's 1000 mil flex) puts the real narrow part half a pitch off the grid; the
+  lower strip moves in one row more, so it is DRAWN half a pitch high and every clip, name
+  and connection is still exact -- the half-size rails' rounding, written down as such.
 - **A clip is a segment.** `stripboard.segment_of` answers from `breadboard.clip_of` on a
   breadboard and `cut_between` never offers a cut there, which is how `connectivity`, LVS,
   `striproute` and the placer take a breadboard without a line about plastic. Two pins of

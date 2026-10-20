@@ -888,13 +888,20 @@ class BoardSetupDialog(QDialog):
     #: How wide a breadboard's channel is, in mil: the ordinary 0.3 inch and the wide
     #: bodies printed for modules (``breadboard.WIDE_CHANNEL_MILS``). The channel is part of
     #: the pattern -- one row of grid per pitch -- so this is the second half of the question.
+    #: A "-flex" choice is the same channel with the ordinary one kept for the first
+    #: :data:`FLEX_NARROW_COLS` columns, as lhm0's flex bodies have it -- offered by name,
+    #: because a board somebody built is found in a list and not in a spin box.
     BREADBOARD_CHANNELS: tuple[tuple[str, str], ...] = (
         ("300", "300 mil · standard, a DIP straddles it"),
         ("600", "600 mil · Arduino Nano"),
         ("700", "700 mil · Raspberry Pi Pico"),
         ("900", "900 mil · narrow ESP32 devkit"),
+        ("900-flex", "900 mil flex · 300 mil for columns 1–39"),
         ("1000", "1000 mil · ESP32 devkit"),
+        ("1000-flex", "1000 mil flex · 300 mil for columns 1–39"),
     )
+    #: How many columns of a flex body keep the ordinary channel: 39 of the 63, measured.
+    FLEX_NARROW_COLS = 39
 
     STRIP_AXES: tuple[tuple[Literal["horizontal", "vertical"], str], ...] = (
         ("horizontal", "Along a row"),
@@ -977,9 +984,12 @@ class BoardSetupDialog(QDialog):
         for channel_value, channel_label in self.BREADBOARD_CHANNELS:
             self.breadboard_channel.addItem(t(channel_label), channel_value)
         channel = channel_of(board) if has_breadboard_pattern(board) else STANDARD_CHANNEL
-        if self.breadboard_channel.findData(str(channel * 100)) < 0:
-            self.breadboard_channel.addItem(f"{channel * 100} mil", str(channel * 100))
-        self.breadboard_channel.setCurrentIndex(self.breadboard_channel.findData(str(channel * 100)))
+        key = str(channel * 100)
+        if board.narrow_channel_cols == self.FLEX_NARROW_COLS and self.breadboard_channel.findData(f"{key}-flex") >= 0:
+            key = f"{key}-flex"
+        if self.breadboard_channel.findData(key) < 0:
+            self.breadboard_channel.addItem(f"{channel * 100} mil", key)
+        self.breadboard_channel.setCurrentIndex(self.breadboard_channel.findData(key))
         # A wide body that keeps the ordinary channel for part of its length (lhm0's
         # "flex"): how many columns from column 1. Zero is a channel wide all the way.
         self.narrow_channel = QSpinBox()
@@ -1061,7 +1071,7 @@ class BoardSetupDialog(QDialog):
         self.rows.valueChanged.connect(self._update_note)
         self.board_type.currentIndexChanged.connect(self._update_enabled)
         self.breadboard_size.currentIndexChanged.connect(self._update_note)
-        self.breadboard_channel.currentIndexChanged.connect(self._update_enabled)
+        self.breadboard_channel.currentIndexChanged.connect(self._on_channel)
         self.narrow_channel.valueChanged.connect(self._update_note)
         self.pad_shape.currentIndexChanged.connect(self._update_enabled)
         self.legend.toggled.connect(self._update_enabled)
@@ -1250,6 +1260,17 @@ class BoardSetupDialog(QDialog):
             self.row_digits.setValue(board.labels.row_digits)
         self._update_enabled()
 
+    def _channel_extra(self) -> int:
+        """Pitches the chosen channel is wider than 0.3 inch."""
+        return int(str(self.breadboard_channel.currentData()).split("-")[0]) // 100 - STANDARD_CHANNEL
+
+    def _on_channel(self) -> None:
+        """A flex choice sets the narrow part to the body's; a plain one sets it wide all the
+        way. Either can still be changed by hand, for a body of somebody's own."""
+        flex = str(self.breadboard_channel.currentData()).endswith("-flex")
+        self.narrow_channel.setValue(self.FLEX_NARROW_COLS if flex else 0)
+        self._update_enabled()
+
     def _update_enabled(self) -> None:
         oblong = self.pad_shape.currentData() == "oblong"
         self.pad_length.setEnabled(oblong)
@@ -1265,8 +1286,7 @@ class BoardSetupDialog(QDialog):
         self._chosen.setRowVisible(self.breadboard_channel, pattern)
         # Only a channel that can narrow onto the grid is offered a narrow part: each strip
         # moves in by half of what the channel loses (breadboard.board_problem).
-        extra = int(self.breadboard_channel.currentData()) // 100 - STANDARD_CHANNEL
-        self._chosen.setRowVisible(self.narrow_channel, pattern and extra > 0 and extra % 2 == 0)
+        self._chosen.setRowVisible(self.narrow_channel, pattern and self._channel_extra() > 0)
         self._chosen.setRowVisible(self.border_x, solderable)
         self._chosen.setRowVisible(self.border_y, solderable)
         self._chosen.setRowVisible(self.preset, not pattern)
@@ -1343,10 +1363,8 @@ class BoardSetupDialog(QDialog):
         if board_type in ("breadboard", "solderable-breadboard"):
             # Through pattern_board, so a kind's thickness and drill come with the kind.
             cols, rows = BREADBOARD_SIZES[str(self.breadboard_size.currentData())]
-            extra = int(self.breadboard_channel.currentData()) // 100 - STANDARD_CHANNEL
-            narrow = (
-                min(self.narrow_channel.value(), cols - 1) if extra > 0 and extra % 2 == 0 else 0
-            )
+            extra = self._channel_extra()
+            narrow = min(self.narrow_channel.value(), cols - 1) if extra > 0 else 0
             pattern = pattern_board(board_type, cols, rows + extra, narrow)
             if board_type == "solderable-breadboard":
                 pattern = dataclasses.replace(

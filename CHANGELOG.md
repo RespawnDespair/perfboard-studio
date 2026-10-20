@@ -30,8 +30,10 @@ closed without a bump.
   rails three pitches outside the strips, so it is still the board's shape: one row of grid
   per 100 mil, and nothing new in the file. **Narrow part** keeps the 300 mil channel for
   the first columns, with their strips moved in to meet it, so a DIP still fits beside the
-  module, as lhm0's "flex" bodies do; that one is written to the file, and only when it is
-  set. Place on the Board puts the module across the wide channel and Autoroute wires it as
+  module, as lhm0's "flex" bodies do -- offered by name in the Channel list, "900 mil flex"
+  and "1000 mil flex"; that one is written to the file, and only when it is set. On the
+  1000 mil flex board the real narrow part is half a pitch off the grid the rest is on, so
+  it is drawn 1.27 mm high; every clip, name and connection is exact. Place on the Board puts the module across the wide channel and Autoroute wires it as
   any breadboard; both views draw the groove as wide as the channel, and the print where
   the strips are.
 

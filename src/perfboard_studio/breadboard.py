@@ -70,10 +70,14 @@ Some of those bodies keep the ordinary channel for part of their length, so a DI
 still straddle it beside the module: lhm0 calls them "flex". That is the one thing the
 grid cannot say, so it is the one field, ``Board.narrow_channel_cols``: how many columns,
 counted from column 1, have the 0.3 inch channel with their two strips of clips moved in
-to meet it. Each strip moves by half of what the channel lost, so the two halves must
-differ by an even number of pitches or the narrow part would sit half a pitch off the
-grid -- lhm0's 900 mil flex board is 9 against 3 and fits; its 1000 mil one is 10 against
-3 and does not, and is refused rather than rounded. A strip keeps its letters wherever it
+to meet it. Each strip moves by half of what the channel lost. Where that is a whole
+number of pitches the narrow part is exactly where the body has it -- lhm0's 900 mil flex
+board, 9 against 3. Where it is not -- the 1000 mil one, 10 against 3 -- the body's narrow
+strips stand half a pitch off the grid the rest of it is on, and a hole here is a grid
+position, so the lower strip moves in by one row more than the upper and the narrow part
+is drawn half a pitch (1.27 mm) above where it is. The clips, the names and every
+connection are exact; only the picture is rounded, as the half-size board's rails are
+above, and it is written here so nobody mistakes it for a measurement. A strip keeps its letters wherever it
 is, so in the narrow part ``e`` is a different row of the grid from ``e`` in the wide
 part -- which is why a letter is asked for by row AND column.
 
@@ -242,11 +246,6 @@ def board_problem(board: Board) -> str | None:
             )
         if channel == STANDARD_CHANNEL:
             return "The channel is 0.3 inch already; there is nothing to narrow."
-        if (channel - STANDARD_CHANNEL) % 2:
-            return (
-                f"A {channel * 100} mil channel cannot narrow to 300 mil on the grid: each strip "
-                f"would move by half a pitch. The two must differ by an even number of pitches."
-            )
     return None
 
 
@@ -304,11 +303,12 @@ def size_of(board: Board) -> str | None:
 
 
 @functools.cache
-def _layout(rails: bool, channel: int, moved_in: int) -> tuple[str | None, ...]:
+def _layout(rails: bool, channel: int, moved_in: int, lower_moved_in: int | None = None) -> tuple[str | None, ...]:
     """What each row is, top to bottom, for a column whose channel is ``channel`` pitches
-    and whose strips stand ``moved_in`` rows in from where the widest channel has them."""
-    gap = (None,) * moved_in
-    core = gap + _UPPER + (None,) * (channel - 1) + _LOWER + gap
+    and whose upper strip stands ``moved_in`` rows in from where the widest channel has it,
+    the lower ``lower_moved_in`` (the same, unless told)."""
+    lower = moved_in if lower_moved_in is None else lower_moved_in
+    core = (None,) * moved_in + _UPPER + (None,) * (channel - 1) + _LOWER + (None,) * lower
     if not rails:
         return core
     return ("top-", "top+", None, None, *core, None, None, "bottom-", "bottom+")
@@ -319,8 +319,11 @@ def _roles(board: Board, col: int | None = None) -> tuple[str | None, ...]:
     column of a board with no narrow part and where the rails and the print are read."""
     channel = channel_of(board)
     if col is not None and col < board.narrow_channel_cols:
-        moved_in = (channel - STANDARD_CHANNEL) // 2
-        return _layout(has_rails(board), STANDARD_CHANNEL, moved_in)
+        # The lower strip takes the odd row when the strips cannot move in by the same
+        # amount, which leaves the narrow part drawn half a pitch high (row 0 is the top;
+        # see the module docstring).
+        lost = channel - STANDARD_CHANNEL
+        return _layout(has_rails(board), STANDARD_CHANNEL, lost // 2, lost - lost // 2)
     return _layout(has_rails(board), channel, 0)
 
 
