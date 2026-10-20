@@ -1649,6 +1649,14 @@ Four decisions carry it, each with a test in `tests/test_breadboard.py`:
   tie points the three sizes are sold by. The half-size rails sit 0.37 of a pitch off the
   columns there; a hole here is a grid position, so they are rounded, and the docstring says
   so rather than passing the rounding off as a measurement.
+- **A wide channel is more rows, and narrowing it is the one field.** Every pitch the
+  channel between e and f is wider than 0.3 inch is one more row (`breadboard.channel_of`:
+  20–32 rows with rails, 12–19 without), measured off lhm0's printed ESP32 bodies, so a
+  uniform wide board writes nothing new. `Board.narrow_channel_cols` (omitted at 0) keeps
+  the ordinary channel for the first columns with their strips moved in, so a strip letter
+  is a different row there: ask `strip_letter(board, row, col)` and draw the groove from
+  `breadboard.channel_stretches`, never from one column's rows. A narrowing that is not an
+  even number of pitches would put the narrow part half a pitch off the grid and is refused.
 - **A clip is a segment.** `stripboard.segment_of` answers from `breadboard.clip_of` on a
   breadboard and `cut_between` never offers a cut there, which is how `connectivity`, LVS,
   `striproute` and the placer take a breadboard without a line about plastic. Two pins of
